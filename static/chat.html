@@ -400,7 +400,7 @@
         let currentUser = null;
     
         function checkLogin() {
-            const saved = localStorage.getItem('velora_user');
+            const saved = localStorage.getItem('aurorasparq_user');
             if (saved) {
                 currentUser = JSON.parse(saved);
                 document.getElementById('login-modal').classList.remove('show');
@@ -421,7 +421,7 @@
             }
     
             currentUser = { firstName, lastName, email };
-            localStorage.setItem('velora_user', JSON.stringify(currentUser));
+            localStorage.setItem('aurorasparq_user', JSON.stringify(currentUser));
     
             // Register user on backend
             fetch('/api/login', {

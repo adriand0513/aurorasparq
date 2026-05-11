@@ -7,7 +7,7 @@ from typing import List, Dict, Optional
 DB_PATH = os.path.abspath(os.getenv("DB_PATH", "users.db"))
 
 def init_db():
-    """Initialize database with users and conversations."""
+    """Initialize and safely migrate database with user support."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
@@ -26,13 +26,12 @@ def init_db():
     c.execute('''
         CREATE TABLE IF NOT EXISTS chat_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_email TEXT NOT NULL,
-            convo_id TEXT NOT NULL,
+            user_email TEXT,
+            convo_id TEXT,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
             voice_note TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_email) REFERENCES users(email)
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
 
@@ -40,12 +39,11 @@ def init_db():
     c.execute('''
         CREATE TABLE IF NOT EXISTS key_facts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_email TEXT NOT NULL,
+            user_email TEXT,
             fact TEXT NOT NULL,
             importance INTEGER DEFAULT 5,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            last_recalled DATETIME,
-            FOREIGN KEY (user_email) REFERENCES users(email)
+            last_recalled DATETIME
         )
     ''')
 
@@ -56,22 +54,41 @@ def init_db():
             level INTEGER DEFAULT 1,
             pet_name TEXT,
             notes TEXT,
-            last_interaction DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_email) REFERENCES users(email)
+            last_interaction DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
 
-    # Indexes
+    # Safe migrations for existing databases
+    try:
+        c.execute("ALTER TABLE chat_history ADD COLUMN user_email TEXT")
+        print("Migrated: Added user_email to chat_history")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        c.execute("ALTER TABLE key_facts ADD COLUMN user_email TEXT")
+        print("Migrated: Added user_email to key_facts")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        c.execute("ALTER TABLE relationship_state ADD COLUMN user_email TEXT")
+        print("Migrated: Added user_email to relationship_state")
+    except sqlite3.OperationalError:
+        pass
+
+    # Indexes for performance
     c.execute('CREATE INDEX IF NOT EXISTS idx_history_user ON chat_history (user_email)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_facts_user ON key_facts (user_email)')
 
     conn.commit()
     conn.close()
-    print(f"Memory system initialized with user support. DB: {DB_PATH}")
+    print(f"Memory system initialized and migrated successfully. DB: {DB_PATH}")
 
 
 # ── User Management ─────────────────────────────────────────────────────
 def create_or_get_user(email: str, first_name: str, last_name: str):
+    """Create or update user."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
@@ -183,9 +200,9 @@ def summarize_recent_chat(user_email: str):
     history = get_history(user_email, limit=30)
     if len(history) < 8:
         return
-    # ... (you can keep your original summarization logic here)
+    # Add your summarization logic here if needed
     pass
 
 
-# Initialize
+# Initialize on import
 init_db()

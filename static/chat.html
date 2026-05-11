@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>Aurachat</title>
+    <title>AuroraSparq</title>
     <style>
         :root {
             --bg: #0d0015;
@@ -280,9 +280,62 @@
             cursor: pointer;
             text-shadow: 0 0 10px rgba(0,0,0,0.8);
         }
+
+        .login-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.95);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
+        
+        .login-modal.show { display: flex; }
+        .login-box {
+            background: #1a1f2e;
+            padding: 32px;
+            border-radius: 16px;
+            width: 90%;
+            max-width: 380px;
+            text-align: center;
+        }
+        .login-box input {
+            width: 100%;
+            padding: 14px;
+            margin: 8px 0;
+            background: #0f1225;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 16px;
+        }
+        .login-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #c300ff, #ff0099);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-top: 16px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
+
+    <!-- Login Modal -->
+    <div id="login-modal" class="login-modal">
+        <div class="login-box">
+            <h2>Welcome to Velora</h2>
+            <p>Enter your details to start chatting</p>
+            <input type="text" id="first-name" placeholder="First Name" />
+            <input type="text" id="last-name" placeholder="Last Name" />
+            <input type="email" id="email" placeholder="Email Address" />
+            <button class="login-btn" onclick="handleLogin()">Start Chatting</button>
+        </div>
+    </div>
 
     <div id="app">
         <!-- Header -->
@@ -338,22 +391,66 @@
             }
         }
     
+        // === USER LOGIN SYSTEM ===
+        let currentUser = null;
+    
+        function checkLogin() {
+            const saved = localStorage.getItem('velora_user');
+            if (saved) {
+                currentUser = JSON.parse(saved);
+                document.getElementById('login-modal').classList.remove('show');
+                initChat();
+            } else {
+                document.getElementById('login-modal').classList.add('show');
+            }
+        }
+    
+        function handleLogin() {
+            const firstName = document.getElementById('first-name').value.trim();
+            const lastName = document.getElementById('last-name').value.trim();
+            const email = document.getElementById('email').value.trim().toLowerCase();
+    
+            if (!firstName || !lastName || !email) {
+                alert("Please fill in all fields");
+                return;
+            }
+    
+            currentUser = { firstName, lastName, email };
+            localStorage.setItem('velora_user', JSON.stringify(currentUser));
+    
+            // Register user on backend
+            fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    first_name: firstName, 
+                    last_name: lastName, 
+                    email: email 
+                })
+            }).catch(err => console.error("Login error:", err));
+    
+            document.getElementById('login-modal').classList.remove('show');
+            initChat();
+        }
+    
+        function logout() {
+            if (confirm("Log out? This will clear your saved conversations.")) {
+                localStorage.removeItem('velora_user');
+                localStorage.removeItem('messages_history');
+                location.reload();
+            }
+        }
+    
         // Main variables
         const messagesContainer = document.getElementById('messages-container');
         const typingIndicator = document.getElementById('typing-indicator');
         const input = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
     
-        let convoId = localStorage.getItem('convo_id');
         let messagesHistory = [];
         let userIdleTimeout = null;
         let isSending = false;
-        const USER_IDLE_PAUSE = 4000;        // ← Changed to 4 seconds
-    
-        if (!convoId) {
-            convoId = 'conv_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
-            localStorage.setItem('convo_id', convoId);
-        }
+        const USER_IDLE_PAUSE = 4000;
     
         function loadHistory() {
             try {
@@ -374,6 +471,7 @@
         }
     
         function initChat() {
+            if (!currentUser) return;
             loadHistory();
             messagesContainer.innerHTML = '';
     
@@ -397,8 +495,7 @@
     
         window.addEventListener('load', () => {
             sizeApp();
-            initChat();
-            input.focus();
+            checkLogin();
             forceScrollFix();
         });
     
@@ -413,21 +510,10 @@
     
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') saveHistory();
-            else if (document.visibilityState === 'visible') initChat();
+            else if (document.visibilityState === 'visible' && currentUser) initChat();
         });
     
         window.addEventListener('pagehide', saveHistory);
-    
-        function clearConversation() {
-            if (confirm("Clear this conversation?")) {
-                localStorage.removeItem('convo_id');
-                localStorage.removeItem('messages_history');
-                messagesHistory = [];
-                convoId = 'conv_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
-                localStorage.setItem('convo_id', convoId);
-                messagesContainer.innerHTML = '';
-            }
-        }
     
         function addMessage(text, type) {
             const div = document.createElement('div');
@@ -489,7 +575,7 @@
         }
     
         async function sendMessage() {
-            if (isSending) return;
+            if (!currentUser || isSending) return;
             const msg = input.value.trim();
             if (!msg) return;
     
@@ -507,7 +593,7 @@
         }
     
         async function triggerBotReply() {
-            if (isSending) return;
+            if (!currentUser || isSending) return;
             isSending = true;
             typingIndicator.classList.add('visible');
     
@@ -515,7 +601,7 @@
                 const res = await fetch('/api/reply', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ convo_id: convoId })
+                    body: JSON.stringify({ email: currentUser.email })
                 });
     
                 const data = await res.json();

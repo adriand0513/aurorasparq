@@ -4,11 +4,10 @@ import os
 from datetime import datetime
 from typing import List, Dict, Optional
 
-# Use users.db as the dedicated memory database
 DB_PATH = os.path.abspath(os.getenv("DB_PATH", "users.db"))
 
 def init_db():
-    """Initialize database with all tables and safe migrations."""
+    """Initialize database with safe migrations."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
@@ -23,11 +22,11 @@ def init_db():
         )
     ''')
 
-    # Chat history (per user)
+    # Chat history table
     c.execute('''
         CREATE TABLE IF NOT EXISTS chat_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_email TEXT NOT NULL,
+            user_email TEXT,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
             voice_note TEXT,
@@ -35,11 +34,11 @@ def init_db():
         )
     ''')
 
-    # Key facts / long-term memory per user
+    # Key facts table
     c.execute('''
         CREATE TABLE IF NOT EXISTS key_facts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_email TEXT NOT NULL,
+            user_email TEXT,
             fact TEXT NOT NULL,
             importance INTEGER DEFAULT 5,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -47,7 +46,7 @@ def init_db():
         )
     ''')
 
-    # Relationship state per user
+    # Relationship table
     c.execute('''
         CREATE TABLE IF NOT EXISTS relationship_state (
             user_email TEXT PRIMARY KEY,
@@ -58,24 +57,24 @@ def init_db():
         )
     ''')
 
-    # Indexes for performance
+    # === SAFE MIGRATIONS ===
+    # Add user_email column if it doesn't exist
+    try:
+        c.execute("ALTER TABLE chat_history ADD COLUMN user_email TEXT")
+        print("✅ Migration: Added user_email to chat_history")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    try:
+        c.execute("ALTER TABLE key_facts ADD COLUMN user_email TEXT")
+        print("✅ Migration: Added user_email to key_facts")
+    except sqlite3.OperationalError:
+        pass
+
+    # Create indexes (only after column is guaranteed to exist)
     c.execute('CREATE INDEX IF NOT EXISTS idx_history_user ON chat_history (user_email)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_facts_user ON key_facts (user_email)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_history_time ON chat_history (timestamp)')
-
-    # Safe migrations (in case old tables exist)
-    try:
-        c.execute("ALTER TABLE chat_history ADD COLUMN user_email TEXT")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        c.execute("ALTER TABLE key_facts ADD COLUMN user_email TEXT")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        c.execute("ALTER TABLE relationship_state ADD COLUMN user_email TEXT")
-    except sqlite3.OperationalError:
-        pass
 
     conn.commit()
     conn.close()
@@ -84,7 +83,6 @@ def init_db():
 
 # ── User Management ─────────────────────────────────────────────────────
 def create_or_get_user(email: str, first_name: str, last_name: str):
-    """Create new user or update existing one."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
@@ -101,7 +99,6 @@ def create_or_get_user(email: str, first_name: str, last_name: str):
 
 # ── Chat History ────────────────────────────────────────────────────────
 def get_history(user_email: str, limit: int = 50) -> List[Dict]:
-    """Get chat history for a user."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
@@ -113,32 +110,22 @@ def get_history(user_email: str, limit: int = 50) -> List[Dict]:
     ''', (user_email, limit))
     rows = c.fetchall()
     conn.close()
-    return [
-        {"role": r[0], "content": r[1], "voice_note": r[2], "timestamp": r[3]}
-        for r in rows
-    ]
+    return [{"role": r[0], "content": r[1], "voice_note": r[2], "timestamp": r[3]} for r in rows]
 
 
 def save_message(user_email: str, message: Dict):
-    """Save a message (user or assistant)."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
         INSERT INTO chat_history (user_email, role, content, voice_note)
         VALUES (?, ?, ?, ?)
-    ''', (
-        user_email,
-        message["role"],
-        message["content"],
-        message.get("voice_note")
-    ))
+    ''', (user_email, message["role"], message["content"], message.get("voice_note")))
     conn.commit()
     conn.close()
 
 
-# ── Long-term Memory (Key Facts) ───────────────────────────────────────
+# ── Key Facts ───────────────────────────────────────────────────────────
 def add_key_fact(user_email: str, fact: str, importance: int = 7):
-    """Store an important fact about the user."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
@@ -150,7 +137,6 @@ def add_key_fact(user_email: str, fact: str, importance: int = 7):
 
 
 def get_relevant_facts(user_email: str, limit: int = 8) -> List[str]:
-    """Retrieve most relevant facts about the user."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
@@ -164,7 +150,7 @@ def get_relevant_facts(user_email: str, limit: int = 8) -> List[str]:
     return facts
 
 
-# ── Relationship System ─────────────────────────────────────────────────
+# ── Relationship ────────────────────────────────────────────────────────
 def get_relationship_level(user_email: str) -> int:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -184,10 +170,8 @@ def get_pet_name(user_email: str) -> str:
 
 
 def update_relationship(user_email: str, delta: int = 1, pet_name: Optional[str] = None, note: Optional[str] = None):
-    """Update relationship level and optionally pet name or notes."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-
     current = get_relationship_level(user_email)
     new_level = max(1, min(10, current + delta))
 
@@ -200,16 +184,13 @@ def update_relationship(user_email: str, delta: int = 1, pet_name: Optional[str]
             pet_name = COALESCE(?, pet_name),
             notes = COALESCE(notes || '\n' || ?, notes)
     ''', (user_email, new_level, pet_name, note, new_level, pet_name, note))
-
     conn.commit()
     conn.close()
 
 
 def summarize_recent_chat(user_email: str):
-    """Placeholder for future summarization logic."""
-    # You can implement conversation summarization here later
-    pass
+    pass  # Future use
 
 
-# Auto-initialize when imported
+# Initialize on import
 init_db()

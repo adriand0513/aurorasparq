@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Aurora Sparq")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Import memory with name support
+# Import memory
 from memory import (
     get_history,
     save_message,
@@ -59,10 +59,28 @@ def is_rate_limited(user_id: str, max_per_minute: int = 15):
     convo_rate_limits[user_id].append(now)
     return len(convo_rate_limits[user_id]) > max_per_minute
 
+# ── NYC Context ─────────────────────────────────────────────────────────────
+def get_nyc_context() -> Dict[str, str]:
+    nyc_tz = ZoneInfo("America/New_York")
+    now_nyc = datetime.now(nyc_tz)
+    time_str = now_nyc.strftime("%I:%M %p on %A, %B %d")
+    
+    try:
+        r = requests.get("https://wttr.in/NYC?format=%c+%t+%w", timeout=5)
+        if r.status_code == 200:
+            parts = r.text.strip().split()
+            weather = f"{parts[0]} {parts[1]}, wind {parts[2]}" if len(parts) >= 3 else r.text.strip()
+        else:
+            weather = "cool and clear"
+    except:
+        weather = "chilly evening"
+    
+    return {"time": time_str, "weather": weather}
+
 # ── Routes ───────────────────────────────────────────────────────────────
 @app.get("/")
 async def home():
-    return RedirectResponse(url="/chat?v=0524")
+    return RedirectResponse(url="/chat?v=0525")
 
 @app.get("/chat")
 async def chat_page():
@@ -79,7 +97,7 @@ async def chat_page():
     except FileNotFoundError:
         return HTMLResponse("<h1>chat.html not found</h1>", 404)
 
-# ── GENERATE REPLY (with Natural Name Support) ───────────────────────────
+# ── GENERATE REPLY with Natural Name System ─────────────────────────────
 @app.post("/api/reply")
 async def generate_reply(body: Dict = Body(...)):
     user_id = body.get("user_id", "default").strip().lower()
@@ -98,28 +116,26 @@ async def generate_reply(body: Dict = Body(...)):
     log_prefix = f"User {user_id}"
     context = get_nyc_context()
 
-    # Get history and saved name
     history = get_history(user_id)
     if len(history) > 40:
         history = history[-40:]
 
     user_name = get_user_name(user_id)
 
-    # ── Name Detection from Last Message ─────────────────────────────
+    # Natural name detection
     if not user_name and history:
         last_msg = history[-1]["content"].lower()
-        name_triggers = ["my name is", "i'm ", "call me ", "name's ", "i am "]
-        for trigger in name_triggers:
+        triggers = ["my name is", "i'm ", "call me ", "name's ", "i am "]
+        for trigger in triggers:
             if trigger in last_msg:
-                # Extract potential name
-                potential_name = last_msg.split(trigger)[-1].split(".")[0].split(",")[0].strip().title()
-                if 3 <= len(potential_name) <= 20 and potential_name.isalpha():
-                    save_user_name(user_id, potential_name)
-                    user_name = potential_name
-                    logger.info(f"New name saved: {potential_name}")
+                potential = last_msg.split(trigger)[-1].split(".")[0].split(",")[0].strip().title()
+                if 3 <= len(potential) <= 20 and potential.replace(" ", "").isalpha():
+                    save_user_name(user_id, potential)
+                    user_name = potential
+                    logger.info(f"Saved new name: {potential}")
                     break
 
-    # ── Build System Prompt ──────────────────────────────────────────
+    # Build System Prompt
     relevant_facts = get_relevant_facts(user_id, limit=5)
     rel_level = get_relationship_level(user_id)
     pet_name = get_pet_name(user_id)
@@ -131,18 +147,16 @@ async def generate_reply(body: Dict = Body(...)):
     )
 
     if relevant_facts:
-        system_prompt += f"\n\nKey things you remember: {' | '.join(relevant_facts[:4])}"
+        system_prompt += f"\n\nKey memories: {' | '.join(relevant_facts[:4])}"
 
-    system_prompt += f"\nCurrent closeness: Level {rel_level}/10."
+    system_prompt += f"\nRelationship level: {rel_level}/10"
     if pet_name:
-        system_prompt += f" You sometimes call them '{pet_name}'."
+        system_prompt += f" Call them '{pet_name}' sometimes."
 
     if not user_name:
-        system_prompt += "\nYou don't know their name yet. Ask for it warmly and naturally soon."
+        system_prompt += "\nYou don't know their name yet. Ask warmly and naturally."
 
-    # History for LLM
-    recent_history = history[-22:]
-    messages = [{"role": "system", "content": system_prompt}] + recent_history
+    messages = [{"role": "system", "content": system_prompt}] + history[-22:]
 
     # Call Grok
     headers = {"Authorization": f"Bearer {XAI_API_KEY}", "Content-Type": "application/json"}
@@ -158,13 +172,12 @@ async def generate_reply(body: Dict = Body(...)):
         resp.raise_for_status()
         raw_reply = resp.json()["choices"][0]["message"]["content"].strip()
     except Exception as e:
-        logger.error(f"{log_prefix} XAI FAILURE: {e}")
-        return {"replies": ["Sorry, I'm having trouble thinking right now..."], "voice_note": ""}
+        logger.error(f"{log_prefix} XAI error: {e}")
+        return {"replies": ["Sorry, I'm having a moment..."], "voice_note": ""}
 
     reply = clean_reply(raw_reply)
     bubbles = split_into_bubbles(reply)
 
-    # Voice note logic (your existing code)
     voice_note = ""
     emotional_keywords = ["miss", "love", "kiss", "horny", "sexy", "touch", "body", "want", "feel", "good", "night", "dream", "thinking", "smile", "heart", "crave"]
     has_emotion = any(kw in reply.lower() for kw in emotional_keywords)
@@ -173,7 +186,7 @@ async def generate_reply(body: Dict = Body(...)):
         try:
             voice_note = generate_voice_note(bubbles[-1])
         except Exception as e:
-            logger.error(f"ElevenLabs error: {e}")
+            logger.error(f"Voice note error: {e}")
 
     # Save messages
     for bubble in bubbles:

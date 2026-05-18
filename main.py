@@ -61,7 +61,7 @@ def is_rate_limited(identifier: str, max_per_minute: int = 15):
 # ── Routes ───────────────────────────────────────────────────────────────
 @app.get("/")
 async def home():
-    return RedirectResponse(url="/chat?v=0521")  # ← Change this number when you update
+    return RedirectResponse(url="/chat?v=0522")  # ← Change this number when you update
 
 @app.get("/chat")
 async def chat_page():

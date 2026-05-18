@@ -61,19 +61,26 @@ def is_rate_limited(identifier: str, max_per_minute: int = 15):
 # ── Routes ───────────────────────────────────────────────────────────────
 @app.get("/")
 async def home():
-    return RedirectResponse(url="/chat")
+    return RedirectResponse(url="/chat?v=0521")  # ← Change this number when you update
 
 @app.get("/chat")
 async def chat_page():
     try:
         with open("static/chat.html", "r", encoding="utf-8") as f:
             content = f.read()
+        
         response = HTMLResponse(content)
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        
+        # === STRONG CACHE BUSTING ===
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        response.headers["Surrogate-Control"] = "no-store"
+        response.headers["Vary"] = "Accept-Encoding, User-Agent"
+        
         return response
     except FileNotFoundError:
-        return HTMLResponse("<h1>chat.html not found</h1>", 404)
+        return HTMLResponse("<h1>chat.html not found</h1>", status_code=404)
 
 # ── USER LOGIN ───────────────────────────────────────────────────────────
 @app.post("/api/login")

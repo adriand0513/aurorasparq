@@ -334,6 +334,15 @@
     </div>
 
     <script>
+        // === AUTO CACHE BUSTING ===
+        const VERSION = "0522";   // ← Increase this number (e.g. 0523, 0524) every time you update the file
+        
+        // Redirect to versioned URL if missing
+        if (!window.location.search.includes('v=')) {
+            const newUrl = window.location.pathname + '?v=' + VERSION;
+            window.location.replace(newUrl);
+        }
+        
         // Safari Viewport Fix
         function sizeApp() {
             const h = window.innerHeight;

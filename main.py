@@ -238,7 +238,11 @@ def split_into_bubbles(text: str) -> List[str]:
 # ── Routes ──────────────────────────────────────────────────────────────────
 @app.get("/")
 async def home():
-    return RedirectResponse(url="/chat?v=0526")   # ← Increase this number when you update chat.html
+    try:
+        with open("static/home.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+    except FileNotFoundError:
+        return HTMLResponse("<h1>Error: home.html not found</h1>", status_code=500)
 
 @app.get("/chat")
 async def chat_page():
@@ -248,12 +252,13 @@ async def chat_page():
         
         response = HTMLResponse(content)
         
-        # STRONG CACHE BUSTING - This is key
+        # FORCE FRESH LOAD - No more caching issues
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
+        
+        # Extra safety for Safari
         response.headers["Surrogate-Control"] = "no-store"
-        response.headers["Vary"] = "Accept-Encoding, User-Agent"
         
         return response
     except FileNotFoundError:

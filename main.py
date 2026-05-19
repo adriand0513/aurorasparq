@@ -244,43 +244,6 @@ async def home():
     except FileNotFoundError:
         return HTMLResponse("<h1>Error: home.html not found</h1>", status_code=500)
 
-# ── User Login & Management Routes ─────────────────────────────────────
-@app.post("/api/login")
-async def login_user(body: Dict[str, str] = Body(...)):
-    email = body.get("email", "").strip().lower()
-    first_name = body.get("first_name", "").strip()
-    last_name = body.get("last_name", "").strip()
-
-    if not email or not first_name or not last_name:
-        raise HTTPException(400, "Email, first name, and last name are required")
-
-    create_or_get_user(email, first_name, last_name)
-    
-    return {
-        "success": True,
-        "email": email,
-        "first_name": first_name,
-        "last_name": last_name
-    }
-
-@app.get("/api/me")
-async def get_current_user(email: str):
-    """Simple endpoint to verify user and get basic info"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT first_name, last_name FROM users WHERE email = ?", (email,))
-    row = c.fetchone()
-    conn.close()
-
-    if not row:
-        raise HTTPException(404, "User not found")
-
-    return {
-        "email": email,
-        "first_name": row[0],
-        "last_name": row[1]
-    }
-
 @app.get("/chat")
 async def chat_page():
     try:
@@ -303,70 +266,72 @@ async def chat_page():
 
 @app.post("/api/send")
 async def send_message(body: Dict[str, str] = Body(...)):
-    email = body.get("email", "").strip().lower()
+    convo_id = body.get("convo_id")
     message = body.get("message", "").strip()
-
-    if not email or not message:
-        raise HTTPException(400, "email and message required")
-
-    if is_rate_limited(email):
+    if not convo_id or not message:
+        raise HTTPException(400, "convo_id and message required")
+    if is_rate_limited(convo_id):
         raise HTTPException(429, "Slow down... let's not rush this 😏")
-
-    save_message(email, {"role": "user", "content": message})
-
+    save_message(convo_id, {"role": "user", "content": message})
     return {"success": True}
-
 
 @app.post("/api/reply")
 async def generate_reply(body: Dict[str, str] = Body(...)):
-    email = body.get("email", "").strip().lower()
-    if not email:
-        raise HTTPException(400, "email required")
+    convo_id = body.get("convo_id")
+    if not convo_id:
+        raise HTTPException(400, "convo_id required")
 
-    # Backend Guard
+    # === NEW BACKEND GUARD ===
     now = time.time()
-    if now - last_reply_time[email] < REPLY_COOLDOWN_SECONDS:
-        logger.info(f"Duplicate reply blocked for user {email}")
+    if now - last_reply_time[convo_id] < REPLY_COOLDOWN_SECONDS:
+        logger.info(f"Duplicate reply blocked for convo {convo_id} (cooldown)")
         return JSONResponse({"replies": [], "voice_note": ""}, status_code=200)
     
-    last_reply_time[email] = now
+    last_reply_time[convo_id] = now
+    # =========================
 
-    if is_rate_limited(email):
+    if is_rate_limited(convo_id):
         return JSONResponse({"replies": [], "voice_note": ""}, status_code=200)
 
-    log_prefix = f"User {email}"
+    log_prefix = f"Convo {convo_id}"
     context = get_nyc_context()
 
-    # Get history using user_email
-    history = get_history(email)
+    # Get full history
+    history = get_history(convo_id)
     if len(history) > 40:
         history = history[-40:]
 
-    # Silence Detector
+    # ── Improved Silence Detector ─────────────────────────────────────
     time_gap_minutes = 0
     silence_note = ""
+
     if history:
         last_user_msg = None
         for msg in reversed(history):
-            if msg.get("role") == "user":
+            if msg["role"] == "user":
                 last_user_msg = msg
                 break
+        
         if last_user_msg and "timestamp" in last_user_msg:
             try:
                 last_time = datetime.fromisoformat(str(last_user_msg["timestamp"]).replace("Z", "+00:00"))
                 time_gap_minutes = int((datetime.now(ZoneInfo("UTC")) - last_time).total_seconds() / 60)
-                if time_gap_minutes > 60:
-                    silence_note = "The user just came back after some time. Respond naturally."
+                
+                if time_gap_minutes > 60:  # More than 1 hour silence
+                    if time_gap_minutes < 1440:  # Less than 24 hours
+                        silence_note = "The user just came back after several hours. Respond to his new message naturally and casually. Don't continue old topics unless he brings them up."
+                    else:
+                        silence_note = "The user just came back after more than a day. Greet him warmly like you missed chatting, then respond to what he just said. Don't stay stuck on old conversation topics."
             except:
                 pass
 
-    # Memory + Relationship
-    relevant_facts = get_relevant_facts(email, limit=5)
-    rel_level = get_relationship_level(email)
-    pet_name = get_pet_name(email)
+    # ── Memory + Relationship ────────────────────────────────────────
+    relevant_facts = get_relevant_facts(convo_id, limit=5)  # Reduced
+    rel_level = get_relationship_level(convo_id)
+    pet_name = get_pet_name(convo_id)
 
     memory_summary = ""
-    if relevant_facts and time_gap_minutes < 180:
+    if relevant_facts and time_gap_minutes < 180:  # Only show memory if not long silence
         memory_summary = "Key things you remember about him: " + " | ".join(relevant_facts[:4])
 
     system_prompt = get_system_prompt(
@@ -377,15 +342,21 @@ async def generate_reply(body: Dict[str, str] = Body(...)):
 
     if memory_summary:
         system_prompt += f"\n\n{memory_summary}"
+    
     system_prompt += f"\nCurrent relationship closeness: Level {rel_level}/10."
     if pet_name:
         system_prompt += f" You sometimes call him '{pet_name}' naturally."
+    else:
+        system_prompt += " Avoid pet names unless he uses one first."
 
     if silence_note:
         system_prompt += f"\n\n{silence_note}"
 
-    # History for LLM
-    recent_history = history[-22:] if time_gap_minutes <= 90 else history[-14:]
+    # Decide history length - this is the biggest fix for repetition
+    if time_gap_minutes > 90:          # After ~1.5 hours silence
+        recent_history = history[-14:] # Much shorter
+    else:
+        recent_history = history[-22:] # Reduced from -28
 
     messages = [{"role": "system", "content": system_prompt}] + recent_history
 
@@ -411,12 +382,12 @@ async def generate_reply(body: Dict[str, str] = Body(...)):
 
     reply = clean_reply(raw_reply)
     bubbles = split_into_bubbles(reply)
-
     voice_note = ""
+
     emotional_keywords = ["miss", "love", "kiss", "horny", "sexy", "touch", "body", "want", "feel", "good", "night", "dream", "thinking", "smile", "heart", "crave"]
     has_emotion = any(kw in reply.lower() for kw in emotional_keywords)
 
-    if has_emotion and random.random() < 0.375 and bubbles:
+    if has_emotion and random.random() < 0.20 and bubbles:
         try:
             voice_note = generate_voice_note(bubbles[-1])
         except Exception as e:
@@ -424,20 +395,31 @@ async def generate_reply(body: Dict[str, str] = Body(...)):
 
     # Save messages
     for bubble in bubbles:
-        save_message(email, {
-            "role": "assistant",
-            "content": bubble,
-            "voice_note": voice_note
-        })
+        save_message(convo_id, {"role": "assistant", "content": bubble})
 
+    # Occasional summarization
     if len(history) % 12 == 0 and len(history) > 10:
-        summarize_recent_chat(email)
+        summarize_recent_chat(convo_id)
 
     if has_emotion and random.random() < 0.35:
-        update_relationship(email, delta=1)
+        update_relationship(convo_id, delta=1)
+
+    # CSV log
+    if bubbles:
+        last_user = ""
+        if history:
+            for msg in reversed(history):
+                if msg["role"] == "user":
+                    last_user = msg["content"]
+                    break
+        log_to_csv(
+            convo_id=convo_id,
+            user_message=last_user,
+            isabella_reply=" | ".join(bubbles),
+            emotion=detect_emotion(" ".join(bubbles)),
+            voice_note=bool(voice_note)
+        )
 
     return {"replies": bubbles, "voice_note": voice_note}
-
-
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True, log_level="info")

@@ -238,7 +238,7 @@ def split_into_bubbles(text: str) -> List[str]:
 # ── Routes ──────────────────────────────────────────────────────────────────
 @app.get("/")
 async def home():
-    return RedirectResponse(url="/chat")   # ← Increase this number when you update chat.html
+    return RedirectResponse(url="/chat?v=0526")   # ← Increase this number when you update chat.html
 
 @app.get("/chat")
 async def chat_page():

@@ -236,13 +236,6 @@ def split_into_bubbles(text: str) -> List[str]:
     return paragraphs if paragraphs else [text.strip()]
 
 # ── Routes ──────────────────────────────────────────────────────────────────
-@app.get("/")
-async def home():
-    try:
-        with open("static/home.html", "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
-    except FileNotFoundError:
-        return HTMLResponse("<h1>Error: home.html not found</h1>", status_code=500)
 
 @app.get("/chat")
 async def chat_page():

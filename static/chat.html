@@ -295,7 +295,7 @@
                     <h2>Isabella</h2>
                 </div>
             </div>
-            <button id="clear-chat-btn" onclick="clearConversation()">Clear Chat</button>
+            
         </div>
 
         <!-- Messages -->
@@ -418,16 +418,6 @@
     
         window.addEventListener('pagehide', saveHistory);
     
-        function clearConversation() {
-            if (confirm("Clear this conversation?")) {
-                localStorage.removeItem('convo_id');
-                localStorage.removeItem('messages_history');
-                messagesHistory = [];
-                convoId = 'conv_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
-                localStorage.setItem('convo_id', convoId);
-                messagesContainer.innerHTML = '';
-            }
-        }
     
         function addMessage(text, type) {
             const div = document.createElement('div');

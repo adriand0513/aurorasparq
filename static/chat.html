@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Aurora Sparq</title>
+    <title>Aurora Sparq • Isabella</title>
     <style>
         :root {
             --bg: #0d0015;
@@ -51,6 +51,17 @@
         }
         .sent { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: white; align-self: flex-end; }
         .received { background: rgba(30,20,50,0.95); align-self: flex-start; }
+        .typing-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            background: rgba(30,20,50,0.9);
+            border-radius: 22px;
+            align-self: flex-start;
+            visibility: hidden;
+        }
+        .typing-indicator.visible { visibility: visible; }
         .input-area {
             padding: 12px 16px;
             background: rgba(20,5,40,0.95);
@@ -91,8 +102,16 @@
 </div>
 
 <script>
-    const messagesContainer = document.getElementById('messages-container');
-    const typingIndicator = document.getElementById('typing-indicator');
+    const messagesContainer = document.getElementById('messages');
+    const typingIndicator = document.createElement('div');
+    typingIndicator.className = 'typing-indicator';
+    typingIndicator.innerHTML = `
+        <div style="width:8px;height:8px;background:#bb99cc;border-radius:50%;animation:typing 1.4s infinite"></div>
+        <div style="width:8px;height:8px;background:#bb99cc;border-radius:50%;animation:typing 1.4s infinite 0.2s"></div>
+        <div style="width:8px;height:8px;background:#bb99cc;border-radius:50%;animation:typing 1.4s infinite 0.4s"></div>
+        <span>Isabella is typing...</span>`;
+    messagesContainer.appendChild(typingIndicator);
+
     const input = document.getElementById('user-input');
     const sendBtn = document.getElementById('send-btn');
 
@@ -102,7 +121,7 @@
     let messagesHistory = [];
     let isSending = false;
     let userTypingTimeout = null;
-    const USER_TYPING_DELAY = 4500; // 4.5 seconds debounce for user input
+    const USER_TYPING_DELAY = 4500; // 4.5 seconds
 
     function loadHistory() {
         try {
@@ -134,11 +153,9 @@
         typingIndicator.classList.remove('visible');
     }
 
-    // Calculate realistic typing time (40 words per second)
     function getTypingDuration(text) {
         const wordCount = text.trim().split(/\s+/).length;
-        const baseTime = (wordCount / 40) * 1000;           // 40 words per second
-        return Math.max(1200, Math.min(baseTime, 6500));   // between 1.2s and 6.5s
+        return Math.max(1200, Math.min((wordCount / 40) * 1000, 6500));
     }
 
     async function sendToBackend(msg) {
@@ -149,10 +166,7 @@
             const res = await fetch('/api/reply', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    convo_id: convoId, 
-                    message: msg 
-                })
+                body: JSON.stringify({ convo_id: convoId, message: msg })
             });
 
             const data = await res.json();
@@ -160,12 +174,7 @@
             if (data.replies && data.replies.length > 0) {
                 for (let i = 0; i < data.replies.length; i++) {
                     const bubble = data.replies[i];
-                    const isLast = i === data.replies.length - 1;
-
                     showTyping();
-                    
-                    const typingTime = getTypingDuration(bubble);
-                    
                     await new Promise(resolve => {
                         setTimeout(() => {
                             hideTyping();
@@ -173,7 +182,7 @@
                             messagesHistory.push({ role: 'assistant', content: bubble });
                             saveHistory();
                             resolve();
-                        }, typingTime);
+                        }, getTypingDuration(bubble));
                     });
                 }
             }
@@ -185,10 +194,9 @@
         }
     }
 
-    // Debounced user sending
+    // Debounced sending
     function handleUserInput() {
         if (userTypingTimeout) clearTimeout(userTypingTimeout);
-
         userTypingTimeout = setTimeout(() => {
             const msg = input.value.trim();
             if (msg && !isSending) {
@@ -201,9 +209,7 @@
         }, USER_TYPING_DELAY);
     }
 
-    // Event Listeners
     input.addEventListener('input', handleUserInput);
-
     input.addEventListener('keypress', e => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -231,13 +237,10 @@
         }
     });
 
-    // Initialize
     window.addEventListener('load', () => {
         loadHistory();
         messagesContainer.innerHTML = '';
-        messagesHistory.forEach(m => {
-            addMessage(m.content, m.role === 'user' ? 'sent' : 'received');
-        });
+        messagesHistory.forEach(m => addMessage(m.content, m.role === 'user' ? 'sent' : 'received'));
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     });
 </script>

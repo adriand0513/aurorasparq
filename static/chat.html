@@ -1,46 +1,33 @@
-```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>Aurachat</title>
-
+    <title>Aurora Sparq • Isabella</title>
     <style>
         :root {
             --bg: #0d0015;
             --accent-purple: #c300ff;
             --accent-pink: #ff0099;
-            --accent-glow: rgba(195, 0, 255, 0.4);
-            --danger: #ff3366;
             --text: #f8f0ff;
             --text-muted: #bb99cc;
             --input-bg: rgba(50, 20, 80, 0.6);
         }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         html, body {
             width: 100%;
             height: 100%;
             background: var(--bg);
             color: var(--text);
             font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            touch-action: manipulation;
             overflow: hidden;
         }
-
         #app {
             position: fixed;
             inset: 0;
             display: flex;
             flex-direction: column;
         }
-
         .chat-header {
             flex-shrink: 0;
             padding: 12px 16px;
@@ -52,17 +39,7 @@
             justify-content: space-between;
             z-index: 10;
         }
-
-        .chat-header-left {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .avatar-container {
-            cursor: pointer;
-        }
-
+        .avatar-container { cursor: pointer; }
         .avatar {
             width: 42px;
             height: 42px;
@@ -71,25 +48,15 @@
             background-position: center;
             border: 2px solid var(--accent-purple);
         }
-
-        .contact-info h2 {
-            font-size: 17px;
-            font-weight: 600;
-        }
-
         #messages-container {
             flex: 1 1 0;
             overflow-y: auto;
-            -webkit-overflow-scrolling: touch;
             padding: 16px;
             display: flex;
             flex-direction: column;
             gap: 12px;
-            background: linear-gradient(to bottom, rgba(13,0,21,0.6), transparent);
             scroll-behavior: smooth;
-            overscroll-behavior: contain;
         }
-
         .message {
             max-width: 80%;
             padding: 12px 16px;
@@ -97,34 +64,19 @@
             font-size: 15.5px;
             line-height: 1.45;
             word-wrap: break-word;
-            animation: fadeIn 0.2s ease;
         }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(4px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
         .sent {
             background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
             color: white;
             align-self: flex-end;
             border-bottom-right-radius: 6px;
         }
-
         .received {
             background: rgba(30,20,50,0.9);
             color: white;
             align-self: flex-start;
             border-bottom-left-radius: 6px;
         }
-
         .typing-indicator {
             display: flex;
             align-items: center;
@@ -138,34 +90,17 @@
             color: var(--text-muted);
             visibility: hidden;
             opacity: 0;
-            transition: opacity 0.25s ease;
         }
-
-        .typing-indicator.visible {
-            visibility: visible;
-            opacity: 1;
-        }
-
+        .typing-indicator.visible { visibility: visible; opacity: 1; }
         .typing-dot {
-            width: 8px;
-            height: 8px;
+            width: 8px; height: 8px;
             background: var(--text-muted);
             border-radius: 50%;
             animation: typing 1.4s infinite ease-in-out;
         }
-
-        .typing-dot:nth-child(2) {
-            animation-delay: 0.2s;
-        }
-
-        .typing-dot:nth-child(3) {
-            animation-delay: 0.4s;
-        }
-
-        @keyframes typing {
-            0%,100% { transform: translateY(0); }
-            50% { transform: translateY(-6px); }
-        }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes typing { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
 
         .input-area {
             flex-shrink: 0;
@@ -177,9 +112,7 @@
             display: flex;
             align-items: center;
             gap: 12px;
-            z-index: 10;
         }
-
         #user-input {
             flex: 1;
             padding: 13px 18px;
@@ -189,92 +122,47 @@
             color: white;
             font-size: 16px;
         }
-
-        #user-input::placeholder {
-            color: var(--text-muted);
-        }
-
-        #user-input:focus {
-            outline: none;
-            box-shadow: 0 0 0 3px rgba(195,0,255,0.3);
-        }
-
+        #user-input:focus { outline: none; box-shadow: 0 0 0 3px rgba(195,0,255,0.3); }
         #send-btn {
-            width: 46px;
-            height: 46px;
+            width: 46px; height: 46px;
             border-radius: 50%;
             background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
             color: white;
             border: none;
             font-size: 20px;
             cursor: pointer;
-            flex-shrink: 0;
         }
 
+        /* Improved Voice Note */
         .voice-note {
             display: flex;
             align-items: center;
             gap: 12px;
-            padding: 10px 14px;
+            padding: 14px 16px;
             background: rgba(45, 30, 75, 0.95);
             border-radius: 9999px;
-            max-width: 78%;
+            max-width: 85%;
             align-self: flex-start;
-            border-bottom-left-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
         }
-
         .voice-play-btn {
-            width: 38px;
-            height: 38px;
+            width: 48px; height: 48px;
             border-radius: 50%;
-            background: var(--accent-purple);
+            background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
             color: white;
             border: none;
-            cursor: pointer;
-        }
-
-        .avatar-modal {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.92);
-            z-index: 9999;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .avatar-modal.show {
-            display: flex;
-        }
-
-        .avatar-modal-content {
-            max-width: 90vw;
-            max-height: 90vh;
-            border-radius: 16px;
-            object-fit: contain;
-        }
-
-        .avatar-modal-close {
-            position: absolute;
-            top: 30px;
-            right: 40px;
-            color: white;
-            font-size: 60px;
+            font-size: 20px;
             cursor: pointer;
         }
     </style>
 </head>
-
 <body>
-
 <div id="app">
-
     <div class="chat-header">
         <div class="chat-header-left">
             <div class="avatar-container" onclick="openFullAvatar()">
                 <div class="avatar" style="background-image: url('/static/images/isabella.png');"></div>
             </div>
-
             <div class="contact-info">
                 <h2>Isabella</h2>
             </div>
@@ -282,269 +170,148 @@
     </div>
 
     <div id="messages-container">
-
         <div id="typing-indicator" class="typing-indicator">
             <div class="typing-dot"></div>
             <div class="typing-dot"></div>
             <div class="typing-dot"></div>
             <span>Isabella is typing...</span>
         </div>
-
     </div>
 
     <div class="input-area">
-        <input
-            id="user-input"
-            type="text"
-            placeholder="Message Isabella..."
-            autocomplete="off"
-        />
-
+        <input id="user-input" type="text" placeholder="Message Isabella..." autocomplete="off" />
         <button id="send-btn">➤</button>
     </div>
-
 </div>
 
+<!-- Avatar Modal -->
 <div id="avatar-modal" class="avatar-modal">
     <span class="avatar-modal-close" onclick="closeFullAvatar()">×</span>
-
-    <img
-        class="avatar-modal-content"
-        id="full-avatar"
-        src="/static/images/isabella.png"
-        alt="Isabella"
-    >
+    <img class="avatar-modal-content" id="full-avatar" src="/static/images/isabella.png" alt="Isabella">
 </div>
 
 <script>
-    
-    function sizeApp() {
-        const h = window.innerHeight;
-        document.body.style.height = h + 'px';
-    }
-    
-    function forceScrollFix() {
-        const messages = document.getElementById('messages-container');
-    
-        if (messages) {
-            messages.style.minHeight = 'auto';
-            void messages.offsetHeight;
-            messages.style.minHeight = '';
-        }
-    }
-    
+    // Variables
     const messagesContainer = document.getElementById('messages-container');
     const typingIndicator = document.getElementById('typing-indicator');
     const input = document.getElementById('user-input');
     const sendBtn = document.getElementById('send-btn');
-    
+
     let convoId = localStorage.getItem('convo_id');
     let messagesHistory = [];
-    
-    let userIdleTimeout = null;
-    let isGeneratingReply = false;
-    
-    const USER_IDLE_PAUSE = 4000;
-    
+    let isSending = false;
+
     if (!convoId) {
         convoId = 'conv_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
         localStorage.setItem('convo_id', convoId);
     }
-    
+
     function loadHistory() {
         try {
             const saved = localStorage.getItem('messages_history');
             messagesHistory = saved ? JSON.parse(saved) : [];
         } catch (e) {
             messagesHistory = [];
-            localStorage.removeItem('messages_history');
         }
     }
-    
+
     function saveHistory() {
-        try {
-            localStorage.setItem('messages_history', JSON.stringify(messagesHistory));
-        } catch (e) {
-            console.error('Save history error:', e);
-        }
+        localStorage.setItem('messages_history', JSON.stringify(messagesHistory));
     }
-    
+
     function initChat() {
-    
         loadHistory();
-    
         messagesContainer.innerHTML = '';
-    
         messagesHistory.forEach(msg => {
-    
-            if (msg.voice_note) {
-                addVoiceNote(msg.voice_note);
-            } else {
-    
-                const type =
-                    msg.role === 'user'
-                    ? 'sent'
-                    : 'received';
-    
-                addMessage(msg.content, type);
-            }
-    
+            if (msg.voice_note) addVoiceNote(msg.voice_note);
+            else addMessage(msg.content, msg.role === 'user' ? 'sent' : 'received');
         });
-    
-        messagesContainer.appendChild(typingIndicator);
-    
-        messagesContainer.scrollTop =
-            messagesContainer.scrollHeight;
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
-    
-    window.addEventListener('load', () => {
-        sizeApp();
-        initChat();
-        input.focus();
-        forceScrollFix();
-    });
-    
-    window.addEventListener('resize', () => {
-        sizeApp();
-        forceScrollFix();
-    });
-    
-    window.addEventListener('orientationchange', () => {
-        sizeApp();
-        forceScrollFix();
-    });
-    
-    window.addEventListener('pagehide', saveHistory);
-    
+
     function addMessage(text, type) {
-    
         const div = document.createElement('div');
-    
         div.className = `message ${type}`;
         div.textContent = text;
-    
         messagesContainer.appendChild(div);
-    
-        messagesContainer.scrollTop =
-            messagesContainer.scrollHeight;
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
-    
+
     function addVoiceNote(audioUrl) {
-    
         const voiceDiv = document.createElement('div');
-    
-        voiceDiv.className =
-            'voice-note message received';
-    
+        voiceDiv.className = 'voice-note message received';
         voiceDiv.innerHTML = `
             <button class="voice-play-btn">▶</button>
-            <div class="voice-duration">0:00</div>
-        `;
-    
-        const playBtn =
-            voiceDiv.querySelector('.voice-play-btn');
-    
-        const durationEl =
-            voiceDiv.querySelector('.voice-duration');
-    
+            <div class="voice-duration">0:00</div>`;
+        
+        const playBtn = voiceDiv.querySelector('.voice-play-btn');
+        const durationEl = voiceDiv.querySelector('.voice-duration');
         const audio = new Audio(audioUrl);
-    
         let isPlaying = false;
-    
-        audio.addEventListener('timeupdate', () => {
-    
-            durationEl.textContent =
-                formatTime(audio.currentTime);
-    
-        });
-    
-        audio.addEventListener('ended', () => {
-    
-            isPlaying = false;
-            playBtn.textContent = '▶';
-    
-        });
-    
+
+        audio.addEventListener('timeupdate', () => durationEl.textContent = formatTime(audio.currentTime));
+        audio.addEventListener('ended', () => { isPlaying = false; playBtn.textContent = '▶'; });
+
         playBtn.addEventListener('click', () => {
-    
             if (isPlaying) {
-    
-                audio.pause();
-                playBtn.textContent = '▶';
-    
+                audio.pause(); playBtn.textContent = '▶';
             } else {
-    
-                audio.play();
-                playBtn.textContent = '❚❚';
-    
+                audio.play(); playBtn.textContent = '❚❚';
             }
-    
             isPlaying = !isPlaying;
-    
         });
-    
+
         messagesContainer.appendChild(voiceDiv);
-    
-        messagesContainer.scrollTop =
-            messagesContainer.scrollHeight;
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
-    
+
     function formatTime(seconds) {
-    
         const min = Math.floor(seconds / 60);
         const sec = Math.floor(seconds % 60);
-    
         return `${min}:${sec.toString().padStart(2, '0')}`;
     }
-    
+
     async function sendMessage() {
         if (isSending) return;
         const msg = input.value.trim();
         if (!msg) return;
-    
+
         isSending = true;
         addMessage(msg, 'sent');
-        
         messagesHistory.push({ role: 'user', content: msg });
         saveHistory();
         input.value = '';
-    
-        // Trigger reply with the actual message
+
         await triggerBotReply(msg);
-    
+
         isSending = false;
         input.focus();
     }
-    
+
     async function triggerBotReply(userMessage = null) {
         if (isSending) return;
         isSending = true;
         typingIndicator.classList.add('visible');
-    
+
         try {
             const payload = { convo_id: convoId };
-            if (userMessage) {
-                payload.message = userMessage;   // Send the message directly
-            }
-    
+            if (userMessage) payload.message = userMessage;
+
             const res = await fetch('/api/reply', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-    
+
             const data = await res.json();
-    
-            if (!data.replies || data.replies.length === 0) {
-                typingIndicator.classList.remove('visible');
-                return;
-            }
-    
+
+            if (!data.replies || data.replies.length === 0) return;
+
             for (let i = 0; i < data.replies.length; i++) {
                 const bubble = data.replies[i];
                 const isLast = i === data.replies.length - 1;
                 const delay = i === 0 ? 0 : 2800;
-    
+
                 await new Promise(resolve => {
                     setTimeout(() => {
                         if (isLast && data.voice_note) {
@@ -566,89 +333,41 @@
             isSending = false;
         }
     }
-    
-    function handleSend(e) {
-    
-        if (e) {
-            e.preventDefault();
-            e.stopImmediatePropagation();
-        }
-    
-        sendMessage();
-    }
-    
-    sendBtn.addEventListener('click', handleSend);
-    
-    sendBtn.addEventListener('touchend', handleSend);
-    
-    input.addEventListener('keypress', e => {
-    
-        if (e.key === 'Enter' && !e.shiftKey) {
-    
-            e.preventDefault();
-    
-            handleSend(e);
-        }
-    });
-    
-    input.addEventListener('focus', () => {
-    
-        setTimeout(() => {
-    
-            sizeApp();
-    
-            messagesContainer.scrollTop =
-                messagesContainer.scrollHeight;
-    
-        }, 300);
-    
-    });
-    
-    window.addEventListener('resize', () => {
-    
-        sizeApp();
-    
-        messagesContainer.scrollTop =
-            messagesContainer.scrollHeight;
-    
-    });
-    
-    function openFullAvatar() {
-    
-        const modal =
-            document.getElementById('avatar-modal');
-    
-        modal.style.display = 'flex';
-    
-        setTimeout(() => {
-            modal.classList.add('show');
-        }, 10);
-    }
-    
-    function closeFullAvatar() {
-    
-        const modal =
-            document.getElementById('avatar-modal');
-    
-        modal.classList.remove('show');
-    
-        setTimeout(() => {
-            modal.style.display = 'none';
-        }, 300);
-    }
-    
-    window.onclick = function(event) {
-    
-        const modal =
-            document.getElementById('avatar-modal');
-    
-        if (event.target === modal) {
-            closeFullAvatar();
-        }
-    };
-    
-    </script>
 
+    // Event Listeners
+    sendBtn.addEventListener('click', sendMessage);
+    sendBtn.addEventListener('touchend', sendMessage);
+
+    input.addEventListener('keypress', e => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+
+    window.addEventListener('load', () => {
+        sizeApp();
+        initChat();
+        input.focus();
+    });
+
+    window.addEventListener('resize', sizeApp);
+
+    function sizeApp() {
+        document.body.style.height = window.innerHeight + 'px';
+    }
+
+    function openFullAvatar() {
+        const modal = document.getElementById('avatar-modal');
+        modal.style.display = 'flex';
+        setTimeout(() => modal.classList.add('show'), 10);
+    }
+
+    function closeFullAvatar() {
+        const modal = document.getElementById('avatar-modal');
+        modal.classList.remove('show');
+        setTimeout(() => modal.style.display = 'none', 300);
+    }
+</script>
 </body>
 </html>
-```

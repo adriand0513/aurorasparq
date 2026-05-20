@@ -238,35 +238,27 @@ def split_into_bubbles(text: str) -> List[str]:
 # ── Routes ──────────────────────────────────────────────────────────────────
 @app.get("/")
 async def home():
+    """Main route - serves the chat interface"""
     try:
-        # Try multiple possible locations
-        possible_paths = [
+        paths_to_try = [
             "static/chat.html",
             "chat.html",
-            "/opt/render/project/src/static/chat.html",  # Render common path
+            "/opt/render/project/src/static/chat.html"
         ]
-        
-        for path in possible_paths:
+        for path in paths_to_try:
             if os.path.exists(path):
                 with open(path, "r", encoding="utf-8") as f:
                     content = f.read()
-                print(f"✅ Successfully serving from: {path}")
+                logger.info(f"✅ Serving chat.html from: {path}")
                 response = HTMLResponse(content)
                 response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
                 response.headers["Pragma"] = "no-cache"
                 response.headers["Expires"] = "0"
                 return response
-                
-        # Fallback if nothing found
-        return HTMLResponse("""
-            <h1 style="color:white; text-align:center; margin-top:100px;">
-                Error: chat.html not found<br><br>
-                Check that static/chat.html exists in your project
-            </h1>
-        """, status_code=404)
-        
+
+        return HTMLResponse("<h1 style='color:white;text-align:center;margin-top:100px;'>Error: chat.html not found</h1>", 404)
     except Exception as e:
-        print(f"Error serving homepage: {e}")
+        logger.error(f"Failed to serve homepage: {e}")
         return HTMLResponse(f"<h1>Server Error: {str(e)}</h1>", 500)
 
 @app.get("/chat")

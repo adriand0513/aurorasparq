@@ -114,14 +114,15 @@
     let userTypingTimeout = null;
     const USER_TYPING_DELAY = 4500;
 
-    // Create typing indicator once
-    let typingIndicator = document.createElement('div');
+    // Create typing indicator
+    const typingIndicator = document.createElement('div');
     typingIndicator.className = 'typing-indicator';
     typingIndicator.innerHTML = `
         <div style="width:8px;height:8px;background:#bb99cc;border-radius:50%;animation:typing 1.4s infinite"></div>
         <div style="width:8px;height:8px;background:#bb99cc;border-radius:50%;animation:typing 1.4s infinite 0.2s"></div>
         <div style="width:8px;height:8px;background:#bb99cc;border-radius:50%;animation:typing 1.4s infinite 0.4s"></div>
         <span>Isabella is typing...</span>`;
+    typingIndicator.style.visibility = 'hidden';
     messagesContainer.appendChild(typingIndicator);
 
     function loadHistory() {
@@ -142,12 +143,16 @@
         div.className = `message ${type}`;
         div.textContent = text;
         messagesContainer.appendChild(div);
+        scrollToBottom();
+    }
+
+    function scrollToBottom() {
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
 
     function showTyping() {
         typingIndicator.style.visibility = 'visible';
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        scrollToBottom();
     }
 
     function hideTyping() {
@@ -176,6 +181,7 @@
                 for (let i = 0; i < data.replies.length; i++) {
                     const bubble = data.replies[i];
                     showTyping();
+                    
                     await new Promise(resolve => {
                         setTimeout(() => {
                             hideTyping();
@@ -246,8 +252,8 @@
         messagesHistory.forEach(m => {
             addMessage(m.content, m.role === 'user' ? 'sent' : 'received');
         });
-        messagesContainer.appendChild(typingIndicator); // ensure typing is at the bottom
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        messagesContainer.appendChild(typingIndicator);
+        scrollToBottom();
     });
 </script>
 </body>

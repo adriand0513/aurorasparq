@@ -114,7 +114,6 @@
     let userTypingTimeout = null;
     const USER_TYPING_DELAY = 4500;
 
-    // Create typing indicator
     const typingIndicator = document.createElement('div');
     typingIndicator.className = 'typing-indicator';
     typingIndicator.innerHTML = `
@@ -159,9 +158,11 @@
         typingIndicator.style.visibility = 'hidden';
     }
 
+    // 60 words per minute
     function getTypingDuration(text) {
         const wordCount = text.trim().split(/\s+/).length;
-        return Math.max(1200, Math.min((wordCount / 40) * 1000, 6500));
+        const baseTime = wordCount * 1000;           // 1 second per word
+        return Math.max(1200, Math.min(baseTime, 10000)); // 1.2s ~ 10s
     }
 
     async function sendToBackend(msg) {
@@ -200,7 +201,6 @@
         }
     }
 
-    // Debounced user input
     function handleUserInput() {
         if (userTypingTimeout) clearTimeout(userTypingTimeout);
         userTypingTimeout = setTimeout(() => {
@@ -244,7 +244,6 @@
         }
     });
 
-    // Initialize
     window.addEventListener('load', () => {
         loadHistory();
         messagesContainer.innerHTML = '';

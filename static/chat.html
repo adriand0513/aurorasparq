@@ -69,7 +69,6 @@
             align-self: flex-start; 
         }
 
-        /* Typing Indicator - Always bottom left */
         #typing-container {
             padding: 0 16px 8px 16px;
             background: rgba(20,5,40,0.95);
@@ -207,7 +206,7 @@
         async function sendToBackend(msg) {
             if (isSending) return;
             isSending = true;
-            showTyping();
+            showTyping();                    // Show once at the start
 
             try {
                 const res = await fetch('/api/reply', {
@@ -217,25 +216,24 @@
                 });
 
                 const data = await res.json();
+
                 if (data.replies && data.replies.length > 0) {
                     for (let bubble of data.replies) {
                         await new Promise(resolve => {
                             setTimeout(() => {
-                                hideTyping();
                                 addMessage(bubble, 'received');
                                 messagesHistory.push({ role: 'assistant', content: bubble });
                                 saveHistory();
+                                scrollToBottom();
                                 resolve();
                             }, getTypingDuration(bubble));
                         });
                     }
-                } else {
-                    hideTyping();
                 }
             } catch (err) {
                 console.error("sendToBackend error:", err);
-                hideTyping();
             } finally {
+                hideTyping();        // ← Only hide AFTER all messages are sent
                 isSending = false;
             }
         }

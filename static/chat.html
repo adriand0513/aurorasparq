@@ -103,15 +103,6 @@
 
 <script>
     const messagesContainer = document.getElementById('messages');
-    const typingIndicator = document.createElement('div');
-    typingIndicator.className = 'typing-indicator';
-    typingIndicator.innerHTML = `
-        <div style="width:8px;height:8px;background:#bb99cc;border-radius:50%;animation:typing 1.4s infinite"></div>
-        <div style="width:8px;height:8px;background:#bb99cc;border-radius:50%;animation:typing 1.4s infinite 0.2s"></div>
-        <div style="width:8px;height:8px;background:#bb99cc;border-radius:50%;animation:typing 1.4s infinite 0.4s"></div>
-        <span>Isabella is typing...</span>`;
-    messagesContainer.appendChild(typingIndicator);
-
     const input = document.getElementById('user-input');
     const sendBtn = document.getElementById('send-btn');
 
@@ -121,7 +112,17 @@
     let messagesHistory = [];
     let isSending = false;
     let userTypingTimeout = null;
-    const USER_TYPING_DELAY = 4500; // 4.5 seconds
+    const USER_TYPING_DELAY = 4500;
+
+    // Create typing indicator once
+    let typingIndicator = document.createElement('div');
+    typingIndicator.className = 'typing-indicator';
+    typingIndicator.innerHTML = `
+        <div style="width:8px;height:8px;background:#bb99cc;border-radius:50%;animation:typing 1.4s infinite"></div>
+        <div style="width:8px;height:8px;background:#bb99cc;border-radius:50%;animation:typing 1.4s infinite 0.2s"></div>
+        <div style="width:8px;height:8px;background:#bb99cc;border-radius:50%;animation:typing 1.4s infinite 0.4s"></div>
+        <span>Isabella is typing...</span>`;
+    messagesContainer.appendChild(typingIndicator);
 
     function loadHistory() {
         try {
@@ -145,12 +146,12 @@
     }
 
     function showTyping() {
-        typingIndicator.classList.add('visible');
+        typingIndicator.style.visibility = 'visible';
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
 
     function hideTyping() {
-        typingIndicator.classList.remove('visible');
+        typingIndicator.style.visibility = 'hidden';
     }
 
     function getTypingDuration(text) {
@@ -194,7 +195,7 @@
         }
     }
 
-    // Debounced sending
+    // Debounced user input
     function handleUserInput() {
         if (userTypingTimeout) clearTimeout(userTypingTimeout);
         userTypingTimeout = setTimeout(() => {
@@ -210,6 +211,7 @@
     }
 
     input.addEventListener('input', handleUserInput);
+
     input.addEventListener('keypress', e => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -237,10 +239,14 @@
         }
     });
 
+    // Initialize
     window.addEventListener('load', () => {
         loadHistory();
         messagesContainer.innerHTML = '';
-        messagesHistory.forEach(m => addMessage(m.content, m.role === 'user' ? 'sent' : 'received'));
+        messagesHistory.forEach(m => {
+            addMessage(m.content, m.role === 'user' ? 'sent' : 'received');
+        });
+        messagesContainer.appendChild(typingIndicator); // ensure typing is at the bottom
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     });
 </script>

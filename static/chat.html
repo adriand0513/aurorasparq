@@ -114,7 +114,7 @@
     let userTypingTimeout = null;
     const USER_TYPING_DELAY = 4500;
 
-    // Create typing indicator
+    // Create typing indicator and make it stick to bottom
     const typingIndicator = document.createElement('div');
     typingIndicator.className = 'typing-indicator';
     typingIndicator.innerHTML = `
@@ -181,7 +181,6 @@
                 for (let i = 0; i < data.replies.length; i++) {
                     const bubble = data.replies[i];
                     showTyping();
-                    
                     await new Promise(resolve => {
                         setTimeout(() => {
                             hideTyping();

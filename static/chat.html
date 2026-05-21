@@ -161,7 +161,8 @@
         let messagesHistory = [];
         let isSending = false;
         let userTypingTimeout = null;
-        const USER_TYPING_DELAY = 4500;
+        const USER_TYPING_DELAY = 4500;   // 4.5 seconds
+        const THINKING_DELAY = 3000;      // 3 seconds thinking delay
 
         function loadHistory() {
             try {
@@ -206,7 +207,11 @@
         async function sendToBackend(msg) {
             if (isSending) return;
             isSending = true;
-            showTyping();                    // Show once at the start
+
+            // 3-second thinking delay before showing typing indicator
+            await new Promise(resolve => setTimeout(resolve, THINKING_DELAY));
+            
+            showTyping();
 
             try {
                 const res = await fetch('/api/reply', {
@@ -233,7 +238,7 @@
             } catch (err) {
                 console.error("sendToBackend error:", err);
             } finally {
-                hideTyping();        // ← Only hide AFTER all messages are sent
+                hideTyping();
                 isSending = false;
             }
         }

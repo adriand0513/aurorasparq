@@ -112,8 +112,9 @@
     let messagesHistory = [];
     let isSending = false;
     let userTypingTimeout = null;
-    const USER_TYPING_DELAY = 4500;
+    const USER_TYPING_DELAY = 4500;   // 4.5 seconds user debounce
 
+    // Create typing indicator
     const typingIndicator = document.createElement('div');
     typingIndicator.className = 'typing-indicator';
     typingIndicator.innerHTML = `
@@ -158,11 +159,11 @@
         typingIndicator.style.visibility = 'hidden';
     }
 
-    // 60 words per minute
+    // 60 words per minute = 1 second per word
     function getTypingDuration(text) {
         const wordCount = text.trim().split(/\s+/).length;
-        const baseTime = wordCount * 1000;           // 1 second per word
-        return Math.max(1200, Math.min(baseTime, 10000)); // 1.2s ~ 10s
+        const baseTime = wordCount * 1000;
+        return Math.max(1400, Math.min(baseTime, 11000));   // 1.4s to 11s
     }
 
     async function sendToBackend(msg) {
@@ -181,7 +182,8 @@
             if (data.replies && data.replies.length > 0) {
                 for (let i = 0; i < data.replies.length; i++) {
                     const bubble = data.replies[i];
-                    showTyping();
+                    showTyping();                    // Show typing
+                    
                     await new Promise(resolve => {
                         setTimeout(() => {
                             hideTyping();
@@ -201,6 +203,7 @@
         }
     }
 
+    // Debounced user sending
     function handleUserInput() {
         if (userTypingTimeout) clearTimeout(userTypingTimeout);
         userTypingTimeout = setTimeout(() => {
@@ -244,6 +247,7 @@
         }
     });
 
+    // Initialize chat
     window.addEventListener('load', () => {
         loadHistory();
         messagesContainer.innerHTML = '';

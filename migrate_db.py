@@ -119,6 +119,24 @@ def migrate():
             conn.close()
             logger.info("Database connection closed")
 
+        # ── Analytics Tables ─────────────────────────────────────────────────
+        if not table_exists("analytics_events", conn):
+            c.execute('''
+                CREATE TABLE analytics_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    event_type TEXT NOT NULL,
+                    convo_id TEXT,
+                    user_id INTEGER,
+                    metadata TEXT,
+                    duration_ms INTEGER
+                )
+            ''')
+            logger.info("Created analytics_events table")
+        
+        c.execute('CREATE INDEX IF NOT EXISTS idx_analytics_time ON analytics_events(timestamp)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_analytics_convo ON analytics_events(convo_id)')
+
 if __name__ == "__main__":
     print("Starting database migration...")
     migrate()

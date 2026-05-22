@@ -1,4 +1,4 @@
-# main.py - Isabella Chatbot (Complete with Analytics + Auth)
+# main.py - Isabella Chatbot (Complete with Auth + Protected Chat + Analytics)
 import os
 import re
 import random
@@ -102,83 +102,48 @@ async def register(body: dict = Body(...)):
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = authenticate_user(form_data.username, form_data.password)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
     
-    access_token = create_access_token(
-        data={"sub": str(user["id"])},
-        expires_delta=timedelta(minutes=JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
-    )
-    
+    access_token = create_access_token(data={"sub": str(user["id"])})
     log_event("user_login", user_id=user["id"])
     return {"access_token": access_token, "token_type": "bearer", "user": user}
 
 
-# ── Protected Dashboard ─────────────────────────────────────
+# ── Protected Routes ─────────────────────────────────────
 @app.get("/dashboard")
 async def admin_dashboard(token: str = None):
-    """Simple ADMIN_TOKEN protection (you can switch to JWT later)"""
-    if token != ADMIN_TOKEN and token != "Bearer " + ADMIN_TOKEN:
-        raise HTTPException(403, "Unauthorized - Invalid admin token")
-    
+    if token != ADMIN_TOKEN:
+        raise HTTPException(403, "Unauthorized")
     try:
         with open("static/dashboard.html", "r", encoding="utf-8") as f:
-            content = f.read()
-        response = HTMLResponse(content)
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        return response
-    except Exception as e:
-        logger.error(f"Dashboard error: {e}")
-        return HTMLResponse("<h1>Dashboard not found.</h1>", 404)
+            return HTMLResponse(f.read())
+    except:
+        return HTMLResponse("<h1>Dashboard not found</h1>", 404)
 
 
-# ── Analytics WebSocket (Protected) ─────────────────────────────
 @app.websocket("/ws/analytics")
 async def analytics_websocket(websocket: WebSocket, token: str = None):
-    # Simple token check via query param: ?token=your_admin_token
     if token != ADMIN_TOKEN:
-        await websocket.close(code=1008)
+        await websocket.close()
         return
-    
     await websocket.accept()
     active_ws.append(websocket)
-    logger.info("Analytics dashboard connected")
     try:
         while True:
-            stats = get_live_stats()
-            await websocket.send_json(stats)
+            await websocket.send_json(get_live_stats())
             await asyncio.sleep(1.5)
     except WebSocketDisconnect:
         active_ws.remove(websocket)
-    except Exception as e:
-        logger.error(f"WebSocket error: {e}")
 
 
-# ── Chat Route ─────────────────────────────────────
-@app.get("/")
-async def home():
-    try:
-        with open("static/chat.html", "r", encoding="utf-8") as f:
-            content = f.read()
-        response = HTMLResponse(content)
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        return response
-    except Exception as e:
-        logger.error(f"Homepage error: {e}")
-        return HTMLResponse("<h1>Server Error</h1>", 500)
-
-
+# Protected Chat Endpoint
 @app.post("/api/reply")
-async def generate_reply(body: dict = Body(...)):
+async def generate_reply(body: dict = Body(...), user: dict = Depends(get_current_user)):
+    """Now requires valid JWT token"""
     start_time = time.time()
     
     convo_id = body.get("convo_id")
     user_message = body.get("message", "").strip()
-
-    logger.info(f"📥 /api/reply | convo={convo_id} | msg='{user_message[:100]}'")
 
     if not convo_id:
         raise HTTPException(400, "convo_id required")
@@ -189,7 +154,6 @@ async def generate_reply(body: dict = Body(...)):
         return JSONResponse({"replies": [], "voice_note": ""}, status_code=200)
 
     last_reply_time[convo_id] = now
-
     if is_rate_limited(convo_id):
         return JSONResponse({"replies": [], "voice_note": ""}, status_code=200)
 
@@ -204,7 +168,7 @@ async def generate_reply(body: dict = Body(...)):
             history = history[-40:]
 
         system_prompt = get_system_prompt(
-            user_name=None,
+            user_name=user.get("full_name"),
             current_time=context.get("time", ""),
             weather=context.get("weather", "")
         )
@@ -221,7 +185,6 @@ async def generate_reply(body: dict = Body(...)):
 
         messages = [{"role": "system", "content": system_prompt}] + history[-20:]
 
-        # Call Grok
         resp = requests.post(
             XAI_API_BASE,
             headers={"Authorization": f"Bearer {XAI_API_KEY}", "Content-Type": "application/json"},
@@ -242,16 +205,14 @@ async def generate_reply(body: dict = Body(...)):
             save_message(convo_id, {"role": "assistant", "content": bubble})
 
         duration_ms = int((time.time() - start_time) * 1000)
-        log_event("response_generated", convo_id, duration_ms=duration_ms)
+        log_event("response_generated", convo_id, user_id=user["id"], duration_ms=duration_ms)
 
-        logger.info(f"✅ Generated {len(bubbles)} bubbles | Latency: {duration_ms}ms")
         return {"replies": bubbles, "voice_note": ""}
 
     except Exception as e:
-        duration_ms = int((time.time() - start_time) * 1000)
-        log_event("error", convo_id, metadata={"error": str(e)}, duration_ms=duration_ms)
-        logger.error(f"💥 CRITICAL ERROR: {e}", exc_info=True)
-        return {"replies": ["Sorry, I'm having trouble responding right now..."], "voice_note": ""}
+        log_event("error", convo_id, user_id=user["id"], metadata={"error": str(e)})
+        logger.error(f"Error: {e}")
+        return {"replies": ["Sorry, I'm having trouble..."], "voice_note": ""}
 
 
 if __name__ == "__main__":

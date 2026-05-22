@@ -72,16 +72,32 @@ def authenticate_user(email: str, password: str):
     email = email.lower().strip()
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT id, email, full_name FROM users WHERE email = ?", (email,))
+    
+    # Select id, email, hashed_password, full_name
+    c.execute("""
+        SELECT id, email, hashed_password, full_name 
+        FROM users 
+        WHERE email = ?
+    """, (email,))
+    
     user = c.fetchone()
     conn.close()
 
     if not user:
-        return None
-    if not verify_password(password, user[2] if len(user) > 2 else ""):  # hashed_password is index 1 actually, adjust if needed
+        logger.info(f"Auth failed: No user found for {email}")
         return None
 
-    return {"id": user[0], "email": user[1], "full_name": user[2] if len(user) > 2 else None}
+    # Correct index: hashed_password is at index 2
+    if not verify_password(password, user[2]):
+        logger.info(f"Auth failed: Wrong password for {email}")
+        return None
+
+    logger.info(f"✅ Auth success for {email}")
+    return {
+        "id": user[0],
+        "email": user[1],
+        "full_name": user[3] if len(user) > 3 else None
+    }
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):

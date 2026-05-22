@@ -1,32 +1,43 @@
-# memory.py - Long-term Memory & Relationship System + Analytics
+# memory.py - Fixed Migration + Analytics
 import sqlite3
 import os
 from datetime import datetime
 from typing import List, Dict, Optional
 
-from analytics import log_event   # ← Added for analytics
+from analytics import log_event
 
-DB_PATH = os.path.abspath(os.getenv("DB_PATH", "users.db"))
+DB_PATH = os.path.abspath(os.getenv("DB_PATH", "isabella.db"))
 
 def init_db():
-    """Initialize and safely migrate all memory tables."""
+    """Safe initialization with proper migrations"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    # Raw chat history
+    # Create base table
     c.execute('''
         CREATE TABLE IF NOT EXISTS chat_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            convo_id TEXT NOT NULL,
+            convo_id TEXT,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
 
-    c.execute('CREATE INDEX IF NOT EXISTS idx_convo_id ON chat_history (convo_id)')
+    # === Safe Migration: Add convo_id column if missing ===
+    c.execute("PRAGMA table_info(chat_history)")
+    columns = [row[1] for row in c.fetchall()]
+    
+    if "convo_id" not in columns:
+        print("Migrating: Adding convo_id column...")
+        c.execute("ALTER TABLE chat_history ADD COLUMN convo_id TEXT")
+        print("Migration successful: convo_id column added")
 
-    # Key long-term facts
+    # Create indexes
+    c.execute('CREATE INDEX IF NOT EXISTS idx_convo_id ON chat_history (convo_id)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_timestamp ON chat_history (timestamp)')
+
+    # Other tables...
     c.execute('''
         CREATE TABLE IF NOT EXISTS key_facts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,9 +48,7 @@ def init_db():
             last_recalled DATETIME
         )
     ''')
-    c.execute('CREATE INDEX IF NOT EXISTS idx_facts_convo ON key_facts (convo_id)')
 
-    # Relationship progression
     c.execute('''
         CREATE TABLE IF NOT EXISTS relationship_state (
             convo_id TEXT PRIMARY KEY,
@@ -52,7 +61,7 @@ def init_db():
 
     conn.commit()
     conn.close()
-    print(f"Memory system initialized. DB: {DB_PATH}")
+    print(f"✅ Database initialized successfully at: {DB_PATH}")
 
 
 # ── Basic History Functions ───────────────────────────────────────────────

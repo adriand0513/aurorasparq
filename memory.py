@@ -3,6 +3,7 @@ import sqlite3
 import os
 from datetime import datetime
 from typing import List, Dict, Optional
+from analytics import log_event
 
 DB_PATH = os.path.abspath(os.getenv("DB_PATH", "users.db"))
 
@@ -84,6 +85,10 @@ def save_message(convo_id: str, message: Dict):
     ''', (convo_id, message["role"], message["content"]))
     conn.commit()
     conn.close()
+
+    # Analytics
+    event_type = "message_sent" if message["role"] == "user" else "message_received"
+    log_event(event_type, convo_id, metadata={"length": len(message["content"])})
 
 # ── Key Facts ─────────────────────────────────────────────────────────────
 def add_key_fact(convo_id: str, fact: str, importance: int = 7):

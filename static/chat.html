@@ -35,10 +35,55 @@
             background: url('/static/images/isabella.png') center/cover;
             border: 2px solid var(--accent);
         }
-        #chat-wrapper {
+
+        #auth-screen, #chat-wrapper {
             flex: 1;
             display: flex;
             flex-direction: column;
+        }
+
+        #auth-screen {
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .auth-card {
+            background: rgba(30,20,50,0.95);
+            padding: 32px;
+            border-radius: 24px;
+            border: 1px solid var(--accent);
+            width: 100%;
+            max-width: 380px;
+        }
+
+        input {
+            width: 100%;
+            padding: 14px 16px;
+            margin: 8px 0;
+            background: rgba(50,20,80,0.7);
+            border: none;
+            border-radius: 30px;
+            color: white;
+            font-size: 16px;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            margin: 8px 0;
+            border: none;
+            border-radius: 30px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            color: white;
+        }
+
+        #chat-wrapper {
             min-height: 0;
         }
         #messages {
@@ -65,12 +110,11 @@
             background: rgba(30,20,50,0.95);
             align-self: flex-start;
         }
-        #typing-container {
-            padding: 0 16px 8px 16px;
+
+        #typing-container, .input-area {
             background: rgba(20,5,40,0.95);
-            display: none;
-            flex-shrink: 0;
         }
+
         .typing-indicator {
             display: flex;
             align-items: center;
@@ -81,74 +125,54 @@
             width: fit-content;
         }
         .typing-dot {
-            width: 8px;
-            height: 8px;
+            width: 8px; height: 8px;
             background: #bb99cc;
             border-radius: 50%;
             animation: typingBounce 1.4s infinite ease-in-out;
         }
         .typing-dot:nth-child(2) { animation-delay: 0.2s; }
         .typing-dot:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes typingBounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-6px); }
-        }
-
-        /* Offline Message */
-        #offline-message {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(30,20,50,0.95);
-            padding: 24px 32px;
-            border-radius: 20px;
-            text-align: center;
-            max-width: 85%;
-            display: none;
-            z-index: 100;
-            border: 1px solid var(--accent);
-        }
-
-        .input-area {
-            padding: 12px 16px;
-            background: rgba(20,5,40,0.95);
-            display: flex;
-            gap: 10px;
-            flex-shrink: 0;
-        }
-        #user-input {
-            flex: 1;
-            padding: 14px 18px;
-            border: none;
-            border-radius: 30px;
-            background: rgba(50,20,80,0.7);
-            color: white;
-            font-size: 16px;
-        }
-        #send-btn {
-            width: 50px; height: 50px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, var(--accent), var(--accent2));
-            color: white;
-            border: none;
-            font-size: 20px;
-            cursor: pointer;
-        }
-        #user-input:disabled, #send-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
+        @keyframes typingBounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="avatar"></div>
-        <h2>Isabella</h2>
+    <!-- Auth Screen -->
+    <div id="auth-screen">
+        <div class="auth-card">
+            <h2 class="text-center text-2xl mb-6">Welcome to Isabella</h2>
+            
+            <div id="login-form">
+                <input id="login-email" type="email" placeholder="Email" />
+                <input id="login-password" type="password" placeholder="Password" />
+                <button class="btn-primary" onclick="login()">Login</button>
+                <p class="text-center text-sm mt-4">
+                    No account? <span onclick="showRegister()" style="color:var(--accent); cursor:pointer;">Register</span>
+                </p>
+            </div>
+
+            <div id="register-form" style="display:none;">
+                <input id="reg-fullname" type="text" placeholder="Full Name" />
+                <input id="reg-email" type="email" placeholder="Email" />
+                <input id="reg-password" type="password" placeholder="Password" />
+                <button class="btn-primary" onclick="register()">Create Account</button>
+                <p class="text-center text-sm mt-4">
+                    Already have an account? <span onclick="showLogin()" style="color:var(--accent); cursor:pointer;">Login</span>
+                </p>
+            </div>
+        </div>
     </div>
-    <div id="chat-wrapper">
+
+    <!-- Chat Screen -->
+    <div id="chat-wrapper" style="display: none;">
+        <div class="header">
+            <div class="avatar"></div>
+            <h2>Isabella</h2>
+            <div style="margin-left:auto; font-size:0.9rem; opacity:0.7;" id="user-info"></div>
+        </div>
+        
         <div id="messages"></div>
-        <div id="typing-container">
+        
+        <div id="typing-container" style="display:none; padding:8px 16px;">
             <div class="typing-indicator">
                 <div class="typing-dot"></div>
                 <div class="typing-dot"></div>
@@ -156,191 +180,187 @@
                 <span>Isabella is typing...</span>
             </div>
         </div>
-    </div>
 
-    <!-- Offline Message -->
-    <div id="offline-message">
-        <h3>🌙 Isabella is Offline</h3>
-        <p>Only available between<br><strong>5:00 PM - 2:00 AM ET</strong></p>
-        <p style="margin-top: 12px; opacity: 0.8;">Come back during those hours ✨</p>
-    </div>
-
-    <div class="input-area">
-        <input id="user-input" placeholder="Message Isabella..." autocomplete="off" />
-        <button id="send-btn">➤</button>
+        <div class="input-area" style="padding:12px 16px; display:flex; gap:10px;">
+            <input id="user-input" placeholder="Message Isabella..." autocomplete="off" />
+            <button id="send-btn" style="width:50px;height:50px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));color:white;border:none;font-size:20px;cursor:pointer;">➤</button>
+        </div>
     </div>
 
     <script>
+        let token = localStorage.getItem('token');
+        let currentUser = null;
+        let convoId = localStorage.getItem('convo_id') || 'conv_' + Date.now();
+        localStorage.setItem('convo_id', convoId);
+
         const messagesContainer = document.getElementById('messages');
         const typingContainer = document.getElementById('typing-container');
         const input = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
-        const offlineMessage = document.getElementById('offline-message');
+        const authScreen = document.getElementById('auth-screen');
+        const chatWrapper = document.getElementById('chat-wrapper');
+        const userInfo = document.getElementById('user-info');
 
-        let convoId = localStorage.getItem('convo_id') || 'conv_' + Date.now();
-        localStorage.setItem('convo_id', convoId);
-
-        let messagesHistory = [];
         let isSending = false;
-        let responseTimeout = null;
 
-        const USER_TYPING_DELAY = 4500;
-        const THINKING_DELAY = 3000;
-
-        function isIsabellaAvailable() {
-            const now = new Date();
-            const nyFormatter = new Intl.DateTimeFormat('en-US', {
-                timeZone: 'America/New_York',
-                hour: 'numeric',
-                hour12: false
-            });
-            const hour = parseInt(nyFormatter.format(now));
-            return hour >= 17 || hour < 2; // 5 PM to 2 AM ET
+        function showLogin() {
+            document.getElementById('login-form').style.display = 'block';
+            document.getElementById('register-form').style.display = 'none';
         }
 
-        function updateAvailability() {
-            const available = isIsabellaAvailable();
-            
-            if (available) {
-                offlineMessage.style.display = 'none';
-                input.disabled = false;
-                sendBtn.disabled = false;
-            } else {
-                offlineMessage.style.display = 'block';
-                input.disabled = true;
-                sendBtn.disabled = true;
-                if (responseTimeout) clearTimeout(responseTimeout);
-            }
+        function showRegister() {
+            document.getElementById('login-form').style.display = 'none';
+            document.getElementById('register-form').style.display = 'block';
         }
 
-        function loadHistory() {
+        async function register() {
+            const fullName = document.getElementById('reg-fullname').value.trim();
+            const email = document.getElementById('reg-email').value.trim();
+            const password = document.getElementById('reg-password').value.trim();
+
+            if (!email || !password) return alert("Email and password required");
+
             try {
-                const saved = localStorage.getItem('messages_history');
-                messagesHistory = saved ? JSON.parse(saved) : [];
-            } catch (e) {
-                messagesHistory = [];
+                const res = await fetch('/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password, full_name: fullName })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    alert("Account created! Please login.");
+                    showLogin();
+                } else {
+                    alert(data.detail || "Registration failed");
+                }
+            } catch(e) {
+                alert("Error during registration");
             }
         }
 
-        function saveHistory() {
-            localStorage.setItem('messages_history', JSON.stringify(messagesHistory));
+        async function login() {
+            const email = document.getElementById('login-email').value.trim();
+            const password = document.getElementById('login-password').value.trim();
+
+            try {
+                const formData = new FormData();
+                formData.append('username', email);
+                formData.append('password', password);
+
+                const res = await fetch('/auth/login', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await res.json();
+                if (res.ok) {
+                    token = data.access_token;
+                    currentUser = data.user;
+                    localStorage.setItem('token', token);
+                    localStorage.setItem('user', JSON.stringify(currentUser));
+                    
+                    authScreen.style.display = 'none';
+                    chatWrapper.style.display = 'flex';
+                    userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email}`;
+                    loadHistory();
+                } else {
+                    alert(data.detail || "Login failed");
+                }
+            } catch(e) {
+                alert("Login error");
+            }
         }
 
+        // Check if already logged in
+        function checkAuth() {
+            if (token) {
+                try {
+                    currentUser = JSON.parse(localStorage.getItem('user'));
+                    authScreen.style.display = 'none';
+                    chatWrapper.style.display = 'flex';
+                    userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email}`;
+                    loadHistory();
+                } catch(e) {}
+            }
+        }
+
+        // Rest of your original chat logic (sendMessage, etc.)
         function addMessage(text, type) {
             const div = document.createElement('div');
             div.className = `message ${type}`;
             div.textContent = text;
             messagesContainer.appendChild(div);
-            scrollToBottom();
-        }
-
-        function scrollToBottom() {
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
 
         function showTyping() {
             typingContainer.style.display = 'block';
-            scrollToBottom();
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
 
         function hideTyping() {
             typingContainer.style.display = 'none';
         }
 
-        function getTypingDuration(text) {
-            const wordCount = text.trim().split(/\s+/).length;
-            let baseTime = wordCount * 650;
-            baseTime += Math.random() * 450;
-            return Math.max(800, Math.min(Math.floor(baseTime), 14500));
-        }
-
         async function sendToBackend(msg) {
-            if (isSending || !isIsabellaAvailable()) return;
+            if (isSending) return;
             isSending = true;
             showTyping();
 
             try {
                 const res = await fetch('/api/reply', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ convo_id: convoId, message: msg })
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ 
+                        convo_id: convoId, 
+                        message: msg 
+                    })
                 });
 
                 const data = await res.json();
-                if (data.replies && data.replies.length > 0) {
+                if (data.replies) {
                     for (let bubble of data.replies) {
                         await new Promise(resolve => {
                             setTimeout(() => {
                                 addMessage(bubble, 'received');
-                                messagesHistory.push({ role: 'assistant', content: bubble });
-                                saveHistory();
-                                scrollToBottom();
                                 resolve();
-                            }, getTypingDuration(bubble));
+                            }, 800);
                         });
                     }
                 }
             } catch (err) {
-                console.error("sendToBackend error:", err);
+                console.error(err);
             } finally {
                 hideTyping();
                 isSending = false;
             }
         }
 
-        function startResponseTimer(msg) {
-            if (responseTimeout) clearTimeout(responseTimeout);
-
-            responseTimeout = setTimeout(() => {
-                setTimeout(() => {
-                    sendToBackend(msg);
-                    responseTimeout = null;
-                }, THINKING_DELAY);
-            }, USER_TYPING_DELAY);
-        }
-
-        function handleUserInput() {
-            if (responseTimeout) {
-                clearTimeout(responseTimeout);
-                responseTimeout = null;
-            }
-        }
-
         function sendMessage() {
-            if (!isIsabellaAvailable()) return;
             const msg = input.value.trim();
             if (!msg || isSending) return;
 
             addMessage(msg, 'sent');
-            messagesHistory.push({ role: 'user', content: msg });
-            saveHistory();
-
             input.value = '';
-            startResponseTimer(msg);
+            sendToBackend(msg);
         }
 
-        // Event listeners
-        input.addEventListener('input', handleUserInput);
+        function loadHistory() {
+            messagesContainer.innerHTML = '';
+            // You can enhance this to load from backend per user later
+        }
+
+        // Event Listeners
         input.addEventListener('keypress', e => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
-            }
+            if (e.key === 'Enter') sendMessage();
         });
         sendBtn.addEventListener('click', sendMessage);
 
         // Initialize
-        window.addEventListener('load', () => {
-            loadHistory();
-            messagesContainer.innerHTML = '';
-            messagesHistory.forEach(m => {
-                addMessage(m.content, m.role === 'user' ? 'sent' : 'received');
-            });
-            scrollToBottom();
-
-            updateAvailability();
-            setInterval(updateAvailability, 30000); // Check every 30 seconds
-        });
+        window.addEventListener('load', checkAuth);
     </script>
 </body>
 </html>

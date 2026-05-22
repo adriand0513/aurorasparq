@@ -1,10 +1,9 @@
-# main.py - Isabella Chatbot (Complete & Stable)
+# main.py - Isabella Chatbot (Complete & Stable with Real-time Analytics)
 import os
 import re
 import random
 import time
 import logging
-import csv
 import sqlite3
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -12,10 +11,12 @@ import requests
 from dotenv import load_dotenv
 from typing import Dict, List
 from collections import defaultdict
-from fastapi import FastAPI, HTTPException, Body
+
+from fastapi import FastAPI, HTTPException, Body, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
+import asyncio
 
 # Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
@@ -34,6 +35,7 @@ from memory import (
     get_relationship_level, get_pet_name, summarize_recent_chat
 )
 from relationship import update_relationship
+from analytics import log_event, get_live_stats   # ← New import
 
 logger.info(f"Starting Isabella server - {datetime.now().isoformat()}")
 
@@ -43,7 +45,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # ── Guards ─────────────────────────────────────
 last_reply_time = defaultdict(float)
 REPLY_COOLDOWN_SECONDS = 4.5
-
 convo_rate_limits = defaultdict(list)
 
 def is_rate_limited(convo_id: str, max_per_minute: int = 20) -> bool:
@@ -68,9 +69,11 @@ def get_nyc_context() -> Dict[str, str]:
 def split_into_bubbles(text: str) -> List[str]:
     if not text.strip():
         return ["..."]
-    # Simple split for now
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())
     return [s.strip() for s in sentences if s.strip()]
+
+# ── WebSocket Connections ─────────────────────────────
+active_ws = []
 
 # ── Routes ─────────────────────────────────────
 @app.get("/")
@@ -85,8 +88,43 @@ async def home():
         logger.error(f"Homepage error: {e}")
         return HTMLResponse("<h1>Server Error - chat.html not found</h1>", 500)
 
+
+@app.get("/dashboard")
+async def admin_dashboard():
+    """Real-time Analytics Dashboard"""
+    try:
+        with open("static/dashboard.html", "r", encoding="utf-8") as f:
+            content = f.read()
+        response = HTMLResponse(content)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        return response
+    except Exception as e:
+        logger.error(f"Dashboard error: {e}")
+        return HTMLResponse("<h1>Dashboard not found. Make sure dashboard.html exists in /static/</h1>", 404)
+
+
+@app.websocket("/ws/analytics")
+async def analytics_websocket(websocket: WebSocket):
+    """Real-time analytics streaming"""
+    await websocket.accept()
+    active_ws.append(websocket)
+    logger.info("New analytics dashboard connection")
+    try:
+        while True:
+            stats = get_live_stats()
+            await websocket.send_json(stats)
+            await asyncio.sleep(1.5)  # Update every 1.5 seconds
+    except WebSocketDisconnect:
+        active_ws.remove(websocket)
+        logger.info("Analytics dashboard disconnected")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+
+
 @app.post("/api/reply")
-async def generate_reply(body: dict = Body(...)):   # ← Changed from Dict[str, str]
+async def generate_reply(body: dict = Body(...)):
+    start_time = time.time()  # ← For latency tracking
+    
     convo_id = body.get("convo_id")
     user_message = body.get("message", "").strip()
 
@@ -110,6 +148,7 @@ async def generate_reply(body: dict = Body(...)):   # ← Changed from Dict[str,
 
         if user_message:
             save_message(convo_id, {"role": "user", "content": user_message})
+            log_event("message_sent", convo_id, metadata={"length": len(user_message)})
 
         history = get_history(convo_id)
         if len(history) > 40:
@@ -155,12 +194,18 @@ async def generate_reply(body: dict = Body(...)):   # ← Changed from Dict[str,
         for bubble in bubbles:
             save_message(convo_id, {"role": "assistant", "content": bubble})
 
-        logger.info(f"✅ Generated {len(bubbles)} bubbles")
+        duration_ms = int((time.time() - start_time) * 1000)
+        log_event("response_generated", convo_id, duration_ms=duration_ms)
+
+        logger.info(f"✅ Generated {len(bubbles)} bubbles | Latency: {duration_ms}ms")
         return {"replies": bubbles, "voice_note": ""}
 
     except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        log_event("error", convo_id, metadata={"error": str(e)}, duration_ms=duration_ms)
         logger.error(f"💥 CRITICAL ERROR: {e}", exc_info=True)
         return {"replies": ["Sorry, I'm having trouble responding right now..."], "voice_note": ""}
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aurora SPARQ • Analytics Dashboard</title>
+    <title>Isabella • Analytics Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -11,57 +11,74 @@
         .card { background: rgba(30,20,50,0.95); border: 1px solid #c300ff; }
     </style>
 </head>
-<body class="min-h-screen p-6">
+<body class="p-6">
     <div class="max-w-7xl mx-auto">
-        <h1 class="text-4xl font-bold mb-8 text-center">Isabella Analytics</h1>
+        <h1 class="text-4xl font-bold mb-8 text-center text-purple-300">Isabella Analytics</h1>
         
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div class="card p-6 rounded-3xl">
-                <h3 class="text-lg opacity-75">Active Sessions</h3>
-                <p id="active" class="text-5xl font-bold text-pink-400 mt-2">0</p>
-            </div>
-            <div class="card p-6 rounded-3xl">
-                <h3 class="text-lg opacity-75">Messages / Minute</h3>
-                <p id="mpm" class="text-5xl font-bold text-purple-400 mt-2">0</p>
-            </div>
-            <div class="card p-6 rounded-3xl">
-                <h3 class="text-lg opacity-75">Avg Response Time</h3>
-                <p id="response" class="text-5xl font-bold text-cyan-400 mt-2">0ms</p>
-            </div>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8" id="live-cards">
+            <!-- Live stats populated by JS -->
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div class="card p-6 rounded-3xl">
-                <h3 class="mb-4">Real-time Activity</h3>
-                <canvas id="activityChart"></canvas>
+                <h3 class="mb-4 text-lg">Top Archetypes</h3>
+                <div id="archetype-list" class="space-y-3"></div>
             </div>
+            
             <div class="card p-6 rounded-3xl">
-                <h3 class="mb-4">Popular Topics</h3>
-                <div id="topics" class="space-y-2"></div>
+                <h3 class="mb-4 text-lg">Activity Trend</h3>
+                <canvas id="activityChart" height="140"></canvas>
             </div>
         </div>
     </div>
 
     <script>
         let activityChart;
-        const ws = new WebSocket(`ws://${location.host}/ws/analytics`);
+        let ws;
 
-        ws.onmessage = function(event) {
-            const data = JSON.parse(event.data);
-            
-            document.getElementById('active').textContent = data.active_sessions;
-            document.getElementById('mpm').textContent = data.messages_per_minute;
-            document.getElementById('response').textContent = data.avg_response_time_ms + 'ms';
-        };
+        function connectWebSocket() {
+            const token = prompt("Enter Admin Token to access dashboard:");
+            ws = new WebSocket(`ws://${location.host}/ws/analytics?token=${token}`);
 
-        // Initialize Chart
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                
+                // Update live cards
+                document.getElementById('live-cards').innerHTML = `
+                    <div class="card p-6 rounded-3xl">
+                        <h3 class="opacity-75">Active Sessions</h3>
+                        <p class="text-5xl font-bold text-pink-400">${data.active_sessions}</p>
+                    </div>
+                    <div class="card p-6 rounded-3xl">
+                        <h3 class="opacity-75">Messages / Min</h3>
+                        <p class="text-5xl font-bold text-purple-400">${data.messages_per_minute}</p>
+                    </div>
+                    <div class="card p-6 rounded-3xl">
+                        <h3 class="opacity-75">Avg Response</h3>
+                        <p class="text-5xl font-bold text-cyan-400">${data.avg_response_time_ms}ms</p>
+                    </div>
+                    <div class="card p-6 rounded-3xl">
+                        <h3 class="opacity-75">Archetypes Detected</h3>
+                        <p class="text-5xl font-bold text-amber-400">${data.total_archetypes_detected}</p>
+                    </div>
+                `;
+
+                // Update archetype list
+                const list = document.getElementById('archetype-list');
+                list.innerHTML = '';
+                Object.entries(data.top_archetypes || {}).forEach(([arch, count]) => {
+                    list.innerHTML += `
+                        <div class="flex justify-between bg-black/30 p-3 rounded-2xl">
+                            <span>${arch.replace('_', ' ')}</span>
+                            <span class="font-bold">${count}</span>
+                        </div>
+                    `;
+                });
+            };
+        }
+
         window.onload = () => {
-            const ctx = document.getElementById('activityChart');
-            activityChart = new Chart(ctx, {
-                type: 'line',
-                data: { labels: [], datasets: [{ label: 'Messages', data: [], borderColor: '#c300ff' }] },
-                options: { responsive: true, scales: { y: { beginAtZero: true } } }
-            });
+            connectWebSocket();
         };
     </script>
 </body>

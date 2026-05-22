@@ -25,7 +25,8 @@ def get_password_hash(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
         return pwd_context.verify(plain_password, hashed_password)
-    except:
+    except Exception as e:
+        logger.error(f"Password verify error: {e}")
         return False
 
 
@@ -42,7 +43,7 @@ def register_user(email: str, password: str, full_name: str):
     c = conn.cursor()
     
     try:
-        # Safe migration: ensure full_name column exists
+        # Safe migration for full_name column
         c.execute("PRAGMA table_info(users)")
         columns = [row[1] for row in c.fetchall()]
         
@@ -55,6 +56,7 @@ def register_user(email: str, password: str, full_name: str):
             INSERT INTO users (email, hashed_password, full_name)
             VALUES (?, ?, ?)
         ''', (email, hashed, full_name))
+        
         conn.commit()
         logger.info(f"✅ New user registered: {email}")
         return True
@@ -73,7 +75,6 @@ def authenticate_user(email: str, password: str):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    # Select id, email, hashed_password, full_name
     c.execute("""
         SELECT id, email, hashed_password, full_name 
         FROM users 
@@ -87,7 +88,7 @@ def authenticate_user(email: str, password: str):
         logger.info(f"Auth failed: No user found for {email}")
         return None
 
-    # Correct index: hashed_password is at index 2
+    # hashed_password is at index 2
     if not verify_password(password, user[2]):
         logger.info(f"Auth failed: Wrong password for {email}")
         return None
@@ -109,7 +110,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = int(payload.get("sub"))
-    except:
+    except Exception:
         raise credentials_exception
 
     conn = sqlite3.connect(DB_PATH)
@@ -120,4 +121,9 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     
     if user is None:
         raise credentials_exception
-    return {"id": user[0], "email": user[1], "full_name": user[2] if len(user) > 2 else None}
+    
+    return {
+        "id": user[0], 
+        "email": user[1], 
+        "full_name": user[2] if len(user) > 2 else None
+    }

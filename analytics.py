@@ -1,73 +1,97 @@
-# analytics.py - Clean Dashboard Route
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+# analytics.py
 import sqlite3
-import logging
+import json
+import time
+from datetime import datetime
+from collections import defaultdict
+from config import DB_PATH
 
-logger = logging.getLogger(__name__)
+def log_event(event_type: str, convo_id: str = None, user_id: int = None, 
+              metadata: dict = None, duration_ms: int = None):
+    """Log any analytics event"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO analytics_events 
+        (event_type, convo_id, user_id, metadata, duration_ms)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (
+        event_type,
+        convo_id,
+        user_id,
+        json.dumps(metadata) if metadata else None,
+        duration_ms
+    ))
+    conn.commit()
+    conn.close()
 
-router = APIRouter()
 
-DB_PATH = "analytics.db"
-ANALYTICS_PASSWORD = "your_secure_password_here"   # ← CHANGE THIS
+def get_live_stats():
+    """Get real-time aggregated stats"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    
+    # Active conversations in last 5 minutes
+    c.execute('''
+        SELECT COUNT(DISTINCT convo_id) 
+        FROM analytics_events 
+        WHERE timestamp > datetime('now', '-5 minutes')
+        AND event_type = 'message_sent'
+    ''')
+    active_convos = c.fetchone()[0] or 0
 
-def get_analytics_data():
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
+    # Messages per minute
+    c.execute('''
+        SELECT COUNT(*) 
+        FROM analytics_events 
+        WHERE timestamp > datetime('now', '-1 minute')
+        AND event_type IN ('message_sent', 'message_received')
+    ''')
+    messages_per_min = c.fetchone()[0] or 0
 
-        c.execute("SELECT COUNT(*) as total_convos FROM conversations")
-        total_convos = c.fetchone()["total_convos"] or 0
+    # Avg response time
+    c.execute('''
+        SELECT AVG(duration_ms) 
+        FROM analytics_events 
+        WHERE event_type = 'response_generated' 
+        AND duration_ms IS NOT NULL
+        AND timestamp > datetime('now', '-30 minutes')
+    ''')
+    avg_response = round(c.fetchone()[0] or 0)
 
-        c.execute("SELECT COUNT(*) as total_messages FROM messages")
-        total_messages = c.fetchone()["total_messages"] or 0
+    conn.close()
 
-        c.execute("SELECT COUNT(DISTINCT convo_id) as active_today FROM messages WHERE date(timestamp) = date('now')")
-        active_today = c.fetchone()["active_today"] or 0
+    return {
+        "active_sessions": active_convos,
+        "messages_per_minute": messages_per_min,
+        "avg_response_time_ms": avg_response,
+        "timestamp": datetime.now().isoformat()
+    }
 
-        c.execute("SELECT strftime('%H', timestamp) as hour, COUNT(*) as count FROM messages GROUP BY hour")
-        hourly = {row["hour"]: row["count"] for row in c.fetchall()}
 
-        c.execute("SELECT date(timestamp) as day, COUNT(*) as count FROM messages WHERE timestamp >= date('now', '-14 days') GROUP BY day")
-        daily = {row["day"]: row["count"] for row in c.fetchall()}
-
-        c.execute("SELECT emotion, COUNT(*) as count FROM messages WHERE role = 'assistant' GROUP BY emotion ORDER BY count DESC LIMIT 5")
-        emotions = {row["emotion"]: row["count"] for row in c.fetchall()}
-
-        conn.close()
-
-        return {
-            "summary": {
-                "total_conversations": total_convos,
-                "total_messages": total_messages,
-                "active_today": active_today
-            },
-            "hourly_activity": hourly,
-            "daily_activity": daily,
-            "top_emotions": emotions
-        }
-    except Exception as e:
-        logger.error(f"Analytics data error: {e}")
-        return {"error": str(e)}
-
-@router.get("/analytics")
-async def analytics_page(request: Request):
-    password = request.query_params.get("pw")
-    if password != ANALYTICS_PASSWORD:
-        return HTMLResponse("<h1>Access Denied</h1><p>Invalid password.</p>", status_code=403)
-
-    try:
-        with open("static/analytics.html", "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
-    except Exception as e:
-        logger.error(f"Failed to serve analytics.html: {e}")
-        return HTMLResponse("<h1>Error loading dashboard</h1>", status_code=500)
-
-# Optional: Separate JSON endpoint for debugging
-@router.get("/analytics/data")
-async def analytics_data(request: Request):
-    password = request.query_params.get("pw")
-    if password != ANALYTICS_PASSWORD:
-        return JSONResponse({"detail": "Invalid password"}, status_code=403)
-    return JSONResponse(get_analytics_data())
+def get_top_topics(limit=10):
+    """Simple topic extraction (can be enhanced with LLM later)"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        SELECT metadata 
+        FROM analytics_events 
+        WHERE event_type = 'message_sent' 
+        ORDER BY timestamp DESC LIMIT 200
+    ''')
+    rows = c.fetchall()
+    conn.close()
+    
+    # Very basic keyword counting
+    keywords = defaultdict(int)
+    for row in rows:
+        if row[0]:
+            try:
+                data = json.loads(row[0])
+                text = data.get('message', '').lower()
+                for word in ['love', 'miss', 'want', 'need', 'sexy', 'date', 'relationship', 'lonely', 'horny', 'flirt']:
+                    if word in text:
+                        keywords[word] += 1
+            except:
+                pass
+    return dict(sorted(keywords.items(), key=lambda x: x[1], reverse=True)[:limit])

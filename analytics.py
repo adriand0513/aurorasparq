@@ -1,7 +1,7 @@
 # analytics.py - Enhanced with Daily Signups, Retention & Engagement
 import sqlite3
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from collections import defaultdict
 from config import DB_PATH
 
@@ -61,7 +61,7 @@ def log_event(event_type: str, convo_id: str = None, user_id: int = None,
 
 
 def get_live_stats():
-    """Main dashboard stats"""
+    """Main dashboard stats with retention & engagement"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
@@ -91,7 +91,7 @@ def get_live_stats():
     ''')
     messages_per_min = c.fetchone()[0] or 0
 
-    # Avg Response Time
+    # Average Response Time (last hour)
     c.execute('''
         SELECT AVG(duration_ms) 
         FROM analytics_events 
@@ -101,33 +101,15 @@ def get_live_stats():
     ''')
     avg_response = round(c.fetchone()[0] or 0)
 
-    conn.close()
-
-    return {
-        "total_users": total_users,
-        "daily_signups": daily_signups,
-        "active_users_24h": active_users_24h,
-        "messages_per_minute": messages_per_min,
-        "avg_response_time_ms": avg_response,
-        "timestamp": datetime.now().isoformat()
-    }
-
-
-def get_retention_rate():
-    """Simple 7-day retention rate"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    # Users who signed up in last 8 days
+    # Retention Rate (7-day)
     c.execute('''
         SELECT COUNT(DISTINCT user_id)
         FROM analytics_events
         WHERE event_type = 'user_registered'
         AND timestamp > datetime('now', '-8 days')
     ''')
-    new_users = c.fetchone()[0] or 1  # avoid division by zero
+    new_users = c.fetchone()[0] or 1
 
-    # Of those, how many messaged again in the following days
     c.execute('''
         SELECT COUNT(DISTINCT user_id)
         FROM analytics_events
@@ -135,17 +117,9 @@ def get_retention_rate():
         AND timestamp > datetime('now', '-7 days')
     ''')
     returning_users = c.fetchone()[0] or 0
+    retention_rate = round((returning_users / new_users) * 100, 1)
 
-    retention = round((returning_users / new_users) * 100, 1)
-    conn.close()
-    return retention
-
-
-def get_engagement_rate():
-    """Messages per active user"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
+    # Engagement Rate (messages per active user in last 7 days)
     c.execute('''
         SELECT COUNT(*) 
         FROM analytics_events 
@@ -160,8 +134,41 @@ def get_engagement_rate():
         WHERE event_type = 'message_sent'
         AND timestamp > datetime('now', '-7 days')
     ''')
-    active_users = c.fetchone()[0] or 1
+    active_users_week = c.fetchone()[0] or 1
+    engagement_rate = round(total_messages / active_users_week, 1)
 
-    engagement = round(total_messages / active_users, 1)
     conn.close()
-    return engagement
+
+    return {
+        "total_users": total_users,
+        "daily_signups": daily_signups,
+        "active_users_24h": active_users_24h,
+        "messages_per_minute": messages_per_min,
+        "avg_response_time_ms": avg_response,
+        "retention_rate": retention_rate,
+        "engagement_rate": engagement_rate,
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+def get_archetype_distribution():
+    """Get overall archetype statistics"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        SELECT metadata
+        FROM analytics_events
+        WHERE event_type = 'archetype_detected'
+    ''')
+    counts = defaultdict(int)
+    for row in c.fetchall():
+        if row[0]:
+            try:
+                data = json.loads(row[0])
+                arch = data.get("archetype")
+                if arch:
+                    counts[arch] += 1
+            except:
+                pass
+    conn.close()
+    return dict(sorted(counts.items(), key=lambda x: x[1], reverse=True))

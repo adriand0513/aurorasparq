@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Isabella • Live Monitor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background: #0a0012; color: #f8f0ff; }
+        .chat-box { background: rgba(30,20,50,0.95); border: 1px solid #c300ff; }
+    </style>
+</head>
+<body class="p-6">
+    <div class="max-w-6xl mx-auto">
+        <h1 class="text-4xl font-bold mb-8 text-center">Isabella Live Monitor</h1>
+        <div id="live-chats" class="space-y-6"></div>
+    </div>
+
+    <script>
+        let ws = null;
+
+        function connectMonitor() {
+            const token = prompt("Enter ADMIN_TOKEN:");
+            if (!token) return;
+
+            ws = new WebSocket(`wss://${location.host}/ws/monitor?token=${token}`);
+
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                updateLiveChats(data);
+            };
+        }
+
+        function updateLiveChats(data) {
+            // This will be populated once we add the backend endpoint
+            console.log("Live chat data:", data);
+        }
+
+        window.onload = connectMonitor;
+    </script>
+</body>
+</html>

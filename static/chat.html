@@ -220,16 +220,16 @@
         const BOT_THINKING_DELAY = 4000;
 
         // Availability: 5 PM - 2 AM ET
-        // function isIsabellaAvailable() {
-        //     const now = new Date();
-        //     const nyFormatter = new Intl.DateTimeFormat('en-US', {
-        //         timeZone: 'America/New_York',
-        //         hour: 'numeric',
-        //         hour12: false
-        //     });
-        //     const hour = parseInt(nyFormatter.format(now));
-        //     return (hour >= 17) || (hour < 2);
-        // }
+        function isIsabellaAvailable() {
+            const now = new Date();
+            const nyFormatter = new Intl.DateTimeFormat('en-US', {
+                timeZone: 'America/New_York',
+                hour: 'numeric',
+                hour12: false
+            });
+            const hour = parseInt(nyFormatter.format(now));
+            return (hour >= 17) || (hour < 2);
+        }
 
         function updateAvailability() {
             const available = isIsabellaAvailable();

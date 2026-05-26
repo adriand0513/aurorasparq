@@ -15,10 +15,8 @@ from fastapi import FastAPI, HTTPException, Body, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordRequestForm
-from asyncio import create_task
 import uvicorn
 import asyncio
-import json
 
 # Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
@@ -106,7 +104,7 @@ async def get_chat_history(user: dict = Depends(get_current_user)):
     history = get_history(default_convo_id, limit=200)
     return {"convo_id": default_convo_id, "messages": history}
 
-# ── Live Monitor WebSocket ─────────────────────────────────────
+# ── Live Monitor Page ─────────────────────────────────────
 @app.get("/monitor")
 async def chat_monitor(token: str = None):
     """Live Chat Monitor Page"""
@@ -123,7 +121,6 @@ async def chat_monitor(token: str = None):
         logger.error(f"Monitor page error: {e}")
         return HTMLResponse("<h1>Monitor page not found. Make sure monitor.html exists in /static/</h1>", 404)
 
-
 # ── Protected Dashboard ─────────────────────────────────────
 @app.get("/dashboard")
 async def admin_dashboard(token: str = None):
@@ -136,8 +133,7 @@ async def admin_dashboard(token: str = None):
         logger.error(f"Dashboard error: {e}")
         return HTMLResponse("<h1>Dashboard not found</h1>", 404)
 
-
-# ── Analytics WebSocket (existing) ─────────────────────────────────────
+# ── Analytics WebSocket ─────────────────────────────────────
 @app.websocket("/ws/analytics")
 async def analytics_websocket(websocket: WebSocket, token: str = None):
     if token != ADMIN_TOKEN:
@@ -154,58 +150,45 @@ async def analytics_websocket(websocket: WebSocket, token: str = None):
     except Exception as e:
         logger.error(f"Analytics WebSocket error: {e}")
 
-
 # ── Protected Chat Route ─────────────────────────────────────
 @app.post("/api/reply")
 async def generate_reply(body: dict = Body(...), user: dict = Depends(get_current_user)):
     start_time = time.time()
-    
+   
     convo_id = body.get("convo_id")
     user_message = body.get("message", "").strip()
-
     logger.info(f"📥 /api/reply | user={user['id']} | convo={convo_id} | msg='{user_message[:80]}'")
-
     if not convo_id:
         raise HTTPException(400, "convo_id required")
-
     # Cooldown & Rate Limit
     now = time.time()
     if now - last_reply_time.get(convo_id, 0) < REPLY_COOLDOWN_SECONDS:
         return JSONResponse({"replies": []}, status_code=200)
-
     last_reply_time[convo_id] = now
-
     if is_rate_limited(convo_id):
         return JSONResponse({"replies": []}, status_code=200)
-
     try:
         if user_message:
             save_message(convo_id, {"role": "user", "content": user_message})
-
         history = get_history(convo_id)
-
         context = get_nyc_context()
         system_prompt = get_system_prompt(
             user_name=user.get("full_name"),
             current_time=context.get("time", ""),
             weather=context.get("weather", "")
         )
-
         relevant_facts = get_relevant_facts(convo_id, limit=5)
         rel_level = get_relationship_level(convo_id)
         pet_name = get_pet_name(convo_id)
-
         if relevant_facts:
             system_prompt += f"\n\nKey facts about him: {' | '.join(relevant_facts[:4])}"
         system_prompt += f"\nCurrent relationship closeness: Level {rel_level}/10."
         if pet_name:
             system_prompt += f" You sometimes call him '{pet_name}'."
-
         messages = [{"role": "system", "content": system_prompt}] + history[-12:]
-
         # === Retry Logic (Safe) ===
         raw_reply = None
-        for attempt in range(2):  # Max 2 attempts
+        for attempt in range(2): # Max 2 attempts
             try:
                 resp = requests.post(
                     XAI_API_BASE,
@@ -220,8 +203,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                 )
                 resp.raise_for_status()
                 raw_reply = resp.json()["choices"][0]["message"]["content"].strip()
-                break  # Success
-
+                break # Success
             except Exception as e:
                 if attempt == 0:
                     logger.warning(f"xAI API failed (attempt 1/2), retrying in 2.5s...")
@@ -230,24 +212,19 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                 else:
                     logger.error(f"xAI API failed after 2 attempts: {e}")
                     log_event("xai_api_error", convo_id, user_id=user["id"], metadata={"error": str(e)})
-                    return {"replies": []}  # Silent failure
-
+                    return {"replies": []} # Silent failure
         # Process successful reply
         bubbles = split_into_bubbles(clean_reply(raw_reply))
-
         for bubble in bubbles:
             save_message(convo_id, {"role": "assistant", "content": bubble})
-
         duration_ms = int((time.time() - start_time) * 1000)
         log_event("response_generated", convo_id, user_id=user["id"], duration_ms=duration_ms)
-
         logger.info(f"✅ Generated {len(bubbles)} bubbles | Latency: {duration_ms}ms")
         return {"replies": bubbles}
-
     except Exception as e:
         logger.error(f"💥 Unexpected error: {e}", exc_info=True)
         log_event("error", convo_id, user_id=user["id"], metadata={"error": str(e)})
-        return {"replies": []}  # Silent failure
+        return {"replies": []} # Silent failure
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

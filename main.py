@@ -164,6 +164,35 @@ async def analytics_websocket(websocket: WebSocket, token: str = None):
     except Exception as e:
         logger.error(f"Analytics WebSocket error: {e}")
 
+# ── Live Monitor WebSocket ─────────────────────────────────────
+@app.websocket("/ws/monitor")
+async def monitor_websocket(websocket: WebSocket, token: str = None):
+    if token != ADMIN_TOKEN:
+        await websocket.close(code=1008)
+        return
+    
+    await websocket.accept()
+    monitor_connections.append(websocket)
+    logger.info("🔴 Live Monitor connected")
+
+    try:
+        while True:
+            # Send current active conversations
+            active_chats = []
+            # You can expand this later with real data
+            await websocket.send_json({
+                "type": "live_update",
+                "active_chats": active_chats,
+                "total_active": len(active_chats),
+                "timestamp": datetime.now().isoformat()
+            })
+            await asyncio.sleep(4)
+    except WebSocketDisconnect:
+        monitor_connections.remove(websocket)
+        logger.info("Live Monitor disconnected")
+    except Exception as e:
+        logger.error(f"Monitor WebSocket error: {e}")
+
 # ── Protected Chat Route ─────────────────────────────────────
 @app.post("/api/reply")
 async def generate_reply(body: dict = Body(...), user: dict = Depends(get_current_user)):

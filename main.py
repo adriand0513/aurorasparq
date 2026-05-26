@@ -1,4 +1,4 @@
-# main.py - Isabella Chatbot (Final - Auth + Analytics + Archetypes)
+# main.py - Isabella Chatbot (Final with Live Monitor)
 import os
 import re
 import time
@@ -15,15 +15,17 @@ from fastapi import FastAPI, HTTPException, Body, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordRequestForm
+from asyncio import create_task
 import uvicorn
 import asyncio
+import json
 
 # Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 load_dotenv()
 
-# Import all modules
+# Import modules
 from config import (
     XAI_API_KEY, XAI_API_BASE, XAI_MODEL,
     XAI_TEMPERATURE, XAI_MAX_TOKENS, ADMIN_TOKEN
@@ -36,7 +38,7 @@ from memory import (
 )
 from analytics import log_event, get_live_stats
 from auth import register_user, authenticate_user, create_access_token, get_current_user
-from archetype import detect_archetype   # New
+from archetype import detect_archetype
 
 logger.info(f"Starting Isabella server - {datetime.now().isoformat()}")
 
@@ -73,30 +75,10 @@ def split_into_bubbles(text: str) -> List[str]:
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())
     return [s.strip() for s in sentences if s.strip()]
 
+# ── Live Monitor Connections ─────────────────────────────
+monitor_connections = []
+
 # ── Auth Routes ─────────────────────────────────────
-
-@app.get("/")
-async def home():
-    try:
-        # More reliable path handling
-        import os
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        chat_path = os.path.join(base_dir, "static", "chat.html")
-        
-        with open(chat_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        
-        response = HTMLResponse(content)
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        return response
-    except Exception as e:
-        logger.error(f"Homepage error: {e}")
-        return HTMLResponse(f"""
-        <h1>Server is running ✅</h1>
-        <p>Error loading chat.html: {str(e)}</p>
-        <p>Check if static/chat.html exists in your project.</p>
-        """, 500)
-
 @app.post("/auth/register")
 async def register(body: dict = Body(...)):
     email = body.get("email")
@@ -109,7 +91,6 @@ async def register(body: dict = Body(...)):
         return {"message": "Registered successfully"}
     raise HTTPException(409, "Email already exists")
 
-
 @app.post("/auth/login")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = authenticate_user(form_data.username, form_data.password)
@@ -118,26 +99,46 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     token = create_access_token({"sub": str(user["id"])})
     log_event("user_login", user_id=user["id"])
     return {"access_token": token, "token_type": "bearer", "user": user}
-    
-    
-    
+
 @app.get("/api/history")
 async def get_chat_history(user: dict = Depends(get_current_user)):
-    """Return user's persistent chat history"""
-    # Use a stable convo_id per user
     default_convo_id = f"user_{user['id']}"
-    
     history = get_history(default_convo_id, limit=200)
-    return {
-        "convo_id": default_convo_id,
-        "messages": history
-    }
+    return {"convo_id": default_convo_id, "messages": history}
+
+# ── Live Monitor WebSocket ─────────────────────────────────────
+@app.websocket("/ws/monitor")
+async def monitor_websocket(websocket: WebSocket, token: str = None):
+    if token != ADMIN_TOKEN:
+        await websocket.close(code=1008)
+        return
+    
+    await websocket.accept()
+    monitor_connections.append(websocket)
+    logger.info("🔴 Live Monitor connected")
+    
+    try:
+        while True:
+            # Send active conversations periodically
+            active_chats = {}  # You can expand this later
+            await websocket.send_json({
+                "type": "live_update",
+                "active_chats": active_chats,
+                "timestamp": datetime.now().isoformat()
+            })
+            await asyncio.sleep(3)
+    except WebSocketDisconnect:
+        monitor_connections.remove(websocket)
+        logger.info("Live Monitor disconnected")
+    except Exception as e:
+        logger.error(f"Monitor WebSocket error: {e}")
+
 
 # ── Protected Dashboard ─────────────────────────────────────
 @app.get("/dashboard")
 async def admin_dashboard(token: str = None):
     if token != ADMIN_TOKEN:
-        raise HTTPException(403, "Unauthorized - Invalid admin token")
+        raise HTTPException(403, "Unauthorized")
     try:
         with open("static/dashboard.html", "r", encoding="utf-8") as f:
             return HTMLResponse(f.read())
@@ -146,7 +147,7 @@ async def admin_dashboard(token: str = None):
         return HTMLResponse("<h1>Dashboard not found</h1>", 404)
 
 
-# ── Analytics WebSocket ─────────────────────────────────────
+# ── Analytics WebSocket (existing) ─────────────────────────────────────
 @app.websocket("/ws/analytics")
 async def analytics_websocket(websocket: WebSocket, token: str = None):
     if token != ADMIN_TOKEN:
@@ -161,10 +162,10 @@ async def analytics_websocket(websocket: WebSocket, token: str = None):
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        logger.error(f"WebSocket error: {e}")
+        logger.error(f"Analytics WebSocket error: {e}")
 
 
-# ── Protected Chat Route with Archetype Detection ─────────────────────────────────────
+# ── Protected Chat Route ─────────────────────────────────────
 @app.post("/api/reply")
 async def generate_reply(body: dict = Body(...), user: dict = Depends(get_current_user)):
     start_time = time.time()
@@ -193,21 +194,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         history = get_history(convo_id)
 
-        # Archetype Detection (runs periodically)
-        if len(history) >= 5 and len(history) % 7 == 0:
-            try:
-                arch = await detect_archetype(convo_id, history)
-                log_event("archetype_detected", convo_id, user_id=user["id"], 
-                         metadata={
-                             "archetype": arch.get("archetype"),
-                             "confidence": arch.get("confidence"),
-                             "summary": arch.get("summary")
-                         })
-            except Exception as e:
-                logger.warning(f"Archetype detection failed: {e}")
-
         context = get_nyc_context()
-
         system_prompt = get_system_prompt(
             user_name=user.get("full_name"),
             current_time=context.get("time", ""),
@@ -224,23 +211,38 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         if pet_name:
             system_prompt += f" You sometimes call him '{pet_name}'."
 
-        messages = [{"role": "system", "content": system_prompt}] + history[-20:]
+        messages = [{"role": "system", "content": system_prompt}] + history[-12:]
 
-        # Call Grok
-        resp = requests.post(
-            XAI_API_BASE,
-            headers={"Authorization": f"Bearer {XAI_API_KEY}", "Content-Type": "application/json"},
-            json={
-                "model": XAI_MODEL,
-                "messages": messages,
-                "temperature": XAI_TEMPERATURE,
-                "max_tokens": XAI_MAX_TOKENS,
-            },
-            timeout=60
-        )
-        resp.raise_for_status()
+        # === Retry Logic (Safe) ===
+        raw_reply = None
+        for attempt in range(2):  # Max 2 attempts
+            try:
+                resp = requests.post(
+                    XAI_API_BASE,
+                    headers={"Authorization": f"Bearer {XAI_API_KEY}", "Content-Type": "application/json"},
+                    json={
+                        "model": XAI_MODEL,
+                        "messages": messages,
+                        "temperature": XAI_TEMPERATURE,
+                        "max_tokens": XAI_MAX_TOKENS,
+                    },
+                    timeout=60
+                )
+                resp.raise_for_status()
+                raw_reply = resp.json()["choices"][0]["message"]["content"].strip()
+                break  # Success
 
-        raw_reply = resp.json()["choices"][0]["message"]["content"].strip()
+            except Exception as e:
+                if attempt == 0:
+                    logger.warning(f"xAI API failed (attempt 1/2), retrying in 2.5s...")
+                    await asyncio.sleep(2.5)
+                    continue
+                else:
+                    logger.error(f"xAI API failed after 2 attempts: {e}")
+                    log_event("xai_api_error", convo_id, user_id=user["id"], metadata={"error": str(e)})
+                    return {"replies": []}  # Silent failure
+
+        # Process successful reply
         bubbles = split_into_bubbles(clean_reply(raw_reply))
 
         for bubble in bubbles:
@@ -253,11 +255,9 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         return {"replies": bubbles}
 
     except Exception as e:
-        duration_ms = int((time.time() - start_time) * 1000)
-        log_event("error", convo_id, user_id=user["id"], metadata={"error": str(e)}, duration_ms=duration_ms)
-        logger.error(f"💥 CRITICAL ERROR: {e}", exc_info=True)
-        return {"replies": ["Sorry, I'm having trouble responding right now..."]}
-
+        logger.error(f"💥 Unexpected error: {e}", exc_info=True)
+        log_event("error", convo_id, user_id=user["id"], metadata={"error": str(e)})
+        return {"replies": []}  # Silent failure
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

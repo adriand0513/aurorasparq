@@ -8,8 +8,9 @@
     <style>
         body { background: #0a0012; color: #f8f0ff; }
         .chat-box { background: rgba(30,20,50,0.95); border: 1px solid #c300ff; }
-        .user { background: #4f46e5; }
-        .bot { background: #7e22ce; }
+        .message { padding: 8px 12px; border-radius: 18px; margin: 4px 0; max-width: 80%; }
+        .user { background: #4f46e5; align-self: flex-end; }
+        .bot { background: #7e22ce; align-self: flex-start; }
     </style>
 </head>
 <body class="p-6">
@@ -17,13 +18,12 @@
         <h1 class="text-4xl font-bold mb-6 text-center">Aurora Sparq Live Monitor</h1>
         
         <div class="flex gap-4 mb-8">
-            <button onclick="connectMonitor()" 
-                    class="bg-purple-600 hover:bg-purple-700 px-8 py-3 rounded-2xl font-medium">
+            <button onclick="connectMonitor()" class="bg-purple-600 hover:bg-purple-700 px-8 py-3 rounded-2xl font-medium">
                 Connect Live Monitor
             </button>
         </div>
 
-        <div id="chats-container" class="space-y-8"></div>
+        <div id="chats-container" class="space-y-6"></div>
     </div>
 
     <script>
@@ -35,27 +35,35 @@
 
             ws = new WebSocket(`wss://${location.host}/ws/monitor?token=${token}`);
 
-            ws.onopen = () => {
-                console.log("✅ Monitor Connected");
-            };
-
+            ws.onopen = () => console.log("✅ Monitor Connected");
             ws.onmessage = function(event) {
                 const data = JSON.parse(event.data);
                 renderChats(data);
             };
-
-            ws.onerror = (e) => console.error("Monitor error", e);
         }
 
         function renderChats(data) {
             const container = document.getElementById('chats-container');
-            container.innerHTML = `<p class="text-green-400">Live data received • ${new Date().toLocaleTimeString()}</p>`;
-            
-            // This will be expanded as we send real chat data from backend
-            console.log("Monitor data:", data);
+            container.innerHTML = '';
+
+            if (!data.active_chats || data.active_chats.length === 0) {
+                container.innerHTML = `<p class="text-gray-400">No active chats yet...</p>`;
+                return;
+            }
+
+            data.active_chats.forEach(chat => {
+                container.innerHTML += `
+                    <div class="chat-box p-5 rounded-3xl">
+                        <div class="flex justify-between mb-3">
+                            <span class="font-medium">User ${chat.user_id}</span>
+                            <span class="text-xs opacity-60">${chat.last_time || ''}</span>
+                        </div>
+                        <div class="text-sm opacity-90">${chat.last_message || 'No messages yet'}</div>
+                    </div>
+                `;
+            });
         }
 
-        // Auto connect option (uncomment if you want)
         window.onload = connectMonitor;
     </script>
 </body>

@@ -107,31 +107,21 @@ async def get_chat_history(user: dict = Depends(get_current_user)):
     return {"convo_id": default_convo_id, "messages": history}
 
 # ── Live Monitor WebSocket ─────────────────────────────────────
-@app.websocket("/ws/monitor")
-async def monitor_websocket(websocket: WebSocket, token: str = None):
+@app.get("/monitor")
+async def chat_monitor(token: str = None):
+    """Live Chat Monitor Page"""
     if token != ADMIN_TOKEN:
-        await websocket.close(code=1008)
-        return
-    
-    await websocket.accept()
-    monitor_connections.append(websocket)
-    logger.info("🔴 Live Monitor connected")
+        raise HTTPException(403, "Unauthorized - Invalid admin token")
     
     try:
-        while True:
-            # Send active conversations periodically
-            active_chats = {}  # You can expand this later
-            await websocket.send_json({
-                "type": "live_update",
-                "active_chats": active_chats,
-                "timestamp": datetime.now().isoformat()
-            })
-            await asyncio.sleep(3)
-    except WebSocketDisconnect:
-        monitor_connections.remove(websocket)
-        logger.info("Live Monitor disconnected")
+        with open("static/monitor.html", "r", encoding="utf-8") as f:
+            content = f.read()
+        response = HTMLResponse(content)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        return response
     except Exception as e:
-        logger.error(f"Monitor WebSocket error: {e}")
+        logger.error(f"Monitor page error: {e}")
+        return HTMLResponse("<h1>Monitor page not found. Make sure monitor.html exists in /static/</h1>", 404)
 
 
 # ── Protected Dashboard ─────────────────────────────────────

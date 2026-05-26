@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aurora Sparq • Live Monitor</title>
+    <title>Isabella • Live Monitor</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background: #0a0012; color: #f8f0ff; }
@@ -11,8 +11,13 @@
     </style>
 </head>
 <body class="p-6">
-    <div class="max-w-6xl mx-auto">
-        <h1 class="text-4xl font-bold mb-8 text-center">Aurora Sparq Live Monitor</h1>
+    <div class="max-w-7xl mx-auto">
+        <h1 class="text-4xl font-bold mb-6">Aurora Sparq Live Monitor</h1>
+        
+        <div class="flex gap-4 mb-6">
+            <button onclick="connectMonitor()" class="bg-purple-600 px-6 py-2 rounded-xl">Connect Live Monitor</button>
+        </div>
+
         <div id="live-chats" class="space-y-6"></div>
     </div>
 
@@ -25,18 +30,18 @@
 
             ws = new WebSocket(`wss://${location.host}/ws/monitor?token=${token}`);
 
+            ws.onopen = () => console.log("✅ Monitor connected");
             ws.onmessage = function(event) {
                 const data = JSON.parse(event.data);
-                updateLiveChats(data);
+                renderChat(data);
             };
         }
 
-        function updateLiveChats(data) {
-            // This will be populated once we add the backend endpoint
-            console.log("Live chat data:", data);
+        function renderChat(data) {
+            const container = document.getElementById('live-chats');
+            // This will be expanded once backend is ready
+            console.log("Received chat data:", data);
         }
-
-        window.onload = connectMonitor;
     </script>
 </body>
 </html>

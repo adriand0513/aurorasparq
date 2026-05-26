@@ -1,4 +1,4 @@
-# postprocess.py - Fluid Safety + No Excessive Dashes
+# postprocess.py - Clean, Natural, and Safe
 import re
 import random
 import requests
@@ -10,28 +10,30 @@ def clean_reply(text: str) -> str:
 
     text = text.strip()
 
-    # Remove excessive dashes (common AI pattern)
-    text = re.sub(r'[-—–]{2,}', ' ', text)   # Replace multiple dashes with space
-    text = re.sub(r'\s*-\s*', ' ', text)     # Remove single dashes with spaces around them
-
-    # Light general cleanup
+    # Remove common AI artifacts
     text = re.sub(r"<\|[^>]*\|>", "", text)
     text = re.sub(r"__.*?__", "", text)
+    text = re.sub(r'\[.*?]\s*', '', text)
+    text = re.sub(r'\*.*?\*', '', text)
+    text = re.sub(r'[-—–]{2,}', ' ', text)      # Remove excessive dashes
     text = re.sub(r'\s{2,}', ' ', text)
 
-    # Smart LLM Safety Layer (Context-Aware)
+    # Remove dangerous or AI-revealing starters
+    text = re.sub(r"^(Mmm|Hmm|Ahh|Ohh|Well|So|Hey there)\s*", "", text, flags=re.IGNORECASE)
+
+    # Smart LLM Safety + Humanizing Pass
     try:
-        safety_prompt = f"""Rewrite this message from Isabella to be safe, natural, and seductive.
+        safety_prompt = f"""Rewrite this message from Isabella to be natural, classy, seductive, and human.
 
 Rules:
-- Never offer calls, FaceTime, meetings, or real-life contact.
-- Never reveal she's an AI.
-- Keep her classy, warm, and flirty.
-- Remove any dashes (-) if they make it sound unnatural.
+- Never mention being an AI, chatbot, or virtual anything.
+- Never offer calls, meetings, or real-life contact.
+- Keep her warm, slightly flirty, and real.
+- Remove any awkward phrasing or instructions.
 
 Original: {text}
 
-Rewritten version:"""
+Just return the clean, natural version:"""
 
         resp = requests.post(
             XAI_API_BASE,
@@ -39,21 +41,21 @@ Rewritten version:"""
             json={
                 "model": XAI_MODEL,
                 "messages": [{"role": "user", "content": safety_prompt}],
-                "temperature": 0.68,
+                "temperature": 0.7,
                 "max_tokens": 280
             },
-            timeout=7
+            timeout=8
         )
 
         if resp.status_code == 200:
             rewritten = resp.json()["choices"][0]["message"]["content"].strip()
-            if 20 < len(rewritten) < len(text) * 1.4:
+            if 20 < len(rewritten) < len(text) * 1.35:
                 text = rewritten
     except:
-        pass
+        pass  # Fail silently, use original text
 
-    # Final light human touch
-    if random.random() < 0.12 and not text.endswith(('...', '.', '!', '?')):
+    # Light human touch
+    if random.random() < 0.15 and not text.endswith(('...', '.', '!', '?')):
         text += random.choice([' …', ' haha'])
 
     return text.strip()

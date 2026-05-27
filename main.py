@@ -135,6 +135,43 @@ async def chat_monitor(token: str = None):
         logger.error(f"Monitor page error: {e}")
         return HTMLResponse("<h1>Monitor page not found</h1>", 404)
 
+@app.get("/api/admin/chats")
+async def admin_all_chats(token: str = None):
+    """Return both active and past conversations"""
+    if token != ADMIN_TOKEN:
+        raise HTTPException(403, "Unauthorized")
+    
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    
+    c.execute('''
+        SELECT 
+            u.email,
+            ch.convo_id,
+            MAX(ch.timestamp) as last_message_at,
+            (SELECT content FROM chat_history 
+             WHERE convo_id = ch.convo_id 
+             ORDER BY timestamp DESC LIMIT 1) as last_message,
+            COUNT(*) as message_count
+        FROM users u
+        JOIN chat_history ch ON ch.user_id = u.id
+        GROUP BY u.email, ch.convo_id
+        ORDER BY last_message_at DESC
+    ''')
+    
+    chats = []
+    for row in c.fetchall():
+        chats.append({
+            "email": row[0],
+            "convo_id": row[1],
+            "last_message_at": row[2],
+            "last_message": row[3][:120] if row[3] else "",
+            "message_count": row[4]
+        })
+    
+    conn.close()
+    return {"chats": chats}
+
 # ── Protected Dashboard ─────────────────────────────────────
 @app.get("/dashboard")
 async def admin_dashboard(token: str = None):

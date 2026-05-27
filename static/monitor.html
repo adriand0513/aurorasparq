@@ -8,9 +8,6 @@
     <style>
         body { background: #0a0012; color: #f8f0ff; }
         .chat-box { background: rgba(30,20,50,0.95); border: 1px solid #c300ff; }
-        .message { padding: 8px 12px; border-radius: 18px; margin: 4px 0; max-width: 80%; }
-        .user { background: #4f46e5; align-self: flex-end; }
-        .bot { background: #7e22ce; align-self: flex-start; }
     </style>
 </head>
 <body class="p-6">
@@ -21,6 +18,9 @@
             <button onclick="connectMonitor()" class="bg-purple-600 hover:bg-purple-700 px-8 py-3 rounded-2xl font-medium">
                 Connect Live Monitor
             </button>
+            <button onclick="loadPastChats()" class="bg-gray-700 hover:bg-gray-600 px-8 py-3 rounded-2xl font-medium">
+                Load All Past Chats
+            </button>
         </div>
 
         <div id="chats-container" class="space-y-6"></div>
@@ -29,42 +29,52 @@
     <script>
         let ws = null;
 
+        async function loadPastChats() {
+            const token = prompt("Enter ADMIN_TOKEN:");
+            if (!token) return;
+
+            try {
+                const res = await fetch(`/api/admin/chats?token=${token}`);
+                const data = await res.json();
+                renderChats(data.chats);
+            } catch(e) {
+                alert("Failed to load chats");
+            }
+        }
+
         function connectMonitor() {
             const token = prompt("Enter ADMIN_TOKEN:");
             if (!token) return;
 
             ws = new WebSocket(`wss://${location.host}/ws/monitor?token=${token}`);
-
-            ws.onopen = () => console.log("✅ Monitor Connected");
-            ws.onmessage = function(event) {
+            ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
-                renderChats(data);
+                if (data.active_chats) renderChats(data.active_chats);
             };
         }
 
-        function renderChats(data) {
+        function renderChats(chats) {
             const container = document.getElementById('chats-container');
             container.innerHTML = '';
 
-            if (!data.active_chats || data.active_chats.length === 0) {
-                container.innerHTML = `<p class="text-gray-400">No active chats yet...</p>`;
+            if (!chats || chats.length === 0) {
+                container.innerHTML = `<p class="text-gray-400">No chats found yet...</p>`;
                 return;
             }
 
-            data.active_chats.forEach(chat => {
+            chats.forEach(chat => {
                 container.innerHTML += `
                     <div class="chat-box p-5 rounded-3xl">
                         <div class="flex justify-between mb-3">
-                            <span class="font-medium">User ${chat.user_id}</span>
-                            <span class="text-xs opacity-60">${chat.last_time || ''}</span>
+                            <span class="font-medium">${chat.email || 'Anonymous'}</span>
+                            <span class="text-xs opacity-60">${chat.last_message_at || ''}</span>
                         </div>
-                        <div class="text-sm opacity-90">${chat.last_message || 'No messages yet'}</div>
+                        <div class="text-sm opacity-90 mb-2">${chat.last_message || 'No messages'}</div>
+                        <div class="text-xs text-purple-400">${chat.message_count} messages</div>
                     </div>
                 `;
             });
         }
-
-        window.onload = connectMonitor;
     </script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-# auth.py - Fixed & Debuggable Login
+# auth.py - Fully Safe with Column Migrations
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import jwt, JWTError
@@ -37,17 +37,32 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
-def register_user(email: str, password: str, full_name: str):
-    email = email.lower().strip()
+def ensure_users_table():
+    """Ensure users table has all required columns"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     try:
-        # Ensure full_name column exists
         c.execute("PRAGMA table_info(users)")
         columns = [row[1] for row in c.fetchall()]
+        
         if "full_name" not in columns:
             c.execute("ALTER TABLE users ADD COLUMN full_name TEXT")
+            logger.info("✅ Added missing 'full_name' column to users table")
+        
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Table migration error: {e}")
+    finally:
+        conn.close()
 
+
+def register_user(email: str, password: str, full_name: str):
+    email = email.lower().strip()
+    ensure_users_table()  # Ensure schema is up to date
+    
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    try:
         hashed = get_password_hash(password)
         c.execute('''
             INSERT INTO users (email, hashed_password, full_name)
@@ -68,31 +83,36 @@ def register_user(email: str, password: str, full_name: str):
 
 def authenticate_user(email: str, password: str):
     email = email.lower().strip()
+    ensure_users_table()  # Safe migration before query
+    
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    
-    # Get all columns for debugging
-    c.execute("SELECT id, email, hashed_password, full_name FROM users WHERE email = ?", (email,))
-    user = c.fetchone()
-    conn.close()
+    try:
+        c.execute("""
+            SELECT id, email, hashed_password, full_name 
+            FROM users WHERE email = ?
+        """, (email,))
+        
+        user = c.fetchone()
+        
+        if not user:
+            logger.info(f"Login failed: User not found - {email}")
+            return None
 
-    if not user:
-        logger.info(f"Login failed: User not found - {email}")
-        return None
+        logger.info(f"User found: id={user[0]}, email={user[1]}, has password: {bool(user[2])}")
 
-    # Debug info
-    logger.info(f"User found: id={user[0]}, email={user[1]}, has hashed_password: {bool(user[2])}")
+        if not verify_password(password, user[2]):
+            logger.info(f"Login failed: Wrong password for {email}")
+            return None
 
-    if not verify_password(password, user[2]):
-        logger.info(f"Login failed: Wrong password for {email}")
-        return None
-
-    logger.info(f"✅ Login successful: {email}")
-    return {
-        "id": user[0],
-        "email": user[1],
-        "full_name": user[3] if len(user) > 3 else None
-    }
+        logger.info(f"✅ Login successful: {email}")
+        return {
+            "id": user[0],
+            "email": user[1],
+            "full_name": user[3] if len(user) > 3 else None
+        }
+    finally:
+        conn.close()
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
@@ -107,17 +127,21 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     except Exception:
         raise credentials_exception
 
+    ensure_users_table()  # Safe migration
+
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT id, email, full_name FROM users WHERE id = ?", (user_id,))
-    user = c.fetchone()
-    conn.close()
+    try:
+        c.execute("SELECT id, email, full_name FROM users WHERE id = ?", (user_id,))
+        user = c.fetchone()
+        
+        if user is None:
+            raise credentials_exception
 
-    if user is None:
-        raise credentials_exception
-
-    return {
-        "id": user[0],
-        "email": user[1],
-        "full_name": user[2] if len(user) > 2 else None
-    }
+        return {
+            "id": user[0],
+            "email": user[1],
+            "full_name": user[2] if len(user) > 2 else None
+        }
+    finally:
+        conn.close()

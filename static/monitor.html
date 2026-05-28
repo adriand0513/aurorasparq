@@ -3,16 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aurora Sparq • Live Monitor</title>
+    <title>Isabella • Live Monitor</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background: #0a0012; color: #f8f0ff; }
         .chat-box { background: rgba(30,20,50,0.95); border: 1px solid #c300ff; }
+        .message { padding: 8px 12px; border-radius: 18px; margin: 6px 0; max-width: 85%; }
+        .user-msg { background: #4f46e5; align-self: flex-end; }
+        .bot-msg { background: #7e22ce; align-self: flex-start; }
     </style>
 </head>
 <body class="p-6">
     <div class="max-w-7xl mx-auto">
-        <h1 class="text-4xl font-bold mb-6 text-center">Aurora Sparq Live Monitor</h1>
+        <h1 class="text-4xl font-bold mb-6 text-center">Isabella Live Monitor</h1>
         
         <div class="flex gap-4 mb-8">
             <button onclick="connectMonitor()" class="bg-purple-600 hover:bg-purple-700 px-8 py-3 rounded-2xl font-medium">
@@ -23,12 +26,10 @@
             </button>
         </div>
 
-        <div id="chats-container" class="space-y-6"></div>
+        <div id="chats-container" class="space-y-8"></div>
     </div>
 
     <script>
-        let ws = null;
-
         async function loadPastChats() {
             const token = prompt("Enter ADMIN_TOKEN:");
             if (!token) return;
@@ -36,24 +37,13 @@
             try {
                 const res = await fetch(`/api/admin/chats?token=${token}`);
                 const data = await res.json();
-                renderChats(data.chats);
+                renderAllChats(data.chats);
             } catch(e) {
                 alert("Failed to load chats");
             }
         }
 
-        function connectMonitor() {
-            const token = prompt("Enter ADMIN_TOKEN:");
-            if (!token) return;
-
-            ws = new WebSocket(`wss://${location.host}/ws/monitor?token=${token}`);
-            ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                if (data.active_chats) renderChats(data.active_chats);
-            };
-        }
-
-        function renderChats(chats) {
+        function renderAllChats(chats) {
             const container = document.getElementById('chats-container');
             container.innerHTML = '';
 
@@ -63,14 +53,27 @@
             }
 
             chats.forEach(chat => {
+                let messagesHtml = '';
+                if (chat.messages && chat.messages.length > 0) {
+                    messagesHtml = chat.messages.map(m => `
+                        <div class="message ${m.role === 'user' ? 'user-msg' : 'bot-msg'}">
+                            <strong>${m.role === 'user' ? 'User' : 'Isabella'}:</strong> ${m.content}
+                        </div>
+                    `).join('');
+                } else {
+                    messagesHtml = '<p class="text-gray-500">No messages available</p>';
+                }
+
                 container.innerHTML += `
-                    <div class="chat-box p-5 rounded-3xl">
-                        <div class="flex justify-between mb-3">
-                            <span class="font-medium">${chat.email || 'Anonymous'}</span>
+                    <div class="chat-box p-6 rounded-3xl">
+                        <div class="flex justify-between mb-4">
+                            <span class="font-semibold text-lg">${chat.email}</span>
                             <span class="text-xs opacity-60">${chat.last_message_at || ''}</span>
                         </div>
-                        <div class="text-sm opacity-90 mb-2">${chat.last_message || 'No messages'}</div>
-                        <div class="text-xs text-purple-400">${chat.message_count} messages</div>
+                        <div class="text-sm mb-2">Total messages: <strong>${chat.message_count}</strong></div>
+                        <div class="max-h-96 overflow-y-auto space-y-2 border-t border-purple-900 pt-4">
+                            ${messagesHtml}
+                        </div>
                     </div>
                 `;
             });

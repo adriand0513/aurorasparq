@@ -138,9 +138,6 @@ async def admin_all_chats(token: str = None):
                 u.email,
                 ch.convo_id,
                 MAX(ch.timestamp) as last_message_at,
-                (SELECT content FROM chat_history 
-                 WHERE convo_id = ch.convo_id 
-                 ORDER BY timestamp DESC LIMIT 1) as last_message,
                 COUNT(*) as message_count
             FROM users u
             JOIN chat_history ch ON ch.user_id = u.id
@@ -150,12 +147,32 @@ async def admin_all_chats(token: str = None):
         
         chats = []
         for row in c.fetchall():
+            email = row[0]
+            convo_id = row[1]
+            
+            # Get last 10 messages
+            c.execute('''
+                SELECT role, content, timestamp
+                FROM chat_history 
+                WHERE convo_id = ?
+                ORDER BY timestamp DESC 
+                LIMIT 10
+            ''', (convo_id,))
+            
+            messages = []
+            for m in c.fetchall():
+                messages.append({
+                    "role": m[0],
+                    "content": m[1],
+                    "time": m[2]
+                })
+            
             chats.append({
-                "email": row[0],
-                "convo_id": row[1],
+                "email": email,
+                "convo_id": convo_id,
                 "last_message_at": row[2],
-                "last_message": (row[3] or "")[:150],
-                "message_count": row[4]
+                "message_count": row[3],
+                "messages": list(reversed(messages))  # oldest first
             })
         
         conn.close()

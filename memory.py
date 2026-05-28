@@ -1,39 +1,46 @@
-# memory.py - Complete with Safe Migrations
+# memory.py - Improved with User ID Linking
 import sqlite3
 import os
 from datetime import datetime
 from typing import List, Dict, Optional
-
 from analytics import log_event
 
 DB_PATH = os.path.abspath(os.getenv("DB_PATH", "isabella.db"))
+
 
 def init_db():
     """Safe initialization and migration"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-
-    # Chat History
+    
+    # Chat History with user_id
     c.execute('''
         CREATE TABLE IF NOT EXISTS chat_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
             convo_id TEXT,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
-    # Safe migration for convo_id
+   
+    # Safe migrations
     c.execute("PRAGMA table_info(chat_history)")
     columns = [row[1] for row in c.fetchall()]
+    
+    if "user_id" not in columns:
+        c.execute("ALTER TABLE chat_history ADD COLUMN user_id INTEGER")
+        print("Migration: Added user_id column to chat_history")
+    
     if "convo_id" not in columns:
         c.execute("ALTER TABLE chat_history ADD COLUMN convo_id TEXT")
         print("Migration: Added convo_id column to chat_history")
-
+    
     c.execute('CREATE INDEX IF NOT EXISTS idx_convo_id ON chat_history (convo_id)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_user_id ON chat_history (user_id)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_timestamp ON chat_history (timestamp)')
-
+    
     # Key Facts
     c.execute('''
         CREATE TABLE IF NOT EXISTS key_facts (
@@ -46,7 +53,7 @@ def init_db():
         )
     ''')
     c.execute('CREATE INDEX IF NOT EXISTS idx_facts_convo ON key_facts (convo_id)')
-
+    
     # Relationship State
     c.execute('''
         CREATE TABLE IF NOT EXISTS relationship_state (
@@ -57,7 +64,7 @@ def init_db():
             last_interaction DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-
+    
     conn.commit()
     conn.close()
     print(f"✅ Memory system initialized at: {DB_PATH}")
@@ -79,21 +86,22 @@ def get_history(convo_id: str, limit: int = 50) -> List[Dict]:
     return [{"role": r[0], "content": r[1], "timestamp": r[2]} for r in rows]
 
 
-def save_message(convo_id: str, message: Dict):
+def save_message(convo_id: str, message: Dict, user_id: Optional[int] = None):
+    """Save message with optional user_id linking"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
-        INSERT INTO chat_history (convo_id, role, content)
-        VALUES (?, ?, ?)
-    ''', (convo_id, message["role"], message["content"]))
+        INSERT INTO chat_history (convo_id, user_id, role, content)
+        VALUES (?, ?, ?, ?)
+    ''', (convo_id, user_id, message["role"], message["content"]))
     conn.commit()
     conn.close()
-
+    
     event_type = "message_sent" if message["role"] == "user" else "message_received"
-    log_event(event_type, convo_id, metadata={"length": len(message["content"])})
+    log_event(event_type, convo_id, user_id=user_id, metadata={"length": len(message["content"])})
 
 
-# ── Key Facts ───────────────────────────────────────────────────────
+# ── Key Facts & Relationship (unchanged) ─────────────────────────────────
 def add_key_fact(convo_id: str, fact: str, importance: int = 7):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -109,10 +117,10 @@ def get_relevant_facts(convo_id: str, limit: int = 8) -> List[str]:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
-        SELECT fact 
-        FROM key_facts 
+        SELECT fact
+        FROM key_facts
         WHERE convo_id = ?
-        ORDER BY importance DESC, last_recalled DESC 
+        ORDER BY importance DESC, last_recalled DESC
         LIMIT ?
     ''', (convo_id, limit))
     facts = [row[0] for row in c.fetchall()]
@@ -120,7 +128,6 @@ def get_relevant_facts(convo_id: str, limit: int = 8) -> List[str]:
     return facts
 
 
-# ── Relationship Progression ───────────────────────────────────────
 def get_relationship_level(convo_id: str) -> int:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -144,7 +151,7 @@ def update_relationship(convo_id: str, delta: int = 1, pet_name: Optional[str] =
     c = conn.cursor()
     current = get_relationship_level(convo_id)
     new_level = max(1, min(10, current + delta))
-    
+   
     c.execute('''
         INSERT INTO relationship_state (convo_id, level, pet_name, notes, last_interaction)
         VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -158,21 +165,5 @@ def update_relationship(convo_id: str, delta: int = 1, pet_name: Optional[str] =
     conn.close()
 
 
-def summarize_recent_chat(convo_id: str):
-    """Light summarizer for long-term memory"""
-    history = get_history(convo_id, limit=30)
-    if len(history) < 8:
-        return
-
-    facts = []
-    for msg in history[-15:]:
-        content = msg["content"].lower()
-        if any(word in content for word in ["like", "love", "hate", "favorite", "always", "never", "remember", "miss"]):
-            facts.append(msg["content"][:150])
-
-    for fact in facts[:5]:
-        add_key_fact(convo_id, fact, importance=6)
-
-
-# Initialize on import
+# Initialize
 init_db()

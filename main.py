@@ -1,4 +1,4 @@
-# main.py - Isabella Chatbot (Final with Live Monitor + Past Chats)
+# main.py - Isabella Chatbot (Improved Monitor - Past + Live)
 import os
 import re
 import time
@@ -177,16 +177,16 @@ async def chat_monitor(token: str = None):
         return HTMLResponse("<h1>Monitor page not found</h1>", 404)
 
 # ── Protected Dashboard ─────────────────────────────────────
-@app.get("/dashboard")
-async def admin_dashboard(token: str = None):
+@app.get("/monitor")
+async def chat_monitor(token: str = None):
     if token != ADMIN_TOKEN:
         raise HTTPException(403, "Unauthorized")
     try:
-        with open("static/dashboard.html", "r", encoding="utf-8") as f:
+        with open("static/monitor.html", "r", encoding="utf-8") as f:
             return HTMLResponse(f.read())
     except Exception as e:
-        logger.error(f"Dashboard error: {e}")
-        return HTMLResponse("<h1>Dashboard not found</h1>", 404)
+        logger.error(f"Monitor page error: {e}")
+        return HTMLResponse("<h1>Monitor page not found</h1>", 404)
 
 # ── Analytics WebSocket ─────────────────────────────────────
 @app.websocket("/ws/analytics")

@@ -1,4 +1,4 @@
-# analytics.py - PostgreSQL Version with Daily Signups, Retention & Engagement
+# analytics.py - PostgreSQL Version (Fixed JSON Serialization)
 import psycopg2
 import json
 from datetime import datetime
@@ -6,12 +6,10 @@ from collections import defaultdict
 from config import DATABASE_URL
 
 def get_db_connection():
-    """Create PostgreSQL connection"""
     return psycopg2.connect(DATABASE_URL)
 
 
 def ensure_analytics_table():
-    """Create the analytics table if it doesn't exist"""
     conn = None
     try:
         conn = get_db_connection()
@@ -45,11 +43,22 @@ ensure_analytics_table()
 
 def log_event(event_type: str, convo_id: str = None, user_id: int = None,
               metadata: dict = None, duration_ms: int = None):
-    """Log any analytics event"""
+    """Log any analytics event - Safe for JSON"""
     conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
+        
+        # Fix: Convert any datetime objects to string for JSON
+        if metadata:
+            safe_metadata = {}
+            for key, value in metadata.items():
+                if hasattr(value, 'isoformat'):  # datetime object
+                    safe_metadata[key] = value.isoformat()
+                else:
+                    safe_metadata[key] = value
+            metadata = safe_metadata
+        
         cur.execute('''
             INSERT INTO analytics_events
             (event_type, convo_id, user_id, metadata, duration_ms)
@@ -79,7 +88,7 @@ def get_live_stats():
     cur.execute("SELECT COUNT(*) FROM users")
     total_users = cur.fetchone()[0] or 0
 
-    # Daily Signups (today)
+    # Daily Signups
     cur.execute("SELECT COUNT(*) FROM users WHERE DATE(created_at) = CURRENT_DATE")
     daily_signups = cur.fetchone()[0] or 0
 
@@ -101,7 +110,7 @@ def get_live_stats():
     ''')
     messages_per_min = cur.fetchone()[0] or 0
 
-    # Average Response Time (last hour)
+    # Average Response Time
     cur.execute('''
         SELECT AVG(duration_ms)
         FROM analytics_events
@@ -163,7 +172,6 @@ def get_live_stats():
 
 
 def get_archetype_distribution():
-    """Get overall archetype statistics"""
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute('''

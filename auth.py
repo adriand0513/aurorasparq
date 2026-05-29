@@ -1,4 +1,4 @@
-# auth.py - PostgreSQL Version
+# auth.py - PostgreSQL Version with Stronger Initialization
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import jwt, JWTError
@@ -16,32 +16,12 @@ pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
-def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    try:
-        return pwd_context.verify(plain_password, hashed_password)
-    except Exception as e:
-        logger.error(f"Password verify error: {e}")
-        return False
-
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=JWT_ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-
 def get_db_connection():
-    """Create PostgreSQL connection"""
     return psycopg2.connect(DATABASE_URL)
 
 
 def ensure_users_table():
-    """Ensure users table exists with correct columns"""
+    """Force create users table"""
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -61,6 +41,25 @@ def ensure_users_table():
     finally:
         cur.close()
         conn.close()
+
+
+def get_password_hash(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except Exception as e:
+        logger.error(f"Password verify error: {e}")
+        return False
+
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=JWT_ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
 def register_user(email: str, password: str, full_name: str):
@@ -100,7 +99,6 @@ def authenticate_user(email: str, password: str):
             SELECT id, email, hashed_password, full_name 
             FROM users WHERE email = %s
         """, (email,))
-        
         user = cur.fetchone()
         
         if not user:
@@ -134,15 +132,15 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     except Exception:
         raise credentials_exception
 
+    ensure_users_table()
+
     conn = get_db_connection()
     cur = conn.cursor()
     try:
         cur.execute("SELECT id, email, full_name FROM users WHERE id = %s", (user_id,))
         user = cur.fetchone()
-        
         if user is None:
             raise credentials_exception
-
         return {
             "id": user[0],
             "email": user[1],

@@ -133,6 +133,7 @@ async def admin_all_chats(token: str = None):
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
+        # Get all conversations
         c.execute('''
             SELECT 
                 u.email,
@@ -140,7 +141,7 @@ async def admin_all_chats(token: str = None):
                 MAX(ch.timestamp) as last_message_at,
                 COUNT(*) as message_count
             FROM users u
-            JOIN chat_history ch ON ch.user_id = u.id
+            LEFT JOIN chat_history ch ON ch.user_id = u.id
             GROUP BY u.email, ch.convo_id
             ORDER BY last_message_at DESC
         ''')
@@ -150,29 +151,23 @@ async def admin_all_chats(token: str = None):
             email = row[0]
             convo_id = row[1]
             
-            # Get last 10 messages
+            # Get recent messages for this convo
             c.execute('''
                 SELECT role, content, timestamp
                 FROM chat_history 
                 WHERE convo_id = ?
                 ORDER BY timestamp DESC 
-                LIMIT 10
+                LIMIT 12
             ''', (convo_id,))
             
-            messages = []
-            for m in c.fetchall():
-                messages.append({
-                    "role": m[0],
-                    "content": m[1],
-                    "time": m[2]
-                })
+            messages = [{"role": m[0], "content": m[1], "time": m[2]} for m in c.fetchall()]
             
             chats.append({
                 "email": email,
                 "convo_id": convo_id,
                 "last_message_at": row[2],
                 "message_count": row[3],
-                "messages": list(reversed(messages))  # oldest first
+                "messages": list(reversed(messages))   # oldest first for reading
             })
         
         conn.close()

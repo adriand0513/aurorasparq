@@ -1,9 +1,9 @@
-# main.py - Isabella Chatbot (Improved Monitor - Past + Live)
+# main.py - Isabella Chatbot (PostgreSQL Version)
 import os
 import re
 import time
 import logging
-import sqlite3
+import psycopg2
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import requests
@@ -26,7 +26,7 @@ load_dotenv()
 # Import modules
 from config import (
     XAI_API_KEY, XAI_API_BASE, XAI_MODEL,
-    XAI_TEMPERATURE, XAI_MAX_TOKENS, ADMIN_TOKEN, DB_PATH
+    XAI_TEMPERATURE, XAI_MAX_TOKENS, ADMIN_TOKEN, DATABASE_URL
 )
 from prompt import get_system_prompt
 from postprocess import clean_reply
@@ -76,10 +76,9 @@ def split_into_bubbles(text: str) -> List[str]:
 # ── Live Monitor Connections ─────────────────────────────
 monitor_connections = []
 
-# ── ROOT ROUTE (Homepage) ─────────────────────────────────────
+# ── ROOT ROUTE ─────────────────────────────────────
 @app.get("/")
 async def home():
-    """Serve the main chat page"""
     try:
         with open("static/chat.html", "r", encoding="utf-8") as f:
             content = f.read()
@@ -88,12 +87,7 @@ async def home():
         return response
     except Exception as e:
         logger.error(f"Homepage error: {e}")
-        return HTMLResponse(f"""
-        <h1 style="color:white;">Server is running ✅</h1>
-        <h2 style="color:red;">Could not load chat.html</h2>
-        <p>Error: {str(e)}</p>
-        <p>Make sure <strong>static/chat.html</strong> exists in your project.</p>
-        """, 500)
+        return HTMLResponse("<h1>Server running but chat.html missing</h1>", 500)
 
 # ── Auth Routes ─────────────────────────────────────
 @app.post("/auth/register")
@@ -123,18 +117,17 @@ async def get_chat_history(user: dict = Depends(get_current_user)):
     history = get_history(default_convo_id, limit=200)
     return {"convo_id": default_convo_id, "messages": history}
 
-# ── Admin All Chats (Live + Past) ─────────────────────────────────────
+# ── Admin All Past Chats (with messages) ─────────────────────────────────────
 @app.get("/api/admin/chats")
 async def admin_all_chats(token: str = None):
     if token != ADMIN_TOKEN:
         raise HTTPException(403, "Unauthorized")
     
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
         
-        # Get all conversations
-        c.execute('''
+        cur.execute('''
             SELECT 
                 u.email,
                 ch.convo_id,
@@ -147,29 +140,29 @@ async def admin_all_chats(token: str = None):
         ''')
         
         chats = []
-        for row in c.fetchall():
+        for row in cur.fetchall():
             email = row[0]
             convo_id = row[1]
             
-            # Get recent messages for this convo
-            c.execute('''
+            cur.execute('''
                 SELECT role, content, timestamp
                 FROM chat_history 
-                WHERE convo_id = ?
+                WHERE convo_id = %s
                 ORDER BY timestamp DESC 
                 LIMIT 12
             ''', (convo_id,))
             
-            messages = [{"role": m[0], "content": m[1], "time": m[2]} for m in c.fetchall()]
+            messages = [{"role": m[0], "content": m[1], "time": m[2]} for m in cur.fetchall()]
             
             chats.append({
                 "email": email,
                 "convo_id": convo_id,
                 "last_message_at": row[2],
                 "message_count": row[3],
-                "messages": list(reversed(messages))   # oldest first for reading
+                "messages": list(reversed(messages))
             })
         
+        cur.close()
         conn.close()
         return {"chats": chats}
     except Exception as e:
@@ -189,16 +182,16 @@ async def chat_monitor(token: str = None):
         return HTMLResponse("<h1>Monitor page not found</h1>", 404)
 
 # ── Protected Dashboard ─────────────────────────────────────
-@app.get("/monitor")
-async def chat_monitor(token: str = None):
+@app.get("/dashboard")
+async def admin_dashboard(token: str = None):
     if token != ADMIN_TOKEN:
         raise HTTPException(403, "Unauthorized")
     try:
-        with open("static/monitor.html", "r", encoding="utf-8") as f:
+        with open("static/dashboard.html", "r", encoding="utf-8") as f:
             return HTMLResponse(f.read())
     except Exception as e:
-        logger.error(f"Monitor page error: {e}")
-        return HTMLResponse("<h1>Monitor page not found</h1>", 404)
+        logger.error(f"Dashboard error: {e}")
+        return HTMLResponse("<h1>Dashboard not found</h1>", 404)
 
 # ── Analytics WebSocket ─────────────────────────────────────
 @app.websocket("/ws/analytics")
@@ -223,14 +216,11 @@ async def monitor_websocket(websocket: WebSocket, token: str = None):
     if token != ADMIN_TOKEN:
         await websocket.close(code=1008)
         return
-   
     await websocket.accept()
     monitor_connections.append(websocket)
     logger.info("🔴 Live Monitor connected")
-
     try:
         while True:
-            # For now, return empty - we'll improve this in Option B
             await websocket.send_json({
                 "type": "live_update",
                 "active_chats": [],
@@ -249,22 +239,24 @@ async def monitor_websocket(websocket: WebSocket, token: str = None):
 @app.post("/api/reply")
 async def generate_reply(body: dict = Body(...), user: dict = Depends(get_current_user)):
     start_time = time.time()
-  
     convo_id = body.get("convo_id")
     user_message = body.get("message", "").strip()
+    
     logger.info(f"📥 /api/reply | user={user['id']} | convo={convo_id} | msg='{user_message[:80]}'")
     if not convo_id:
         raise HTTPException(400, "convo_id required")
-    # Cooldown & Rate Limit
-    now = time.time()
-    if now - last_reply_time.get(convo_id, 0) < REPLY_COOLDOWN_SECONDS:
+
+    if now := time.time() - last_reply_time.get(convo_id, 0) < REPLY_COOLDOWN_SECONDS:
         return JSONResponse({"replies": []}, status_code=200)
     last_reply_time[convo_id] = now
+
     if is_rate_limited(convo_id):
         return JSONResponse({"replies": []}, status_code=200)
+
     try:
         if user_message:
-            save_message(convo_id, {"role": "user", "content": user_message})
+            save_message(convo_id, {"role": "user", "content": user_message}, user_id=user["id"])
+        
         history = get_history(convo_id)
         context = get_nyc_context()
         system_prompt = get_system_prompt(
@@ -275,13 +267,16 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         relevant_facts = get_relevant_facts(convo_id, limit=5)
         rel_level = get_relationship_level(convo_id)
         pet_name = get_pet_name(convo_id)
+        
         if relevant_facts:
             system_prompt += f"\n\nKey facts about him: {' | '.join(relevant_facts[:4])}"
         system_prompt += f"\nCurrent relationship closeness: Level {rel_level}/10."
         if pet_name:
             system_prompt += f" You sometimes call him '{pet_name}'."
+
         messages = [{"role": "system", "content": system_prompt}] + history[-12:]
-        # === Retry Logic (Safe) ===
+
+        # Retry Logic
         raw_reply = None
         for attempt in range(2):
             try:
@@ -301,24 +296,23 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                 break
             except Exception as e:
                 if attempt == 0:
-                    logger.warning(f"xAI API failed (attempt 1/2), retrying in 2.5s...")
+                    logger.warning("xAI API failed, retrying...")
                     await asyncio.sleep(2.5)
                     continue
                 else:
-                    logger.error(f"xAI API failed after 2 attempts: {e}")
-                    log_event("xai_api_error", convo_id, user_id=user["id"], metadata={"error": str(e)})
+                    logger.error(f"xAI API failed: {e}")
                     return {"replies": []}
-        # Process successful reply
+
         bubbles = split_into_bubbles(clean_reply(raw_reply))
         for bubble in bubbles:
-            save_message(convo_id, {"role": "assistant", "content": bubble})
+            save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user["id"])
+
         duration_ms = int((time.time() - start_time) * 1000)
         log_event("response_generated", convo_id, user_id=user["id"], duration_ms=duration_ms)
-        logger.info(f"✅ Generated {len(bubbles)} bubbles | Latency: {duration_ms}ms")
+        
         return {"replies": bubbles}
     except Exception as e:
         logger.error(f"💥 Unexpected error: {e}", exc_info=True)
-        log_event("error", convo_id, user_id=user["id"], metadata={"error": str(e)})
         return {"replies": []}
 
 if __name__ == "__main__":

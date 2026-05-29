@@ -251,41 +251,58 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     start_time = time.time()
     convo_id = body.get("convo_id")
     user_message = body.get("message", "").strip()
-    
+
     logger.info(f"📥 /api/reply | user={user.get('id')} | convo={convo_id} | msg='{user_message[:80]}'")
+
     if not convo_id:
         raise HTTPException(400, "convo_id required")
 
     now = time.time()
     if now - last_reply_time.get(convo_id, 0) < REPLY_COOLDOWN_SECONDS:
-        return JSONResponse({"replies": []}, status_code=200)
+        return {"replies": []}
     last_reply_time[convo_id] = now
 
     if is_rate_limited(convo_id):
-        return JSONResponse({"replies": []}, status_code=200)
+        return {"replies": []}
 
     try:
         if user_message:
             save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
-        
+
+        # ←←← PERMANENT FIX STARTS HERE ←←←
         history = get_history(convo_id)
+
+        # Sanitize history to remove any datetime objects before sending to xAI
+        def sanitize_for_json(data):
+            if isinstance(data, list):
+                return [sanitize_for_json(item) for item in data]
+            if isinstance(data, dict):
+                return {k: sanitize_for_json(v) for k, v in data.items()}
+            if isinstance(data, datetime):
+                return data.isoformat()
+            return data
+
+        clean_history = sanitize_for_json(history)
+        # ←←← PERMANENT FIX ENDS HERE ←←←
+
         context = get_nyc_context()
         system_prompt = get_system_prompt(
             user_name=user.get("full_name"),
             current_time=context.get("time", ""),
             weather=context.get("weather", "")
         )
+
         relevant_facts = get_relevant_facts(convo_id, limit=5)
         rel_level = get_relationship_level(convo_id)
         pet_name = get_pet_name(convo_id)
-        
+
         if relevant_facts:
             system_prompt += f"\n\nKey facts about him: {' | '.join(relevant_facts[:4])}"
         system_prompt += f"\nCurrent relationship closeness: Level {rel_level}/10."
         if pet_name:
             system_prompt += f" You sometimes call him '{pet_name}'."
 
-        messages = [{"role": "system", "content": system_prompt}] + history[-12:]
+        messages = [{"role": "system", "content": system_prompt}] + clean_history[-12:]
 
         raw_reply = None
         for attempt in range(2):
@@ -314,16 +331,19 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                     return {"replies": []}
 
         bubbles = split_into_bubbles(clean_reply(raw_reply))
+
         for bubble in bubbles:
             save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user.get("id"))
 
         duration_ms = int((time.time() - start_time) * 1000)
         log_event("response_generated", convo_id, user_id=user.get("id"), duration_ms=duration_ms)
-        
+
         return {"replies": bubbles}
+
     except Exception as e:
         logger.error(f"💥 Unexpected error: {e}", exc_info=True)
         return {"replies": []}
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

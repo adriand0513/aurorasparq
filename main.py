@@ -51,6 +51,7 @@ from memory import (
 from analytics import log_event, get_live_stats
 from auth import register_user, authenticate_user, create_access_token, get_current_user
 from archetype import detect_archetype
+from internal_state import get_internal_state, update_internal_state, add_narrative_moment
 
 logger.info(f"Starting Isabella server - {datetime.now().isoformat()}")
 
@@ -257,6 +258,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     if not convo_id:
         raise HTTPException(400, "convo_id required")
 
+    # Rate limiting
     now = time.time()
     if now - last_reply_time.get(convo_id, 0) < REPLY_COOLDOWN_SECONDS:
         return {"replies": []}
@@ -269,10 +271,12 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         if user_message:
             save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
 
-        # ←←← PERMANENT FIX STARTS HERE ←←←
-        history = get_history(convo_id)
+        # === NEW: Get rich internal state for longevity ===
+        internal_state = get_internal_state(convo_id)
 
-        # Sanitize history to remove any datetime objects before sending to xAI
+        history = get_history(convo_id)
+        
+        # Sanitize history for xAI
         def sanitize_for_json(data):
             if isinstance(data, list):
                 return [sanitize_for_json(item) for item in data]
@@ -283,13 +287,15 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             return data
 
         clean_history = sanitize_for_json(history)
-        # ←←← PERMANENT FIX ENDS HERE ←←←
 
         context = get_nyc_context()
+        
+        # Pass internal state to prompt for natural, long-term behavior
         system_prompt = get_system_prompt(
             user_name=user.get("full_name"),
             current_time=context.get("time", ""),
-            weather=context.get("weather", "")
+            weather=context.get("weather", ""),
+            internal_state=internal_state
         )
 
         relevant_facts = get_relevant_facts(convo_id, limit=5)
@@ -304,6 +310,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         messages = [{"role": "system", "content": system_prompt}] + clean_history[-12:]
 
+        # Call xAI
         raw_reply = None
         for attempt in range(2):
             try:
@@ -337,6 +344,25 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         duration_ms = int((time.time() - start_time) * 1000)
         log_event("response_generated", convo_id, user_id=user.get("id"), duration_ms=duration_ms)
+
+        # === Update internal state for longevity ===
+        emotional_delta = 1 if any(word in user_message.lower() for word in ["miss", "want", "love", "beautiful"]) else 0
+        update_internal_state(
+            convo_id,
+            emotional_delta=emotional_delta,
+            new_mood="flirty" if emotional_delta > 0 else None,
+            new_note=f"User said: {user_message[:120]}"
+        )
+
+        # Add narrative moment for important exchanges
+        if len(user_message) > 25:
+            add_narrative_moment(
+                convo_id, 
+                f"User: {user_message[:100]}", 
+                moment_type="user_shared", 
+                emotional_tag="flirty" if emotional_delta > 0 else "normal",
+                importance=6
+            )
 
         return {"replies": bubbles}
 

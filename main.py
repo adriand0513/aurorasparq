@@ -51,7 +51,12 @@ from memory import (
 from analytics import log_event, get_live_stats
 from auth import register_user, authenticate_user, create_access_token, get_current_user
 from archetype import detect_archetype
-from internal_state import get_internal_state, update_internal_state, add_narrative_moment
+
+from relationship_state import (
+    get_relationship_state, 
+    update_relationship_state, 
+    add_narrative_moment
+)
 
 logger.info(f"Starting Isabella server - {datetime.now().isoformat()}")
 

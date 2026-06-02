@@ -1,7 +1,7 @@
 # relationship_state.py - Unified Longevity System
 import sqlite3
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from config import DB_PATH
 import logging
 
@@ -15,13 +15,13 @@ def init_relationship_state():
     conn = get_db_connection()
     c = conn.cursor()
     
-    # Main Relationship State
+    # Main Relationship + Emotional State
     c.execute('''
         CREATE TABLE IF NOT EXISTS relationship_state (
             convo_id TEXT PRIMARY KEY,
             level INTEGER DEFAULT 1,
             pet_name TEXT,
-            emotional_temperature INTEGER DEFAULT 5,   -- 1-10
+            emotional_temperature INTEGER DEFAULT 5,
             relationship_phase TEXT DEFAULT 'early_flirt',
             trust_level INTEGER DEFAULT 3,
             current_mood TEXT DEFAULT 'playful',
@@ -30,7 +30,7 @@ def init_relationship_state():
         )
     ''')
     
-    # Narrative Memory
+    # Narrative Memory for Long-term Bonding
     c.execute('''
         CREATE TABLE IF NOT EXISTS narrative_memories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,24 +46,22 @@ def init_relationship_state():
     c.execute('CREATE INDEX IF NOT EXISTS idx_narrative_convo ON narrative_memories(convo_id)')
     conn.commit()
     conn.close()
-    logger.info("✅ Unified relationship state initialized")
+    logger.info("✅ Unified relationship_state initialized")
 
-# ==================== GET STATE ====================
 
 def get_relationship_state(convo_id: str):
-    """Get full current state"""
+    """Get full current state + recent narratives"""
     conn = get_db_connection()
     c = conn.cursor()
     
     c.execute("SELECT * FROM relationship_state WHERE convo_id = ?", (convo_id,))
     row = c.fetchone()
     
-    # Get recent narratives
     c.execute('''
         SELECT description, moment_type, emotional_tag, timestamp
         FROM narrative_memories
         WHERE convo_id = ?
-        ORDER BY importance DESC, timestamp DESC LIMIT 8
+        ORDER BY importance DESC, timestamp DESC LIMIT 10
     ''', (convo_id,))
     narratives = c.fetchall()
     
@@ -79,18 +77,25 @@ def get_relationship_state(convo_id: str):
             "current_mood": row[6],
             "last_interaction": row[7],
             "notes": row[8] or "",
-            "recent_narratives": [{"desc": n[0], "type": n[1], "tag": n[2], "time": n[3]} for n in narratives]
+            "recent_narratives": [
+                {"desc": n[0], "type": n[1], "tag": n[2], "time": n[3]} 
+                for n in narratives
+            ]
         }
-    return None
+    return None  # New user
 
-# ==================== UPDATE STATE ====================
 
 def update_relationship_state(convo_id: str, level_delta=0, emotional_delta=0, 
                             new_phase=None, new_mood=None, pet_name=None, note=None):
     """Update relationship with decay + emotional state"""
     current = get_relationship_state(convo_id) or {
-        "level": 1, "emotional_temperature": 5, "relationship_phase": "early_flirt",
-        "trust_level": 3, "current_mood": "playful", "pet_name": None, "notes": ""
+        "level": 1, 
+        "emotional_temperature": 5, 
+        "relationship_phase": "early_flirt",
+        "trust_level": 3, 
+        "current_mood": "playful", 
+        "pet_name": None, 
+        "notes": ""
     }
 
     new_level = max(1, min(10, current["level"] + level_delta))
@@ -121,9 +126,10 @@ def update_relationship_state(convo_id: str, level_delta=0, emotional_delta=0,
     conn.commit()
     conn.close()
 
+
 def add_narrative_moment(convo_id: str, description: str, moment_type: str = "shared",
                         emotional_tag: str = None, importance: int = 5):
-    """Add important shared moment or her story"""
+    """Add important shared moment or her own story"""
     conn = get_db_connection()
     c = conn.cursor()
     c.execute('''
@@ -134,5 +140,6 @@ def add_narrative_moment(convo_id: str, description: str, moment_type: str = "sh
     conn.commit()
     conn.close()
 
-# Initialize
+
+# Initialize on import
 init_relationship_state()

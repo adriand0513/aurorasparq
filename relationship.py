@@ -1,118 +1,138 @@
-# relationship.py - Slow Weekly Decay Relationship System
+# relationship_state.py - Unified Longevity System
 import sqlite3
-import os
+import json
 from datetime import datetime, timedelta
-from typing import Optional
+from config import DB_PATH
 import logging
 
 logger = logging.getLogger(__name__)
-DB_PATH = os.path.abspath(os.getenv("DB_PATH", "isabella.db"))
 
+def get_db_connection():
+    return sqlite3.connect(DB_PATH)
 
-def init_relationship_table():
-    conn = sqlite3.connect(DB_PATH)
+def init_relationship_state():
+    """Initialize unified relationship + narrative system"""
+    conn = get_db_connection()
     c = conn.cursor()
+    
+    # Main Relationship State
     c.execute('''
         CREATE TABLE IF NOT EXISTS relationship_state (
             convo_id TEXT PRIMARY KEY,
             level INTEGER DEFAULT 1,
             pet_name TEXT,
-            notes TEXT,
+            emotional_temperature INTEGER DEFAULT 5,   -- 1-10
+            relationship_phase TEXT DEFAULT 'early_flirt',
+            trust_level INTEGER DEFAULT 3,
+            current_mood TEXT DEFAULT 'playful',
             last_interaction DATETIME DEFAULT CURRENT_TIMESTAMP,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            notes TEXT
         )
     ''')
+    
+    # Narrative Memory
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS narrative_memories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            convo_id TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            moment_type TEXT,
+            description TEXT NOT NULL,
+            emotional_tag TEXT,
+            importance INTEGER DEFAULT 5
+        )
+    ''')
+    
+    c.execute('CREATE INDEX IF NOT EXISTS idx_narrative_convo ON narrative_memories(convo_id)')
     conn.commit()
     conn.close()
-    logger.info("✅ Relationship system initialized")
+    logger.info("✅ Unified relationship state initialized")
 
+# ==================== GET STATE ====================
 
-def get_relationship_level(convo_id: str) -> int:
-    """Get level with automatic slow decay"""
-    conn = sqlite3.connect(DB_PATH)
+def get_relationship_state(convo_id: str):
+    """Get full current state"""
+    conn = get_db_connection()
     c = conn.cursor()
     
-    # Get current state
-    c.execute("""
-        SELECT level, last_interaction 
-        FROM relationship_state 
-        WHERE convo_id = ?
-    """, (convo_id,))
+    c.execute("SELECT * FROM relationship_state WHERE convo_id = ?", (convo_id,))
     row = c.fetchone()
+    
+    # Get recent narratives
+    c.execute('''
+        SELECT description, moment_type, emotional_tag, timestamp
+        FROM narrative_memories
+        WHERE convo_id = ?
+        ORDER BY importance DESC, timestamp DESC LIMIT 8
+    ''', (convo_id,))
+    narratives = c.fetchall()
+    
     conn.close()
 
-    if not row:
-        return 1
+    if row:
+        return {
+            "level": row[1],
+            "pet_name": row[2],
+            "emotional_temperature": row[3],
+            "relationship_phase": row[4],
+            "trust_level": row[5],
+            "current_mood": row[6],
+            "last_interaction": row[7],
+            "notes": row[8] or "",
+            "recent_narratives": [{"desc": n[0], "type": n[1], "tag": n[2], "time": n[3]} for n in narratives]
+        }
+    return None
 
-    level, last_interaction = row
+# ==================== UPDATE STATE ====================
 
-    # Calculate decay (very slow)
-    if last_interaction:
-        try:
-            last_date = datetime.fromisoformat(last_interaction.replace("Z", "+00:00"))
-            days_inactive = (datetime.now() - last_date).days
+def update_relationship_state(convo_id: str, level_delta=0, emotional_delta=0, 
+                            new_phase=None, new_mood=None, pet_name=None, note=None):
+    """Update relationship with decay + emotional state"""
+    current = get_relationship_state(convo_id) or {
+        "level": 1, "emotional_temperature": 5, "relationship_phase": "early_flirt",
+        "trust_level": 3, "current_mood": "playful", "pet_name": None, "notes": ""
+    }
 
-            # Decay 1 level every 7 days of inactivity (very gentle)
-            decay = days_inactive // 7
-            new_level = max(1, level - decay)
-            
-            if new_level < level:
-                logger.info(f"⏳ Relationship decay for {convo_id}: {level} → {new_level} (inactive {days_inactive} days)")
-                update_relationship(convo_id, delta= new_level - level)  # Apply decay
-                
-            return new_level
-        except:
-            pass
+    new_level = max(1, min(10, current["level"] + level_delta))
+    new_temp = max(1, min(10, current["emotional_temperature"] + emotional_delta))
+    phase = new_phase or current["relationship_phase"]
+    mood = new_mood or current["current_mood"]
 
-    return level
+    conn = get_db_connection()
+    c = conn.cursor()
+    
+    c.execute('''
+        INSERT INTO relationship_state 
+        (convo_id, level, pet_name, emotional_temperature, relationship_phase, 
+         trust_level, current_mood, last_interaction, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+        ON CONFLICT(convo_id) DO UPDATE SET
+            level = ?,
+            pet_name = COALESCE(?, pet_name),
+            emotional_temperature = ?,
+            relationship_phase = ?,
+            current_mood = ?,
+            last_interaction = CURRENT_TIMESTAMP,
+            notes = COALESCE(notes || '\n' || ?, notes)
+    ''', (convo_id, new_level, pet_name, new_temp, phase, current["trust_level"], 
+          mood, note or "",
+          new_level, pet_name, new_temp, phase, mood, note or ""))
+    
+    conn.commit()
+    conn.close()
 
-
-def update_relationship(convo_id: str, delta: int = 1, pet_name: Optional[str] = None, note: Optional[str] = None):
-    """Update relationship"""
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        
-        current = get_relationship_level(convo_id)  # This will apply decay if needed
-        new_level = max(1, min(10, current + delta))
-
-        c.execute('''
-            INSERT INTO relationship_state 
-            (convo_id, level, pet_name, notes, last_interaction)
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(convo_id) DO UPDATE SET
-                level = ?,
-                pet_name = COALESCE(?, pet_name),
-                notes = COALESCE(notes || '\n' || ?, notes),
-                last_interaction = CURRENT_TIMESTAMP
-        ''', (convo_id, new_level, pet_name, note, new_level, pet_name, note))
-        
-        conn.commit()
-        logger.info(f"❤️ Relationship updated | convo={convo_id} | level={new_level}")
-        
-    except Exception as e:
-        logger.error(f"Error updating relationship: {e}")
-    finally:
-        conn.close()
-
-
-def reset_relationship(convo_id: str):
-    """Reset to default"""
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute('''
-            INSERT INTO relationship_state (convo_id, level, pet_name, notes, last_interaction)
-            VALUES (?, 1, NULL, NULL, CURRENT_TIMESTAMP)
-            ON CONFLICT(convo_id) DO UPDATE SET
-                level = 1, pet_name = NULL, notes = NULL, last_interaction = CURRENT_TIMESTAMP
-        ''', (convo_id,))
-        conn.commit()
-    except Exception as e:
-        logger.error(f"Reset error: {e}")
-    finally:
-        conn.close()
-
+def add_narrative_moment(convo_id: str, description: str, moment_type: str = "shared",
+                        emotional_tag: str = None, importance: int = 5):
+    """Add important shared moment or her story"""
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO narrative_memories 
+        (convo_id, moment_type, description, emotional_tag, importance)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (convo_id, moment_type, description, emotional_tag, importance))
+    conn.commit()
+    conn.close()
 
 # Initialize
-init_relationship_table()
+init_relationship_state()

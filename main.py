@@ -258,7 +258,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     if not convo_id:
         raise HTTPException(400, "convo_id required")
 
-    # Rate limiting
+    # ── Rate Limiting ─────────────────────────────────────
     now = time.time()
     if now - last_reply_time.get(convo_id, 0) < REPLY_COOLDOWN_SECONDS:
         return {"replies": []}
@@ -268,15 +268,16 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         return {"replies": []}
 
     try:
+        # Save user message
         if user_message:
             save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
 
-        # === NEW: Get rich internal state for longevity ===
-        internal_state = get_internal_state(convo_id)
+        # === Get Unified Relationship State ===
+        state = get_relationship_state(convo_id)
 
         history = get_history(convo_id)
-        
-        # Sanitize history for xAI
+
+        # Sanitize history for xAI (datetime fix)
         def sanitize_for_json(data):
             if isinstance(data, list):
                 return [sanitize_for_json(item) for item in data]
@@ -288,29 +289,31 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         clean_history = sanitize_for_json(history)
 
+        # Get NYC context
         context = get_nyc_context()
-        
-        # Pass internal state to prompt for natural, long-term behavior
+
+        # === Build System Prompt with State ===
         system_prompt = get_system_prompt(
             user_name=user.get("full_name"),
             current_time=context.get("time", ""),
             weather=context.get("weather", ""),
-            internal_state=internal_state
+            state=state
         )
 
+        # Add relevant facts and relationship info
         relevant_facts = get_relevant_facts(convo_id, limit=5)
-        rel_level = get_relationship_level(convo_id)
+        rel_level = get_relationship_level(convo_id)  # from relationship_state
         pet_name = get_pet_name(convo_id)
 
         if relevant_facts:
             system_prompt += f"\n\nKey facts about him: {' | '.join(relevant_facts[:4])}"
-        system_prompt += f"\nCurrent relationship closeness: Level {rel_level}/10."
+        system_prompt += f"\nCurrent relationship level: {rel_level}/10."
         if pet_name:
             system_prompt += f" You sometimes call him '{pet_name}'."
 
         messages = [{"role": "system", "content": system_prompt}] + clean_history[-12:]
 
-        # Call xAI
+        # ── Call xAI ─────────────────────────────────────
         raw_reply = None
         for attempt in range(2):
             try:
@@ -339,22 +342,24 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         bubbles = split_into_bubbles(clean_reply(raw_reply))
 
+        # Save assistant replies
         for bubble in bubbles:
             save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user.get("id"))
 
         duration_ms = int((time.time() - start_time) * 1000)
         log_event("response_generated", convo_id, user_id=user.get("id"), duration_ms=duration_ms)
 
-        # === Update internal state for longevity ===
-        emotional_delta = 1 if any(word in user_message.lower() for word in ["miss", "want", "love", "beautiful"]) else 0
-        update_internal_state(
+        # === Update Relationship State for Longevity ===
+        emotional_delta = 1 if any(word in user_message.lower() for word in ["miss", "want", "love", "beautiful", "hot", "sexy"]) else 0
+        
+        update_relationship_state(
             convo_id,
             emotional_delta=emotional_delta,
             new_mood="flirty" if emotional_delta > 0 else None,
-            new_note=f"User said: {user_message[:120]}"
+            note=f"User said: {user_message[:120]}"
         )
 
-        # Add narrative moment for important exchanges
+        # Add narrative moment
         if len(user_message) > 25:
             add_narrative_moment(
                 convo_id, 
@@ -369,7 +374,6 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     except Exception as e:
         logger.error(f"💥 Unexpected error: {e}", exc_info=True)
         return {"replies": []}
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

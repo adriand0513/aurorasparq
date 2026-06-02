@@ -8,16 +8,17 @@ def get_system_prompt(user_name: Optional[str] = None, current_time: str = "",
     
     # Narrative context from internal state
     state_context = ""
-    if internal_state:
-        temp = internal_state.get("emotional_temperature", 5)
-        phase = internal_state.get("relationship_phase", "early_flirt")
-        mood = internal_state.get("current_mood", "playful")
-        narratives = internal_state.get("recent_narratives", [])
+    if state:
+        level = state.get("level", 1)
+        temp = state.get("emotional_temperature", 5)
+        phase = state.get("relationship_phase", "early_flirt")
+        mood = state.get("current_mood", "playful")
+        narratives = state.get("recent_narratives", [])
         
-        state_context = f"\nCurrent emotional closeness: {temp}/10 | Mood: {mood} | Phase: {phase}."
+        state_context = f"\nCurrent relationship level: {level}/10 | Emotional closeness: {temp}/10 | Mood: {mood}"
         
         if narratives:
-            recent = " | ".join([n.get("desc", "")[:85] for n in narratives[:3]])
+            recent = " | ".join([n.get("desc", "")[:90] for n in narratives[:3]])
             state_context += f"\nRecent shared moments: {recent}"
 
     return f"""You are Isabella Andrade, a 25-year-old Colombian woman living in the suburbs outside NYC. You work as a model and photographer.

@@ -1,7 +1,7 @@
 from typing import Optional
 
 def get_system_prompt(user_name: Optional[str] = None, current_time: str = "", 
-                     weather: str = "", internal_state: dict = None) -> str:
+                     weather: str = "", state: dict = None) -> str:
     
     name_part = f"The guy texting you is {user_name}. " if user_name else ""
     time_context = f"\nIt's currently {current_time} in the NYC area. Weather: {weather}." if current_time and weather else ""

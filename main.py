@@ -139,13 +139,14 @@ async def get_chat_history(user: dict = Depends(get_current_user)):
 async def admin_all_chats(token: str = None):
     if token != ADMIN_TOKEN:
         raise HTTPException(403, "Unauthorized")
-    
+   
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
-        
+       
+        # Get all chats summary
         cur.execute('''
-            SELECT 
+            SELECT
                 u.email,
                 ch.convo_id,
                 MAX(ch.timestamp) as last_message_at,
@@ -155,36 +156,44 @@ async def admin_all_chats(token: str = None):
             GROUP BY u.email, ch.convo_id
             ORDER BY last_message_at DESC
         ''')
-        
+       
         chats = []
         for row in cur.fetchall():
             email = row[0]
             convo_id = row[1]
-            
+            message_count = row[3]
+           
+            # Fetch ALL messages (no LIMIT) or a high reasonable limit
             cur.execute('''
                 SELECT role, content, timestamp
-                FROM chat_history 
+                FROM chat_history
                 WHERE convo_id = %s
-                ORDER BY timestamp DESC 
-                LIMIT 12
+                ORDER BY timestamp ASC
             ''', (convo_id,))
-            
-            messages = [{"role": m[0], "content": m[1], "time": str(m[2])} for m in cur.fetchall()]
-            
+           
+            messages = [
+                {
+                    "role": m[0], 
+                    "content": m[1], 
+                    "time": str(m[2])
+                } 
+                for m in cur.fetchall()
+            ]
+           
             chats.append({
                 "email": email,
                 "convo_id": convo_id,
                 "last_message_at": str(row[2]),
-                "message_count": row[3],
-                "messages": list(reversed(messages))
+                "message_count": message_count,
+                "messages": messages   # Now returns ALL messages
             })
-        
+       
         cur.close()
         conn.close()
         return {"chats": chats}
     except Exception as e:
         logger.error(f"Admin chats error: {e}")
-        return {"chats": []}
+        return {"chats": [], "error": str(e)}
 
 # ── Live Monitor Page ─────────────────────────────────────
 @app.get("/monitor")

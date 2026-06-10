@@ -316,22 +316,35 @@
         async function login() {
             const email = document.getElementById('login-email').value.trim();
             const password = document.getElementById('login-password').value.trim();
+            
+            if (!email || !password) {
+                alert("Please enter email and password");
+                return;
+            }
+    
             try {
                 const formData = new FormData();
                 formData.append('username', email);
                 formData.append('password', password);
                 
-                const res = await fetch('/auth/login', { method: 'POST', body: formData });
+                const res = await fetch('/auth/login', { 
+                    method: 'POST', 
+                    body: formData 
+                });
+                
                 const data = await res.json();
                 
                 if (res.ok) {
                     token = data.access_token;
                     currentUser = data.user;
+                    
                     localStorage.setItem('token', token);
                     localStorage.setItem('user', JSON.stringify(currentUser));
-                   
+                    
+                    // Transition to chat
                     authScreen.style.display = 'none';
                     chatWrapper.style.display = 'flex';
+                    
                     userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email}`;
                     
                     await updateSubscriptionDisplay();
@@ -339,11 +352,11 @@
                     await loadUserHistory();
                     updateAvailability();
                 } else {
-                    alert(data.detail || "Login failed");
+                    alert(data.detail || "Login failed. Please check your credentials.");
                 }
             } catch(e) {
                 console.error(e);
-                alert("Login error");
+                alert("Network error. Please try again.");
             }
         }
     

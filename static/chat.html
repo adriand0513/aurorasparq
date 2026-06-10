@@ -78,9 +78,7 @@
             color: white;
         }
 
-        #chat-wrapper {
-            min-height: 0;
-        }
+        #chat-wrapper { min-height: 0; }
         #messages {
             flex: 1;
             overflow-y: auto;
@@ -96,19 +94,9 @@
             font-size: 15.5px;
             line-height: 1.45;
         }
-        .sent {
-            background: linear-gradient(135deg, var(--accent), var(--accent2));
-            color: white;
-            align-self: flex-end;
-        }
-        .received {
-            background: rgba(30,20,50,0.95);
-            align-self: flex-start;
-        }
+        .sent { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: white; align-self: flex-end; }
+        .received { background: rgba(30,20,50,0.95); align-self: flex-start; }
 
-        #typing-container, .input-area {
-            background: rgba(20,5,40,0.95);
-        }
         .typing-indicator {
             display: flex;
             align-items: center;
@@ -128,7 +116,6 @@
         .typing-dot:nth-child(3) { animation-delay: 0.4s; }
         @keyframes typingBounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
 
-        /* Offline Message */
         #offline-message {
             padding: 20px;
             text-align: center;
@@ -137,6 +124,26 @@
             border-radius: 16px;
             border: 1px solid var(--accent);
             display: none;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background: rgba(30,20,50,0.98);
+            padding: 32px;
+            border-radius: 24px;
+            border: 2px solid var(--accent);
+            max-width: 420px;
+            width: 90%;
+            text-align: center;
         }
     </style>
 </head>
@@ -172,12 +179,23 @@
         <div class="header">
             <div class="avatar"></div>
             <h2>Isabella</h2>
-            <div style="margin-left:auto; font-size:0.9rem; opacity:0.7;" id="user-info"></div>
+            
+            <div style="margin-left:auto; display:flex; align-items:center; gap:12px;">
+                <div id="user-info"></div>
+                
+                <div id="subscription-status" style="display:none; font-size:0.85rem; padding:6px 12px; border-radius:20px; background:rgba(195,0,255,0.2); border:1px solid var(--accent); cursor:pointer;" onclick="showPricingModal()">
+                    <span id="current-tier"></span>
+                </div>
+                
+                <button onclick="showPricingModal()" 
+                        style="padding:8px 16px; font-size:0.9rem; background:linear-gradient(135deg, #c300ff, #ff0099); border:none; border-radius:20px; color:white; cursor:pointer;">
+                    Upgrade
+                </button>
+            </div>
         </div>
         
         <div id="messages"></div>
 
-        <!-- Offline Message -->
         <div id="offline-message">
             <h3>🌙 Isabella is Offline</h3>
             <p>Only available between <strong>5:00 PM - 2:00 AM ET</strong></p>
@@ -199,244 +217,313 @@
         </div>
     </div>
 
-    <script>
-        let token = localStorage.getItem('token');
-        let currentUser = null;
-        let convoId = null;
-       
-        const messagesContainer = document.getElementById('messages');
-        const typingContainer = document.getElementById('typing-container');
-        const input = document.getElementById('user-input');
-        const sendBtn = document.getElementById('send-btn');
-        const authScreen = document.getElementById('auth-screen');
-        const chatWrapper = document.getElementById('chat-wrapper');
-        const userInfo = document.getElementById('user-info');
-        const offlineMessage = document.getElementById('offline-message');
-        
-        let isSending = false;
-        let responseTimeout = null;
-    
-        const USER_TYPING_DELAY = 4500;
-        const BOT_THINKING_DELAY = 4000;
-    
-        // ==================== AVAILABILITY (5PM - 2AM NYC) ====================
-        function isIsabellaAvailable() {
-            const now = new Date();
-            const nyFormatter = new Intl.DateTimeFormat('en-US', {
-                timeZone: 'America/New_York',
-                hour: 'numeric',
-                hour12: false
-            });
-            const hour = parseInt(nyFormatter.format(now));
-            return (hour >= 17) || (hour < 2);
-        }
-    
-        function updateAvailability() {
-            if (!offlineMessage) {
-                console.warn("Offline message element not found!");
-                return;
-            }
+    <!-- Pricing Modal -->
+    <div id="pricing-modal" class="modal">
+        <div class="modal-content">
+            <h2 style="margin-bottom:20px;">Choose Your Experience</h2>
             
-            const available = isIsabellaAvailable();
+            <div style="display:flex; flex-direction:column; gap:16px; margin:20px 0;">
+                <button onclick="upgradePlan('premium_monthly')" 
+                        style="padding:16px; background:rgba(195,0,255,0.2); border:2px solid var(--accent); border-radius:16px; color:white;">
+                    <strong>Premium — $14.99/mo</strong><br>
+                    <small>Unlimited messages • Voice • Better Memory</small>
+                </button>
+                
+                <button onclick="upgradePlan('ultimate_monthly')" 
+                        style="padding:16px; background:linear-gradient(135deg, var(--accent), var(--accent2)); border:none; border-radius:16px; color:white; font-weight:bold;">
+                    <strong>Ultimate — $49.99/mo</strong><br>
+                    <small>Full NSFW • Unlimited Everything • Priority</small>
+                </button>
+            </div>
             
-            if (available) {
-                offlineMessage.style.display = 'none';
-                chatWrapper.style.opacity = '1';
-                input.disabled = false;
-                sendBtn.disabled = false;
-            } else {
-                offlineMessage.style.display = 'block';
-                chatWrapper.style.opacity = '0.65';
-                input.disabled = true;
-                sendBtn.disabled = true;
-            }
-        }
+            <button onclick="hidePricingModal()" style="background:none; border:none; color:#bbb; margin-top:10px;">Close</button>
+        </div>
+    </div>
 
+    <script>
+    let token = localStorage.getItem('token');
+    let currentUser = null;
+    let convoId = null;
+   
+    const messagesContainer = document.getElementById('messages');
+    const typingContainer = document.getElementById('typing-container');
+    const input = document.getElementById('user-input');
+    const sendBtn = document.getElementById('send-btn');
+    const authScreen = document.getElementById('auth-screen');
+    const chatWrapper = document.getElementById('chat-wrapper');
+    const userInfo = document.getElementById('user-info');
+    const offlineMessage = document.getElementById('offline-message');
     
-        function showLogin() {
-            document.getElementById('login-form').style.display = 'block';
-            document.getElementById('register-form').style.display = 'none';
-        }
-    
-        function showRegister() {
-            document.getElementById('login-form').style.display = 'none';
-            document.getElementById('register-form').style.display = 'block';
-        }
-    
-        async function register() {
-            const fullName = document.getElementById('reg-fullname').value.trim();
-            const email = document.getElementById('reg-email').value.trim();
-            const password = document.getElementById('reg-password').value.trim();
-            if (!email || !password) return alert("Email and password required");
-            try {
-                const res = await fetch('/auth/register', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, password, full_name: fullName })
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    alert("Account created! Please login.");
-                    showLogin();
-                } else {
-                    alert(data.detail || "Registration failed");
-                }
-            } catch(e) {
-                alert("Error during registration");
+    let isSending = false;
+    let responseTimeout = null;
+
+    const USER_TYPING_DELAY = 4500;
+    const BOT_THINKING_DELAY = 4000;
+
+    // ==================== AVAILABILITY ====================
+    // function isIsabellaAvailable() {
+    //     const now = new Date();
+    //     const nyFormatter = new Intl.DateTimeFormat('en-US', {
+    //         timeZone: 'America/New_York',
+    //         hour: 'numeric',
+    //         hour12: false
+    //     });
+    //     const hour = parseInt(nyFormatter.format(now));
+    //     return (hour >= 17) || (hour < 2);
+    // }
+
+    // function updateAvailability() {
+    //     const available = isIsabellaAvailable();
+    //     if (available) {
+    //         offlineMessage.style.display = 'none';
+    //         chatWrapper.style.opacity = '1';
+    //         input.disabled = false;
+    //         sendBtn.disabled = false;
+    //     } else {
+    //         offlineMessage.style.display = 'block';
+    //         chatWrapper.style.opacity = '0.65';
+    //         input.disabled = true;
+    //         sendBtn.disabled = true;
+    //     }
+    // }
+
+    // ==================== AUTH FUNCTIONS ====================
+    function showLogin() {
+        document.getElementById('login-form').style.display = 'block';
+        document.getElementById('register-form').style.display = 'none';
+    }
+
+    function showRegister() {
+        document.getElementById('login-form').style.display = 'none';
+        document.getElementById('register-form').style.display = 'block';
+    }
+
+    async function register() {
+        const fullName = document.getElementById('reg-fullname').value.trim();
+        const email = document.getElementById('reg-email').value.trim();
+        const password = document.getElementById('reg-password').value.trim();
+        if (!email || !password) return alert("Email and password required");
+        
+        try {
+            const res = await fetch('/auth/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password, full_name: fullName })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                alert("Account created! Please login.");
+                showLogin();
+            } else {
+                alert(data.detail || "Registration failed");
             }
+        } catch(e) {
+            alert("Error during registration");
         }
-    
-        async function login() {
-            const email = document.getElementById('login-email').value.trim();
-            const password = document.getElementById('login-password').value.trim();
-            try {
-                const formData = new FormData();
-                formData.append('username', email);
-                formData.append('password', password);
-                const res = await fetch('/auth/login', { method: 'POST', body: formData });
-                const data = await res.json();
-                if (res.ok) {
-                    token = data.access_token;
-                    currentUser = data.user;
-                    localStorage.setItem('token', token);
-                    localStorage.setItem('user', JSON.stringify(currentUser));
-                   
-                    authScreen.style.display = 'none';
-                    chatWrapper.style.display = 'flex';
-                    userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email}`;
-                    await loadUserHistory();
-                    updateAvailability();   // Commented out
-                } else {
-                    alert(data.detail || "Login failed");
-                }
-            } catch(e) {
-                alert("Login error");
-            }
-        }
-    
-        async function loadUserHistory() {
-            try {
-                const res = await fetch('/api/history', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await res.json();
+    }
+
+    async function login() {
+        const email = document.getElementById('login-email').value.trim();
+        const password = document.getElementById('login-password').value.trim();
+        try {
+            const formData = new FormData();
+            formData.append('username', email);
+            formData.append('password', password);
+            
+            const res = await fetch('/auth/login', { method: 'POST', body: formData });
+            const data = await res.json();
+            
+            if (res.ok) {
+                token = data.access_token;
+                currentUser = data.user;
+                localStorage.setItem('token', token);
+                localStorage.setItem('user', JSON.stringify(currentUser));
                
-                convoId = data.convo_id;
-                localStorage.setItem('convo_id', convoId);
-                messagesContainer.innerHTML = '';
-                data.messages.forEach(m => {
-                    const type = m.role === 'user' ? 'sent' : 'received';
-                    addMessage(m.content, type);
-                });
-                scrollToBottom();
-            } catch(e) {
-                console.error("Failed to load history", e);
-                convoId = `user_${currentUser.id}_${Date.now()}`;
+                authScreen.style.display = 'none';
+                chatWrapper.style.display = 'flex';
+                userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email}`;
+                
+                await updateSubscriptionDisplay();
+                await loadUserHistory();
+                updateAvailability();
+            } else {
+                alert(data.detail || "Login failed");
             }
+        } catch(e) {
+            alert("Login error");
         }
-    
-        function addMessage(text, type) {
-            const div = document.createElement('div');
-            div.className = `message ${type}`;
-            div.textContent = text;
-            messagesContainer.appendChild(div);
+    }
+
+    // ==================== CHAT FUNCTIONS ====================
+    async function loadUserHistory() {
+        try {
+            const res = await fetch('/api/history', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+           
+            convoId = data.convo_id;
+            localStorage.setItem('convo_id', convoId);
+            messagesContainer.innerHTML = '';
+            data.messages.forEach(m => {
+                const type = m.role === 'user' ? 'sent' : 'received';
+                addMessage(m.content, type);
+            });
             scrollToBottom();
+        } catch(e) {
+            console.error("Failed to load history", e);
+            convoId = `user_${currentUser.id}_${Date.now()}`;
         }
-    
-        function scrollToBottom() {
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
-    
-        function showTyping() {
-            typingContainer.style.display = 'block';
-            scrollToBottom();
-        }
-    
-        function hideTyping() {
-            typingContainer.style.display = 'none';
-        }
-    
-        async function sendToBackend(msg) {
-            if (!isIsabellaAvailable()) return;
+    }
+
+    function addMessage(text, type) {
+        const div = document.createElement('div');
+        div.className = `message ${type}`;
+        div.textContent = text;
+        messagesContainer.appendChild(div);
+        scrollToBottom();
+    }
+
+    function scrollToBottom() {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    function showTyping() {
+        typingContainer.style.display = 'block';
+        scrollToBottom();
+    }
+
+    function hideTyping() {
+        typingContainer.style.display = 'none';
+    }
+
+    async function sendToBackend(msg) {
+        if (!isIsabellaAvailable()) return;
+        
+        isSending = true;
+        showTyping();
+        
+        try {
+            const res = await fetch('/api/reply', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    convo_id: convoId,
+                    message: msg
+                })
+            });
             
-            isSending = true;
-            showTyping();
+            const data = await res.json();
             
-            try {
-                const res = await fetch('/api/reply', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({
-                        convo_id: convoId,
-                        message: msg
-                    })
-                });
-                
-                const data = await res.json();
-                
-                if (data.replies) {
-                    for (let bubble of data.replies) {
-                        await new Promise(resolve => {
-                            setTimeout(() => {
-                                addMessage(bubble, 'received');
-                                resolve();
-                            }, 1650 + Math.random() * 950);
-                        });
-                    }
+            if (data.replies) {
+                for (let bubble of data.replies) {
+                    await new Promise(resolve => {
+                        setTimeout(() => {
+                            addMessage(bubble, 'received');
+                            resolve();
+                        }, 1650 + Math.random() * 950);
+                    });
                 }
-            } catch (err) {
-                console.error(err);
-            } finally {
-                hideTyping();
-                isSending = false;
             }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            hideTyping();
+            isSending = false;
         }
-    
-        function resetTypingTimer(lastMsg) {
-            if (responseTimeout) clearTimeout(responseTimeout);
-    
-            responseTimeout = setTimeout(() => {
-                setTimeout(() => {
-                    sendToBackend(lastMsg);
-                    responseTimeout = null;
-                }, BOT_THINKING_DELAY);
-            }, USER_TYPING_DELAY);
+    }
+
+    function resetTypingTimer(lastMsg) {
+        if (responseTimeout) clearTimeout(responseTimeout);
+
+        responseTimeout = setTimeout(() => {
+            setTimeout(() => {
+                sendToBackend(lastMsg);
+                responseTimeout = null;
+            }, BOT_THINKING_DELAY);
+        }, USER_TYPING_DELAY);
+    }
+
+    function sendMessage() {
+        if (!isIsabellaAvailable()) return;
+        
+        const msg = input.value.trim();
+        if (!msg || isSending) return;
+
+        addMessage(msg, 'sent');
+        input.value = '';
+        resetTypingTimer(msg);
+    }
+
+    // ==================== PRICING & PAYMENTS ====================
+    function showPricingModal() {
+        document.getElementById('pricing-modal').style.display = 'flex';
+    }
+
+    function hidePricingModal() {
+        document.getElementById('pricing-modal').style.display = 'none';
+    }
+
+    async function upgradePlan(priceType) {
+        if (!token) {
+            alert("Please login first");
+            return;
         }
-    
-        function sendMessage() {
-            if (!isIsabellaAvailable()) return;
-            
-            const msg = input.value.trim();
-            if (!msg || isSending) return;
-    
-            addMessage(msg, 'sent');
-            input.value = '';
-            resetTypingTimer(msg);
-        }
-    
-        // Event Listeners
-        input.addEventListener('input', () => {
-            if (responseTimeout) clearTimeout(responseTimeout);
-        });
-    
-        input.addEventListener('keypress', e => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
+        try {
+            const res = await fetch('/payments/create-checkout-session', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ price_type: priceType })
+            });
+
+            const data = await res.json();
+            if (data.url) {
+                window.location.href = data.url;
+            } else {
+                alert(data.detail || "Failed to open checkout");
             }
-        });
-    
-        sendBtn.addEventListener('click', sendMessage);
-    
-        // Initialize
-        window.addEventListener('load', () => {
-            checkAuth();
-            setTimeout(updateAvailability, 500);     // Initial check
-            setInterval(updateAvailability, 30000);  // Every 30 seconds
-        });
-    </script>
+        } catch (error) {
+            console.error(error);
+            alert("Payment error. Please try again.");
+        }
+    }
+
+    async function updateSubscriptionDisplay() {
+        if (!currentUser) return;
+        const statusEl = document.getElementById('subscription-status');
+        const tierEl = document.getElementById('current-tier');
+        
+        const tier = (currentUser.subscription_tier || 'free').toUpperCase();
+        tierEl.textContent = tier === 'FREE' ? 'Free Plan' : `${tier} Active`;
+        statusEl.style.display = 'block';
+    }
+
+    // ==================== EVENT LISTENERS ====================
+    input.addEventListener('input', () => {
+        if (responseTimeout) clearTimeout(responseTimeout);
+    });
+
+    input.addEventListener('keypress', e => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+
+    sendBtn.addEventListener('click', sendMessage);
+
+    // Initialize
+    window.addEventListener('load', () => {
+        // checkAuth(); // Uncomment if you have this function
+        setTimeout(updateAvailability, 500);
+        setInterval(updateAvailability, 30000);
+    });
+</script>
 </body>
 </html>

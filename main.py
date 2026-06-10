@@ -280,36 +280,37 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     if not convo_id:
         raise HTTPException(400, "convo_id required")
 
-    # ==================== TIER ENFORCEMENT ====================
+    # ==================== TIER ENFORCEMENT (PostgreSQL) ====================
     tier = user.get("subscription_tier", "free").lower()
     is_premium = tier in ["premium", "ultimate"]
 
     if not is_premium:
-        # Free users: Daily message limit with nice message
         daily_limit = 30
         
-        conn = get_db_connection()  # Make sure this function is imported from auth or memory
+        conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("""
-            SELECT COUNT(*) FROM chat_history 
-            WHERE user_id = ? 
-              AND role = 'user' 
-              AND date(timestamp) = date('now')
-        """, (user["id"],))
-        daily_count = cur.fetchone()[0]
-        cur.close()
-        conn.close()
+        try:
+            cur.execute("""
+                SELECT COUNT(*) 
+                FROM chat_history 
+                WHERE user_id = %s 
+                  AND DATE(timestamp) = CURRENT_DATE
+                  AND role = 'user'
+            """, (user["id"],))
+            daily_count = cur.fetchone()[0]
+        finally:
+            cur.close()
+            conn.close()
 
         if daily_count >= daily_limit:
             return {
                 "replies": [
-                    "Hey papi 💕 You've hit your daily free message limit. "
-                    "Upgrade to Premium or Ultimate for unlimited chats, voice, NSFW, and so much more. "
-                    "Want to keep talking? Click Upgrade ✨"
+                    "Hey papi 💕 You've reached your daily free message limit (30 messages). "
+                    "Upgrade to Premium or Ultimate for unlimited chats with me ✨"
                 ]
             }
 
-    # ── Rate Limiting (existing) ─────────────────────────────────────
+    # ── Rate Limiting ─────────────────────────────────────
     now = time.time()
     if now - last_reply_time.get(convo_id, 0) < REPLY_COOLDOWN_SECONDS:
         return {"replies": []}
@@ -323,12 +324,11 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         if user_message:
             save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
 
-        # === Get Unified Relationship State ===
+        # Get relationship state and history
         state = get_relationship_state(convo_id)
-
         history = get_history(convo_id)
 
-        # Sanitize history for xAI
+        # Sanitize for xAI
         def sanitize_for_json(data):
             if isinstance(data, list):
                 return [sanitize_for_json(item) for item in data]
@@ -340,10 +340,8 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         clean_history = sanitize_for_json(history)
 
-        # Get NYC context
         context = get_nyc_context()
 
-        # === Build System Prompt ===
         system_prompt = get_system_prompt(
             user_name=user.get("full_name"),
             current_time=context.get("time", ""),
@@ -363,7 +361,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         messages = [{"role": "system", "content": system_prompt}] + clean_history[-12:]
 
-        # ── Call xAI ─────────────────────────────────────
+        # Call xAI
         raw_reply = None
         for attempt in range(2):
             try:
@@ -399,7 +397,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         duration_ms = int((time.time() - start_time) * 1000)
         log_event("response_generated", convo_id, user_id=user.get("id"), duration_ms=duration_ms)
 
-        # === Update Relationship State ===
+        # Update relationship state
         emotional_delta = 1 if any(word in user_message.lower() for word in ["miss", "want", "love", "beautiful", "hot", "sexy"]) else 0
         
         update_relationship_state(
@@ -421,7 +419,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         return {"replies": bubbles}
 
     except Exception as e:
-        logger.error(f"💥 Unexpected error: {e}", exc_info=True)
+        logger.error(f"💥 Unexpected error in reply: {e}", exc_info=True)
         return {"replies": []}
 
 

@@ -264,7 +264,7 @@
     
         // ==================== AVAILABILITY (DISABLED FOR TESTING) ====================
         function isIsabellaAvailable() {
-            return true; // Always available during testing
+            return true;
         }
     
         function updateAvailability() {
@@ -274,7 +274,7 @@
             if (sendBtn) sendBtn.disabled = false;
         }
     
-        // ==================== AUTH FUNCTIONS ====================
+        // ==================== AUTH ====================
         function showLogin() {
             document.getElementById('login-form').style.display = 'block';
             document.getElementById('register-form').style.display = 'none';
@@ -337,7 +337,6 @@
                     localStorage.setItem('token', token);
                     localStorage.setItem('user', JSON.stringify(currentUser));
                     
-                    // Transition to chat screen
                     authScreen.style.display = 'none';
                     chatWrapper.style.display = 'flex';
                     
@@ -391,15 +390,6 @@
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
     
-        function showTyping() {
-            typingContainer.style.display = 'block';
-            scrollToBottom();
-        }
-    
-        function hideTyping() {
-            typingContainer.style.display = 'none';
-        }
-    
         async function sendToBackend(msg) {
             isSending = true;
             showTyping();
@@ -447,7 +437,16 @@
             sendToBackend(msg);
         }
     
-        // ==================== PAYMENTS & UI ====================
+        function showTyping() {
+            typingContainer.style.display = 'block';
+            scrollToBottom();
+        }
+    
+        function hideTyping() {
+            typingContainer.style.display = 'none';
+        }
+    
+        // ==================== PAYMENTS ====================
         function showPricingModal() {
             document.getElementById('pricing-modal').style.display = 'flex';
         }

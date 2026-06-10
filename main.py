@@ -66,6 +66,8 @@ logger.info(f"Starting Isabella server - {datetime.now().isoformat()}")
 app = FastAPI(title="Isabella Chatbot", default_response_class=DateTimeJSONResponse)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+ensure_users_table()
+
 app.include_router(payment_router)
 # ── Guards ─────────────────────────────────────
 last_reply_time = defaultdict(float)

@@ -268,7 +268,6 @@ async def monitor_websocket(websocket: WebSocket, token: str = None):
         logger.error(f"Monitor WebSocket error: {e}")
 
 # ── Protected Chat Route ─────────────────────────────────────
-# ── Protected Chat Route with Tier Enforcement ─────────────────────────────────────
 @app.post("/api/reply")
 async def generate_reply(body: dict = Body(...), user: dict = Depends(get_current_user)):
     start_time = time.time()
@@ -306,7 +305,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             return {
                 "replies": [
                     "Hey papi 💕 You've reached your daily free message limit (30 messages). "
-                    "Upgrade to Premium or Ultimate for unlimited chats with me ✨"
+                    "Upgrade to Premium or Ultimate for unlimited chats with me all day ✨"
                 ]
             }
 
@@ -324,11 +323,11 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         if user_message:
             save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
 
-        # Get relationship state and history
+        # === Get Unified Relationship State ===
         state = get_relationship_state(convo_id)
         history = get_history(convo_id)
 
-        # Sanitize for xAI
+        # Sanitize history for xAI
         def sanitize_for_json(data):
             if isinstance(data, list):
                 return [sanitize_for_json(item) for item in data]
@@ -340,13 +339,16 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         clean_history = sanitize_for_json(history)
 
+        # Get NYC context
         context = get_nyc_context()
 
+        # === Build System Prompt with Tier Awareness ===
         system_prompt = get_system_prompt(
             user_name=user.get("full_name"),
             current_time=context.get("time", ""),
             weather=context.get("weather", ""),
-            state=state
+            state=state,
+            tier=tier  # ← Tier-specific behavior
         )
 
         relevant_facts = get_relevant_facts(convo_id, limit=5)
@@ -361,7 +363,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         messages = [{"role": "system", "content": system_prompt}] + clean_history[-12:]
 
-        # Call xAI
+        # ── Call xAI ─────────────────────────────────────
         raw_reply = None
         for attempt in range(2):
             try:
@@ -397,7 +399,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         duration_ms = int((time.time() - start_time) * 1000)
         log_event("response_generated", convo_id, user_id=user.get("id"), duration_ms=duration_ms)
 
-        # Update relationship state
+        # === Update Unified State ===
         emotional_delta = 1 if any(word in user_message.lower() for word in ["miss", "want", "love", "beautiful", "hot", "sexy"]) else 0
         
         update_relationship_state(
@@ -419,9 +421,8 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         return {"replies": bubbles}
 
     except Exception as e:
-        logger.error(f"💥 Unexpected error in reply: {e}", exc_info=True)
+        logger.error(f"💥 Unexpected error: {e}", exc_info=True)
         return {"replies": []}
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

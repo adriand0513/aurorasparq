@@ -240,290 +240,256 @@
         </div>
     </div>
 
-    <script>
-    let token = localStorage.getItem('token');
-    let currentUser = null;
-    let convoId = null;
-   
-    const messagesContainer = document.getElementById('messages');
-    const typingContainer = document.getElementById('typing-container');
-    const input = document.getElementById('user-input');
-    const sendBtn = document.getElementById('send-btn');
-    const authScreen = document.getElementById('auth-screen');
-    const chatWrapper = document.getElementById('chat-wrapper');
-    const userInfo = document.getElementById('user-info');
-    const offlineMessage = document.getElementById('offline-message');
-    
-    let isSending = false;
-    let responseTimeout = null;
-
-    const USER_TYPING_DELAY = 4500;
-    const BOT_THINKING_DELAY = 4000;
-
-    // ==================== AVAILABILITY ====================
-    // function isIsabellaAvailable() {
-    //     const now = new Date();
-    //     const nyFormatter = new Intl.DateTimeFormat('en-US', {
-    //         timeZone: 'America/New_York',
-    //         hour: 'numeric',
-    //         hour12: false
-    //     });
-    //     const hour = parseInt(nyFormatter.format(now));
-    //     return (hour >= 17) || (hour < 2);
-    // }
-
-    // function updateAvailability() {
-    //     const available = isIsabellaAvailable();
-    //     if (available) {
-    //         offlineMessage.style.display = 'none';
-    //         chatWrapper.style.opacity = '1';
-    //         input.disabled = false;
-    //         sendBtn.disabled = false;
-    //     } else {
-    //         offlineMessage.style.display = 'block';
-    //         chatWrapper.style.opacity = '0.65';
-    //         input.disabled = true;
-    //         sendBtn.disabled = true;
-    //     }
-    // }
-
-    // ==================== AUTH FUNCTIONS ====================
-    function showLogin() {
-        document.getElementById('login-form').style.display = 'block';
-        document.getElementById('register-form').style.display = 'none';
-    }
-
-    function showRegister() {
-        document.getElementById('login-form').style.display = 'none';
-        document.getElementById('register-form').style.display = 'block';
-    }
-
-    async function register() {
-        const fullName = document.getElementById('reg-fullname').value.trim();
-        const email = document.getElementById('reg-email').value.trim();
-        const password = document.getElementById('reg-password').value.trim();
-        if (!email || !password) return alert("Email and password required");
+   <script>
+        let token = localStorage.getItem('token');
+        let currentUser = null;
+        let convoId = null;
+       
+        const messagesContainer = document.getElementById('messages');
+        const typingContainer = document.getElementById('typing-container');
+        const input = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const authScreen = document.getElementById('auth-screen');
+        const chatWrapper = document.getElementById('chat-wrapper');
+        const userInfo = document.getElementById('user-info');
+        const offlineMessage = document.getElementById('offline-message');
         
-        try {
-            const res = await fetch('/auth/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password, full_name: fullName })
-            });
-            const data = await res.json();
-            if (res.ok) {
-                alert("Account created! Please login.");
-                showLogin();
-            } else {
-                alert(data.detail || "Registration failed");
-            }
-        } catch(e) {
-            alert("Error during registration");
+        let isSending = false;
+        let responseTimeout = null;
+    
+        const USER_TYPING_DELAY = 4500;
+        const BOT_THINKING_DELAY = 4000;
+    
+        // ==================== AVAILABILITY (DISABLED FOR TESTING) ====================
+        function isIsabellaAvailable() {
+            return true; // Always available
         }
-    }
-
-    async function login() {
-        const email = document.getElementById('login-email').value.trim();
-        const password = document.getElementById('login-password').value.trim();
-        try {
-            const formData = new FormData();
-            formData.append('username', email);
-            formData.append('password', password);
+    
+        function updateAvailability() {
+            offlineMessage.style.display = 'none';
+            chatWrapper.style.opacity = '1';
+            if (input) input.disabled = false;
+            if (sendBtn) sendBtn.disabled = false;
+        }
+    
+        // ==================== AUTH ====================
+        function showLogin() {
+            document.getElementById('login-form').style.display = 'block';
+            document.getElementById('register-form').style.display = 'none';
+        }
+    
+        function showRegister() {
+            document.getElementById('login-form').style.display = 'none';
+            document.getElementById('register-form').style.display = 'block';
+        }
+    
+        async function register() {
+            const fullName = document.getElementById('reg-fullname').value.trim();
+            const email = document.getElementById('reg-email').value.trim();
+            const password = document.getElementById('reg-password').value.trim();
+            if (!email || !password) return alert("Email and password required");
             
-            const res = await fetch('/auth/login', { method: 'POST', body: formData });
-            const data = await res.json();
-            
-            if (res.ok) {
-                token = data.access_token;
-                currentUser = data.user;
-                localStorage.setItem('token', token);
-                localStorage.setItem('user', JSON.stringify(currentUser));
+            try {
+                const res = await fetch('/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password, full_name: fullName })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    alert("Account created! Please login.");
+                    showLogin();
+                } else {
+                    alert(data.detail || "Registration failed");
+                }
+            } catch(e) {
+                alert("Error during registration");
+            }
+        }
+    
+        async function login() {
+            const email = document.getElementById('login-email').value.trim();
+            const password = document.getElementById('login-password').value.trim();
+            try {
+                const formData = new FormData();
+                formData.append('username', email);
+                formData.append('password', password);
+                
+                const res = await fetch('/auth/login', { method: 'POST', body: formData });
+                const data = await res.json();
+                
+                if (res.ok) {
+                    token = data.access_token;
+                    currentUser = data.user;
+                    localStorage.setItem('token', token);
+                    localStorage.setItem('user', JSON.stringify(currentUser));
+                   
+                    authScreen.style.display = 'none';
+                    chatWrapper.style.display = 'flex';
+                    userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email}`;
+                    
+                    await updateSubscriptionDisplay();
+                    await loadUserHistory();
+                    updateAvailability();
+                } else {
+                    alert(data.detail || "Login failed");
+                }
+            } catch(e) {
+                console.error(e);
+                alert("Login error");
+            }
+        }
+    
+        // ==================== CHAT CORE ====================
+        async function loadUserHistory() {
+            if (!token) return;
+            try {
+                const res = await fetch('/api/history', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
                
+                convoId = data.convo_id || `user_${currentUser.id}`;
+                localStorage.setItem('convo_id', convoId);
+                messagesContainer.innerHTML = '';
+                
+                data.messages.forEach(m => {
+                    const type = m.role === 'user' ? 'sent' : 'received';
+                    addMessage(m.content, type);
+                });
+                scrollToBottom();
+            } catch(e) {
+                console.error("Failed to load history", e);
+                convoId = `user_${currentUser.id}_${Date.now()}`;
+            }
+        }
+    
+        function addMessage(text, type) {
+            const div = document.createElement('div');
+            div.className = `message ${type}`;
+            div.textContent = text;
+            messagesContainer.appendChild(div);
+            scrollToBottom();
+        }
+    
+        function scrollToBottom() {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+    
+        function showTyping() {
+            typingContainer.style.display = 'block';
+            scrollToBottom();
+        }
+    
+        function hideTyping() {
+            typingContainer.style.display = 'none';
+        }
+    
+        async function sendToBackend(msg) {
+            isSending = true;
+            showTyping();
+            
+            try {
+                const res = await fetch('/api/reply', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        convo_id: convoId,
+                        message: msg
+                    })
+                });
+                
+                const data = await res.json();
+                
+                if (data.replies && data.replies.length > 0) {
+                    for (let bubble of data.replies) {
+                        await new Promise(resolve => {
+                            setTimeout(() => {
+                                addMessage(bubble, 'received');
+                                resolve();
+                            }, 1200 + Math.random() * 800);
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error(err);
+                addMessage("Sorry, something went wrong...", 'received');
+            } finally {
+                hideTyping();
+                isSending = false;
+            }
+        }
+    
+        function sendMessage() {
+            const msg = input.value.trim();
+            if (!msg || isSending) return;
+    
+            addMessage(msg, 'sent');
+            input.value = '';
+            sendToBackend(msg);   // Direct send for testing
+        }
+    
+        // ==================== PAYMENTS ====================
+        function showPricingModal() {
+            document.getElementById('pricing-modal').style.display = 'flex';
+        }
+    
+        function hidePricingModal() {
+            document.getElementById('pricing-modal').style.display = 'none';
+        }
+    
+        async function upgradePlan(priceType) {
+            if (!token) return alert("Please login first");
+            try {
+                const res = await fetch('/payments/create-checkout-session', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ price_type: priceType })
+                });
+                const data = await res.json();
+                if (data.url) window.location.href = data.url;
+            } catch (error) {
+                alert("Payment error");
+            }
+        }
+    
+        async function updateSubscriptionDisplay() {
+            if (!currentUser) return;
+            const statusEl = document.getElementById('subscription-status');
+            const tierEl = document.getElementById('current-tier');
+            const tier = (currentUser.subscription_tier || 'free').toUpperCase();
+            tierEl.textContent = tier === 'FREE' ? 'Free Plan' : `${tier} Active`;
+            statusEl.style.display = 'block';
+        }
+    
+        // ==================== INIT ====================
+        window.addEventListener('load', () => {
+            if (token) {
+                currentUser = JSON.parse(localStorage.getItem('user') || '{}');
                 authScreen.style.display = 'none';
                 chatWrapper.style.display = 'flex';
-                userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email}`;
-                
-                await updateSubscriptionDisplay();
-                await loadUserHistory();
-                updateAvailability();
-            } else {
-                alert(data.detail || "Login failed");
+                userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email || 'User'}`;
+                loadUserHistory();
+                updateSubscriptionDisplay();
             }
-        } catch(e) {
-            alert("Login error");
-        }
-    }
-
-    // ==================== CHAT FUNCTIONS ====================
-    async function loadUserHistory() {
-        try {
-            const res = await fetch('/api/history', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await res.json();
-           
-            convoId = data.convo_id;
-            localStorage.setItem('convo_id', convoId);
-            messagesContainer.innerHTML = '';
-            data.messages.forEach(m => {
-                const type = m.role === 'user' ? 'sent' : 'received';
-                addMessage(m.content, type);
-            });
-            scrollToBottom();
-        } catch(e) {
-            console.error("Failed to load history", e);
-            convoId = `user_${currentUser.id}_${Date.now()}`;
-        }
-    }
-
-    function addMessage(text, type) {
-        const div = document.createElement('div');
-        div.className = `message ${type}`;
-        div.textContent = text;
-        messagesContainer.appendChild(div);
-        scrollToBottom();
-    }
-
-    function scrollToBottom() {
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    }
-
-    function showTyping() {
-        typingContainer.style.display = 'block';
-        scrollToBottom();
-    }
-
-    function hideTyping() {
-        typingContainer.style.display = 'none';
-    }
-
-    async function sendToBackend(msg) {
-        if (!isIsabellaAvailable()) return;
-        
-        isSending = true;
-        showTyping();
-        
-        try {
-            const res = await fetch('/api/reply', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    convo_id: convoId,
-                    message: msg
-                })
-            });
-            
-            const data = await res.json();
-            
-            if (data.replies) {
-                for (let bubble of data.replies) {
-                    await new Promise(resolve => {
-                        setTimeout(() => {
-                            addMessage(bubble, 'received');
-                            resolve();
-                        }, 1650 + Math.random() * 950);
-                    });
-                }
+            updateAvailability();
+        });
+    
+        // Event Listeners
+        input.addEventListener('keypress', e => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                sendMessage();
             }
-        } catch (err) {
-            console.error(err);
-        } finally {
-            hideTyping();
-            isSending = false;
-        }
-    }
-
-    function resetTypingTimer(lastMsg) {
-        if (responseTimeout) clearTimeout(responseTimeout);
-
-        responseTimeout = setTimeout(() => {
-            setTimeout(() => {
-                sendToBackend(lastMsg);
-                responseTimeout = null;
-            }, BOT_THINKING_DELAY);
-        }, USER_TYPING_DELAY);
-    }
-
-    function sendMessage() {
-        if (!isIsabellaAvailable()) return;
-        
-        const msg = input.value.trim();
-        if (!msg || isSending) return;
-
-        addMessage(msg, 'sent');
-        input.value = '';
-        resetTypingTimer(msg);
-    }
-
-    // ==================== PRICING & PAYMENTS ====================
-    function showPricingModal() {
-        document.getElementById('pricing-modal').style.display = 'flex';
-    }
-
-    function hidePricingModal() {
-        document.getElementById('pricing-modal').style.display = 'none';
-    }
-
-    async function upgradePlan(priceType) {
-        if (!token) {
-            alert("Please login first");
-            return;
-        }
-        try {
-            const res = await fetch('/payments/create-checkout-session', {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ price_type: priceType })
-            });
-
-            const data = await res.json();
-            if (data.url) {
-                window.location.href = data.url;
-            } else {
-                alert(data.detail || "Failed to open checkout");
-            }
-        } catch (error) {
-            console.error(error);
-            alert("Payment error. Please try again.");
-        }
-    }
-
-    async function updateSubscriptionDisplay() {
-        if (!currentUser) return;
-        const statusEl = document.getElementById('subscription-status');
-        const tierEl = document.getElementById('current-tier');
-        
-        const tier = (currentUser.subscription_tier || 'free').toUpperCase();
-        tierEl.textContent = tier === 'FREE' ? 'Free Plan' : `${tier} Active`;
-        statusEl.style.display = 'block';
-    }
-
-    // ==================== EVENT LISTENERS ====================
-    input.addEventListener('input', () => {
-        if (responseTimeout) clearTimeout(responseTimeout);
-    });
-
-    input.addEventListener('keypress', e => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-        }
-    });
-
-    sendBtn.addEventListener('click', sendMessage);
-
-    // Initialize
-    window.addEventListener('load', () => {
-        // checkAuth(); // Uncomment if you have this function
-        setTimeout(updateAvailability, 500);
-        setInterval(updateAvailability, 30000);
-    });
-</script>
+        });
+    
+        sendBtn.addEventListener('click', sendMessage);
+    </script>
 </body>
 </html>

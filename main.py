@@ -141,6 +141,33 @@ async def get_chat_history(user: dict = Depends(get_current_user)):
     history = get_history(default_convo_id, limit=200)
     return {"convo_id": default_convo_id, "messages": history}
 
+@app.get("/api/usage")
+async def get_usage(user: dict = Depends(get_current_user)):
+    """Return daily message usage for the current user"""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT COUNT(*) 
+            FROM chat_history 
+            WHERE user_id = %s 
+              AND DATE(timestamp) = CURRENT_DATE
+              AND role = 'user'
+        """, (user["id"],))
+        daily_count = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+
+        return {
+            "daily_count": daily_count,
+            "daily_limit": 30 if user.get("subscription_tier", "free").lower() == "free" else 9999,
+            "remaining": max(0, 30 - daily_count) if user.get("subscription_tier", "free").lower() == "free" else "unlimited"
+        }
+    except Exception as e:
+        logger.error(f"Usage endpoint error: {e}")
+        return {"daily_count": 0, "daily_limit": 30, "remaining": 30}
+
+
 # ── Admin All Past Chats ─────────────────────────────────────
 @app.get("/api/admin/chats")
 async def admin_all_chats(token: str = None):

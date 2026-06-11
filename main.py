@@ -167,6 +167,18 @@ async def get_usage(user: dict = Depends(get_current_user)):
         logger.error(f"Usage endpoint error: {e}")
         return {"daily_count": 0, "daily_limit": 30, "remaining": 30}
 
+@app.get("/success")
+async def payment_success(session_id: str = None):
+    try:
+        # Optional: Verify the session if you want
+        if session_id:
+            # You can add verification here later
+            pass
+        with open("static/success.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+    except Exception:
+        return HTMLResponse("<h1>Upgrade Successful! Redirecting...</h1><script>setTimeout(() => window.location.href='/chat', 2000);</script>")
+
 
 # ── Admin All Past Chats ─────────────────────────────────────
 @app.get("/api/admin/chats")

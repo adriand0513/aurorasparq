@@ -318,20 +318,19 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     if not convo_id:
         raise HTTPException(400, "convo_id required")
 
-    # ==================== TIER ENFORCEMENT (PostgreSQL) ====================
+    # ==================== TIER ENFORCEMENT ====================
     tier = user.get("subscription_tier", "free").lower()
     is_premium = tier in ["premium", "ultimate"]
 
     if not is_premium:
         daily_limit = 30
-        
         conn = get_db_connection()
         cur = conn.cursor()
         try:
             cur.execute("""
-                SELECT COUNT(*) 
-                FROM chat_history 
-                WHERE user_id = %s 
+                SELECT COUNT(*)
+                FROM chat_history
+                WHERE user_id = %s
                   AND DATE(timestamp) = CURRENT_DATE
                   AND role = 'user'
             """, (user["id"],))
@@ -344,7 +343,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             return {
                 "replies": [
                     "Hey papi 💕 You've reached your daily free message limit (30 messages). "
-                    "Upgrade to Premium or Ultimate for unlimited chats with me all day ✨"
+                    "Upgrade to Premium or Ultimate for unlimited chats with me ✨"
                 ]
             }
 
@@ -362,7 +361,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         if user_message:
             save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
 
-        # === Get Unified Relationship State ===
+        # === Get Relationship State & History ===
         state = get_relationship_state(convo_id)
         history = get_history(convo_id)
 
@@ -387,15 +386,16 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             current_time=context.get("time", ""),
             weather=context.get("weather", ""),
             state=state,
-            tier=tier  # ← Tier-specific behavior
+            tier=tier
         )
 
+        # Add relevant facts
         relevant_facts = get_relevant_facts(convo_id, limit=5)
-        rel_level = state.get("level", 1) if state else 1
-        pet_name = state.get("pet_name") if state else None
-
         if relevant_facts:
             system_prompt += f"\n\nKey facts about him: {' | '.join(relevant_facts[:4])}"
+
+        rel_level = state.get("level", 1) if state else 1
+        pet_name = state.get("pet_name") if state else None
         system_prompt += f"\nCurrent relationship level: {rel_level}/10."
         if pet_name:
             system_prompt += f" You sometimes call him '{pet_name}'."
@@ -438,7 +438,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         duration_ms = int((time.time() - start_time) * 1000)
         log_event("response_generated", convo_id, user_id=user.get("id"), duration_ms=duration_ms)
 
-        # === Update Unified State ===
+        # === Update Relationship State ===
         emotional_delta = 1 if any(word in user_message.lower() for word in ["miss", "want", "love", "beautiful", "hot", "sexy"]) else 0
         
         update_relationship_state(
@@ -450,9 +450,9 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         if len(user_message) > 25:
             add_narrative_moment(
-                convo_id, 
-                f"User: {user_message[:100]}", 
-                moment_type="user_shared", 
+                convo_id,
+                f"User: {user_message[:100]}",
+                moment_type="user_shared",
                 emotional_tag="flirty" if emotional_delta > 0 else "normal",
                 importance=6
             )
@@ -460,7 +460,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         return {"replies": bubbles}
 
     except Exception as e:
-        logger.error(f"💥 Unexpected error: {e}", exc_info=True)
+        logger.error(f"💥 Unexpected error in /api/reply: {e}", exc_info=True)
         return {"replies": []}
 
 if __name__ == "__main__":

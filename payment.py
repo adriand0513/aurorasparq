@@ -46,7 +46,7 @@ async def create_checkout_session(
             line_items=[{"price": price_id, "quantity": 1}],
             mode="subscription" if is_subscription else "payment",
             success_url="https://www.aurorasparq.com/success?session_id={CHECKOUT_SESSION_ID}",
-            cancel_url="https://www.aurorasparq.com/chat",
+            cancel_url="https://www.aurorasparq.com/",
             metadata={
                 "user_id": str(current_user["id"]),
                 "price_type": price_type,
@@ -94,7 +94,7 @@ async def payment_success(session_id: str = None):
                 Payment Successful!<br><br>
                 Redirecting to chat...
             </h1>
-            <script>setTimeout(() => window.location.href='/chat', 3000);</script>
+            <script>setTimeout(() => window.location.href='/', 3000);</script>
         """)
 
 

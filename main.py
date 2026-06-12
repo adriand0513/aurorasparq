@@ -177,7 +177,7 @@ async def payment_success(session_id: str = None):
         with open("static/success.html", "r", encoding="utf-8") as f:
             return HTMLResponse(f.read())
     except Exception:
-        return HTMLResponse("<h1>Upgrade Successful! Redirecting...</h1><script>setTimeout(() => window.location.href='/chat', 2000);</script>")
+        return HTMLResponse("<h1>Upgrade Successful! Redirecting...</h1><script>setTimeout(() => window.location.href='/', 2000);</script>")
 
 
 # ── Admin All Past Chats ─────────────────────────────────────

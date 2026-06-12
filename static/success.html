@@ -13,7 +13,7 @@
         }
         * { margin:0; padding:0; box-sizing:border-box; }
         body {
-            background: linear-gradient(135deg, #0d0015, #1a0033);
+            background: linear-gradient(135deg, #0d0015 0%, #1a0033 100%);
             color: #f8f0ff;
             font-family: system-ui, sans-serif;
             height: 100vh;
@@ -25,90 +25,76 @@
         }
         .success-container {
             text-align: center;
-            max-width: 520px;
-            padding: 60px 50px;
-            background: rgba(20, 10, 45, 0.97);
+            max-width: 560px;
+            padding: 70px 50px;
+            background: rgba(20, 10, 45, 0.96);
             border-radius: 32px;
             border: 2px solid var(--accent);
-            box-shadow: 0 0 80px rgba(195, 0, 255, 0.5),
-                        0 0 120px rgba(255, 0, 153, 0.3);
+            box-shadow: 0 0 100px rgba(195, 0, 255, 0.6),
+                        0 0 160px rgba(255, 0, 153, 0.3);
             position: relative;
-            overflow: hidden;
-        }
-        .success-container::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%);
-            animation: shine 8s linear infinite;
         }
         .success-icon {
-            font-size: 100px;
-            margin-bottom: 20px;
-            animation: pop 0.8s ease;
+            font-size: 110px;
+            margin-bottom: 24px;
+            animation: pop 0.9s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
         h1 {
-            font-size: 2.8rem;
-            margin-bottom: 16px;
-            background: linear-gradient(90deg, var(--accent), var(--accent2), var(--gold));
+            font-size: 3rem;
+            margin-bottom: 20px;
+            background: linear-gradient(90deg, var(--accent), var(--gold), var(--accent2));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
         p {
-            font-size: 1.2rem;
-            opacity: 0.9;
-            line-height: 1.6;
-            margin-bottom: 40px;
+            font-size: 1.25rem;
+            line-height: 1.7;
+            opacity: 0.95;
+            margin-bottom: 45px;
         }
         .btn {
             display: inline-block;
-            padding: 18px 52px;
+            padding: 18px 56px;
             background: linear-gradient(135deg, var(--accent), var(--accent2));
             color: white;
             font-weight: 700;
-            font-size: 1.15rem;
+            font-size: 1.2rem;
             border-radius: 50px;
             text-decoration: none;
-            transition: all 0.4s;
-            box-shadow: 0 10px 30px rgba(195, 0, 255, 0.4);
+            transition: all 0.4s ease;
+            box-shadow: 0 12px 40px rgba(195, 0, 255, 0.5);
         }
         .btn:hover {
-            transform: translateY(-4px) scale(1.05);
-            box-shadow: 0 15px 40px rgba(195, 0, 255, 0.6);
+            transform: translateY(-6px) scale(1.08);
+            box-shadow: 0 20px 50px rgba(195, 0, 255, 0.7);
         }
         .redirect-text {
-            margin-top: 35px;
-            font-size: 1rem;
-            opacity: 0.75;
+            margin-top: 40px;
+            font-size: 1.05rem;
+            opacity: 0.8;
         }
         @keyframes pop {
-            0% { transform: scale(0.4) rotate(-15deg); }
-            60% { transform: scale(1.15) rotate(5deg); }
+            0% { transform: scale(0.3) rotate(-20deg); }
+            60% { transform: scale(1.2) rotate(8deg); }
             100% { transform: scale(1) rotate(0); }
-        }
-        @keyframes shine {
-            0% { transform: translateX(-50%) translateY(-50%) rotate(0deg); }
-            100% { transform: translateX(-50%) translateY(-50%) rotate(360deg); }
         }
     </style>
 </head>
 <body>
     <div class="success-container">
         <div class="success-icon">💎</div>
-        <h1>Welcome to the Next Level</h1>
-        <p>Thank you for upgrading, <strong>papi</strong>.<br>
-           Isabella is now yours without limits ✨</p>
+        <h1>Upgrade Complete</h1>
+        <p>Thank you, <strong>papi</strong>.<br>
+           Your account has been upgraded to full access.<br>
+           Enjoy unlimited time with Isabella ✨</p>
         
         <a href="/chat" class="btn">Continue to Isabella</a>
         
-        <div class="redirect-text">Redirecting you in <span id="countdown">5</span> seconds...</div>
+        <div class="redirect-text">Redirecting in <span id="countdown">4</span> seconds...</div>
     </div>
 
     <script>
-        let timeLeft = 5;
+        let timeLeft = 4;
         const countdownEl = document.getElementById('countdown');
 
         const timer = setInterval(() => {

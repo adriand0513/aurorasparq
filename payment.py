@@ -68,7 +68,7 @@ async def create_checkout_session(
 @router.get("/success")
 async def payment_success(session_id: str = None):
     if not session_id:
-        return HTMLResponse("<h2>Payment Successful! Redirecting...</h2><script>setTimeout(() => window.location.href='/chat', 2000);</script>")
+        return HTMLResponse("<h2>Payment Successful! Redirecting...</h2><script>setTimeout(() => window.location.href='/', 2000);</script>")
 
     try:
         session = stripe.checkout.Session.retrieve(session_id)

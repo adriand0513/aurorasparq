@@ -169,18 +169,49 @@ async def get_usage(user: dict = Depends(get_current_user)):
 
 @app.get("/success")
 async def payment_success(session_id: str = None):
-    try:
-        with open("static/success.html", "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
-    except:
-        # Fallback
+    """Handle successful payment and show beautiful success page"""
+    if not session_id:
+        # Fallback if no session_id
         return HTMLResponse("""
             <h1 style="text-align:center; margin-top:100px; color:#c300ff;">
-                Upgrade Successful!<br><br>
+                Thank you for upgrading!<br><br>
                 Redirecting to chat...
             </h1>
             <script>
-                setTimeout(() => window.location.href = '/', 2500);
+                setTimeout(() => window.location.href = '/chat', 2000);
+            </script>
+        """)
+
+    try:
+        # Optional: Verify the session with Stripe
+        session = stripe.checkout.Session.retrieve(session_id)
+        
+        if session.payment_status == "paid" or session.status == "complete":
+            # Update user tier (already handled in webhook, but good to double-check)
+            user_id_str = session.metadata.get("user_id")
+            price_type = session.metadata.get("price_type")
+            
+            if user_id_str and price_type:
+                user_id = int(user_id_str)
+                tier = "premium" if "premium" in price_type else "ultimate"
+                update_user_subscription(user_id, tier, session.get("subscription"))
+                logger.info(f"✅ Success page upgraded user {user_id} to {tier}")
+
+        # Serve the beautiful success page
+        with open("static/success.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+
+    except Exception as e:
+        logger.error(f"Success page error: {e}")
+        # Graceful fallback
+        return HTMLResponse("""
+            <h1 style="text-align:center; margin-top:100px; color:#c300ff;">
+                Payment Successful!<br><br>
+                Your account has been upgraded.<br>
+                Redirecting to Isabella...
+            </h1>
+            <script>
+                setTimeout(() => window.location.href = '/chat', 3000);
             </script>
         """)
 

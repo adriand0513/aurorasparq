@@ -359,6 +359,25 @@
                 alert("Login error. Please try again.");
             }
         }
+
+       // NEW: Force refresh user data after payment
+        async function refreshUserData() {
+            if (!token) return;
+            try {
+                const res = await fetch('/auth/me', {   // We'll add this endpoint
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const freshUser = await res.json();
+                    currentUser = freshUser;
+                    localStorage.setItem('user', JSON.stringify(freshUser));
+                    await updateSubscriptionDisplay();
+                    console.log("✅ User data refreshed - Tier:", freshUser.subscription_tier);
+                }
+            } catch(e) {
+                console.error("Failed to refresh user data");
+            }
+        }
     
         function logout() {
             localStorage.removeItem('token');

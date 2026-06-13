@@ -66,39 +66,6 @@ async def create_checkout_session(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-# Success Page
-@router.get("/success")
-async def payment_success(session_id: str = None):
-    if not session_id:
-        return HTMLResponse("<h1>Payment Successful! Redirecting...</h1><script>setTimeout(() => window.location.href='/', 2000);</script>")
-
-    try:
-        session = stripe.checkout.Session.retrieve(session_id)
-        
-        if session.payment_status == "paid" or session.status == "complete":
-            user_id_str = session.metadata.get("user_id")
-            price_type = session.metadata.get("price_type")
-            
-            if user_id_str and price_type:
-                user_id = int(user_id_str)
-                tier = "premium" if "premium" in price_type else "ultimate"
-                
-                success = update_user_subscription(user_id, tier, session.get("subscription"))
-                
-                if success:
-                    logger.info(f"✅ SUCCESS: User {user_id} upgraded to {tier}")
-                else:
-                    logger.error(f"❌ Failed to update subscription for user {user_id}")
-
-        # Serve success page
-        with open("static/success.html", "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
-
-    except Exception as e:
-        logger.error(f"Success handler error: {e}")
-        with open("static/success.html", "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
-
 # Webhook
 @router.post("/webhook")
 async def stripe_webhook(request: Request):

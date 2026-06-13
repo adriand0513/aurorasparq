@@ -180,34 +180,52 @@ async def get_current_user_info(user: dict = Depends(get_current_user)):
 
 @app.get("/success")
 async def payment_success(session_id: str = None):
-    """Handle successful payment and update user tier"""
+    """Handle successful payment and update user tier (robust version)"""
     try:
         if not session_id:
             with open("static/success.html", "r", encoding="utf-8") as f:
                 return HTMLResponse(f.read())
 
-        # Retrieve the session from Stripe
+        # Retrieve session from Stripe
         session = stripe.checkout.Session.retrieve(session_id)
 
-        if session.payment_status == "paid" or getattr(session, "status", None) == "complete":
-            user_id_str = None
-            price_type = None
+        # Safely extract metadata
+        metadata = getattr(session, "metadata", None)
+        if metadata is None:
+            metadata = {}
 
-            # Safely get metadata
-            if hasattr(session, "metadata") and session.metadata:
-                user_id_str = session.metadata.get("user_id")
-                price_type = session.metadata.get("price_type")
+        user_id_str = None
+        price_type = None
 
-            if user_id_str and price_type:
+        if isinstance(metadata, dict):
+            user_id_str = metadata.get("user_id")
+            price_type = metadata.get("price_type")
+        else:
+            # Fallback if metadata is not a dict
+            try:
+                user_id_str = metadata.get("user_id") if hasattr(metadata, "get") else None
+                price_type = metadata.get("price_type") if hasattr(metadata, "get") else None
+            except:
+                pass
+
+        if user_id_str and price_type:
+            try:
                 user_id = int(user_id_str)
-                tier = "premium" if "premium" in price_type else "ultimate"
+                tier = "premium" if "premium" in str(price_type).lower() else "ultimate"
 
-                success = update_user_subscription(user_id, tier, getattr(session, "subscription", None))
+                # Get subscription id safely
+                subscription_id = getattr(session, "subscription", None)
+                if isinstance(subscription_id, dict):
+                    subscription_id = subscription_id.get("id")
+
+                success = update_user_subscription(user_id, tier, subscription_id)
 
                 if success:
                     logger.info(f"✅ SUCCESS: User {user_id} upgraded to {tier}")
                 else:
                     logger.error(f"❌ Failed to update subscription for user {user_id}")
+            except Exception as inner_e:
+                logger.error(f"Error processing payment data: {inner_e}")
 
         # Always serve the success page
         with open("static/success.html", "r", encoding="utf-8") as f:

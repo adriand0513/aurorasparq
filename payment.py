@@ -81,9 +81,15 @@ async def stripe_webhook(request: Request):
 
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
-        
-        # Get metadata safely
-        metadata = session.get("metadata", {}) or {}
+
+        # Safe way to get metadata from Stripe object
+        metadata = getattr(session, "metadata", None) or {}
+        if not isinstance(metadata, dict):
+            try:
+                metadata = dict(metadata)
+            except:
+                metadata = {}
+
         user_id_str = metadata.get("user_id")
         price_type = metadata.get("price_type")
 
@@ -91,13 +97,15 @@ async def stripe_webhook(request: Request):
             try:
                 user_id = int(user_id_str)
                 tier = "premium" if "premium" in price_type else "ultimate"
-                
-                success = update_user_subscription(user_id, tier, session.get("subscription"))
+
+                success = update_user_subscription(user_id, tier, getattr(session, "subscription", None))
                 if success:
                     logger.info(f"✅ WEBHOOK: User {user_id} upgraded to {tier}")
                 else:
                     logger.error(f"❌ WEBHOOK: Failed to upgrade user {user_id}")
             except Exception as e:
                 logger.error(f"Webhook upgrade error: {e}")
+
+    return {"status": "success"}
 
     return {"status": "success"}

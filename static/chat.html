@@ -507,10 +507,21 @@
     
         async function updateSubscriptionDisplay() {
             if (!currentUser) return;
+            
             const statusEl = document.getElementById('subscription-status');
             const tierEl = document.getElementById('current-tier');
-            const tier = (currentUser.subscription_tier || 'free').toUpperCase();
-            tierEl.textContent = tier === 'FREE' ? 'Free Plan' : `${tier} Active`;
+            const counterEl = document.getElementById('usage-counter');
+            
+            const tier = (currentUser.subscription_tier || 'free').toLowerCase();
+            
+            if (tier === 'premium' || tier === 'ultimate') {
+                tierEl.textContent = tier.toUpperCase() + " Plan";
+                if (counterEl) counterEl.style.display = 'none';   // Hide counter for paid users
+            } else {
+                tierEl.textContent = 'Free Plan';
+                if (counterEl) counterEl.style.display = 'block';
+            }
+            
             statusEl.style.display = 'block';
         }
     

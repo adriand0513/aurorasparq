@@ -167,6 +167,16 @@ async def get_usage(user: dict = Depends(get_current_user)):
         logger.error(f"Usage endpoint error: {e}")
         return {"daily_count": 0, "daily_limit": 30, "remaining": 30}
 
+@app.get("/auth/me")
+async def get_current_user_info(user: dict = Depends(get_current_user)):
+    """Return fresh user data including subscription tier"""
+    return {
+        "id": user["id"],
+        "email": user["email"],
+        "full_name": user.get("full_name"),
+        "subscription_tier": user.get("subscription_tier", "free")
+    }
+
 @app.get("/success")
 async def payment_success(session_id: str = None):
     try:

@@ -351,6 +351,7 @@
                     await loadUserHistory();
                     updateAvailability();
                     await updateUsageCounter();
+                    refreshUserData();
                 } else {
                     alert(data.detail || "Login failed. Please check your credentials.");
                 }
@@ -570,9 +571,13 @@
                 authScreen.style.display = 'none';
                 chatWrapper.style.display = 'flex';
                 userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email || 'User'}`;
+                
                 loadUserHistory();
                 updateSubscriptionDisplay();
                 updateUsageCounter();
+                
+                // NEW: Try to get fresh data
+                refreshUserData();
             }
             updateAvailability();
         });

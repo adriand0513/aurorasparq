@@ -179,15 +179,34 @@ async def get_current_user_info(user: dict = Depends(get_current_user)):
 
 @app.get("/success")
 async def payment_success(session_id: str = None):
+    """Handle successful payment and update user tier"""
     try:
-        # Optional: Verify the session if you want
         if session_id:
-            # You can add verification here later
-            pass
+            session = stripe.checkout.Session.retrieve(session_id)
+            
+            if session.payment_status == "paid" or session.status == "complete":
+                user_id_str = session.metadata.get("user_id")
+                price_type = session.metadata.get("price_type")
+                
+                if user_id_str and price_type:
+                    user_id = int(user_id_str)
+                    tier = "premium" if "premium" in price_type else "ultimate"
+                    
+                    success = update_user_subscription(user_id, tier, session.get("subscription"))
+                    
+                    if success:
+                        logger.info(f"✅ SUCCESS: User {user_id} upgraded to {tier}")
+                    else:
+                        logger.error(f"❌ Failed to update subscription for user {user_id}")
+        
+        # Serve success page
         with open("static/success.html", "r", encoding="utf-8") as f:
             return HTMLResponse(f.read())
-    except Exception:
-        return HTMLResponse("<h1>Upgrade Successful! Redirecting...</h1><script>setTimeout(() => window.location.href='/', 2000);</script>")
+
+    except Exception as e:
+        logger.error(f"Success handler error: {e}")
+        with open("static/success.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(f.read())
 
 
 # ── Admin All Past Chats ─────────────────────────────────────

@@ -50,7 +50,7 @@ from memory import (
     get_relationship_level, get_pet_name
 )
 from analytics import log_event, get_live_stats
-from auth import register_user, authenticate_user, create_access_token, get_current_user, get_db_connection, ensure_users_table
+from auth import register_user, authenticate_user, create_access_token, get_current_user, get_db_connection, ensure_users_table, update_user_subscription
 from archetype import detect_archetype
 
 from relationship_state import (

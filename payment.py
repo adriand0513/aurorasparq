@@ -76,18 +76,28 @@ async def stripe_webhook(request: Request):
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
     except Exception as e:
-        logger.error(f"Webhook signature verification failed: {e}")
+        logger.error(f"Webhook signature error: {e}")
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
-        user_id_str = session.get("metadata", {}).get("user_id")
-        price_type = session.get("metadata", {}).get("price_type")
+        
+        # Get metadata safely
+        metadata = session.get("metadata", {}) or {}
+        user_id_str = metadata.get("user_id")
+        price_type = metadata.get("price_type")
 
         if user_id_str and price_type:
-            user_id = int(user_id_str)
-            tier = "premium" if "premium" in price_type else "ultimate"
-            update_user_subscription(user_id, tier, session.get("subscription"))
-            logger.info(f"✅ Webhook upgraded user {user_id} to {tier}")
+            try:
+                user_id = int(user_id_str)
+                tier = "premium" if "premium" in price_type else "ultimate"
+                
+                success = update_user_subscription(user_id, tier, session.get("subscription"))
+                if success:
+                    logger.info(f"✅ WEBHOOK: User {user_id} upgraded to {tier}")
+                else:
+                    logger.error(f"❌ WEBHOOK: Failed to upgrade user {user_id}")
+            except Exception as e:
+                logger.error(f"Webhook upgrade error: {e}")
 
     return {"status": "success"}

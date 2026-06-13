@@ -101,10 +101,8 @@
             
             if (timeLeft <= 0) {
                 clearInterval(timer);
-                // Clear old cached user data
-                localStorage.removeItem('user');
-                // Force reload the main page
-                window.location.href = '/';
+                localStorage.removeItem('user');     // Clear old cached data
+                window.location.href = '/';          // Full reload
             }
         }, 1000);
     </script>

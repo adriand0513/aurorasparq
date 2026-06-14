@@ -85,15 +85,14 @@ async def stripe_webhook(request: Request):
         user_id_str = None
         price_type = None
 
-        # === PRIMARY: Get from Customer (most reliable) ===
+        # === 1. Get user_id from Customer (most reliable) ===
         customer_id = getattr(session, "customer", None)
         if customer_id:
             try:
                 customer = stripe.Customer.retrieve(customer_id)
                 cust_meta = getattr(customer, "metadata", None) or {}
                 
-                # Log what we actually received from Customer
-                logger.info(f"WEBHOOK Customer metadata raw: {cust_meta}")
+                logger.info(f"WEBHOOK Customer metadata: {cust_meta}")
 
                 if isinstance(cust_meta, dict):
                     user_id_str = cust_meta.get("user_id")
@@ -104,20 +103,24 @@ async def stripe_webhook(request: Request):
                     except:
                         pass
             except Exception as e:
-                logger.warning(f"Customer retrieve failed: {e}")
+                logger.warning(f"Customer retrieve error: {e}")
 
-        # Fallback to session metadata
-        if not user_id_str:
-            meta = getattr(session, "metadata", None) or {}
-            if not isinstance(meta, dict):
-                try:
-                    meta = dict(meta)
-                except:
-                    meta = {}
-            user_id_str = meta.get("user_id")
+        # === 2. Get price_type from Session metadata (always try) ===
+        meta = getattr(session, "metadata", None) or {}
+        if not isinstance(meta, dict):
+            try:
+                meta = dict(meta)
+            except:
+                meta = {}
+
+        if not price_type:
             price_type = meta.get("price_type")
 
-        logger.info(f"WEBHOOK FINAL - user_id_str: {user_id_str}, price_type: {price_type}")
+        # Fallback: also try to get user_id from session if Customer failed
+        if not user_id_str:
+            user_id_str = meta.get("user_id")
+
+        logger.info(f"WEBHOOK FINAL → user_id: {user_id_str}, price_type: {price_type}")
 
         if user_id_str and price_type:
             try:
@@ -128,10 +131,10 @@ async def stripe_webhook(request: Request):
                 if success:
                     logger.info(f"✅ WEBHOOK SUCCESS: User {user_id} upgraded to {tier}")
                 else:
-                    logger.error(f"❌ WEBHOOK failed for user {user_id}")
+                    logger.error(f"❌ WEBHOOK: update failed for user {user_id}")
             except Exception as e:
                 logger.error(f"Webhook upgrade error: {e}")
         else:
-            logger.warning("WEBHOOK: Still could not get user_id or price_type")
+            logger.warning("WEBHOOK: Missing user_id or price_type")
 
     return {"status": "success"}

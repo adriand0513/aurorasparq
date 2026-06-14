@@ -82,11 +82,10 @@ async def stripe_webhook(request: Request):
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
 
+        # Get user_id from Customer (primary source)
         user_id_str = None
-        price_type = None
-
-        # === 1. Get user_id from Customer (most reliable) ===
         customer_id = getattr(session, "customer", None)
+        
         if customer_id:
             try:
                 customer = stripe.Customer.retrieve(customer_id)
@@ -96,29 +95,14 @@ async def stripe_webhook(request: Request):
 
                 if isinstance(cust_meta, dict):
                     user_id_str = cust_meta.get("user_id")
-                else:
-                    try:
-                        cust_meta = dict(cust_meta)
-                        user_id_str = cust_meta.get("user_id")
-                    except:
-                        pass
             except Exception as e:
-                logger.warning(f"Customer retrieve error: {e}")
+                logger.warning(f"Customer error: {e}")
 
-        # === 2. Get price_type from Session metadata (always try) ===
+        # Get price_type from Session metadata
+        price_type = None
         meta = getattr(session, "metadata", None) or {}
-        if not isinstance(meta, dict):
-            try:
-                meta = dict(meta)
-            except:
-                meta = {}
-
-        if not price_type:
+        if isinstance(meta, dict):
             price_type = meta.get("price_type")
-
-        # Fallback: also try to get user_id from session if Customer failed
-        if not user_id_str:
-            user_id_str = meta.get("user_id")
 
         logger.info(f"WEBHOOK FINAL → user_id: {user_id_str}, price_type: {price_type}")
 
@@ -131,10 +115,10 @@ async def stripe_webhook(request: Request):
                 if success:
                     logger.info(f"✅ WEBHOOK SUCCESS: User {user_id} upgraded to {tier}")
                 else:
-                    logger.error(f"❌ WEBHOOK: update failed for user {user_id}")
+                    logger.error(f"❌ WEBHOOK failed for user {user_id}")
             except Exception as e:
-                logger.error(f"Webhook upgrade error: {e}")
+                logger.error(f"Webhook error: {e}")
         else:
-            logger.warning("WEBHOOK: Missing user_id or price_type")
+            logger.warning("WEBHOOK: Missing user_id or price_type after extraction")
 
     return {"status": "success"}

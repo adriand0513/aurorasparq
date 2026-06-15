@@ -49,9 +49,9 @@ async def create_checkout_session(
             mode="subscription" if is_subscription else "payment",
             success_url="https://www.aurorasparq.com/success?session_id={CHECKOUT_SESSION_ID}",
             cancel_url="https://www.aurorasparq.com/",
+            client_reference_id=str(current_user["id"]),   # ← Add this line
             metadata={
-                "user_id": str(current_user["id"]),
-                "price_type": price_type,
+                "price_type": price_type,   # Keep this for price_type
             }
         )
 
@@ -82,27 +82,19 @@ async def stripe_webhook(request: Request):
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
 
-        # Get user_id from Customer
-        user_id_str = None
-        customer_id = getattr(session, "customer", None)
-        if customer_id:
-            try:
-                customer = stripe.Customer.retrieve(customer_id)
-                cust_meta = getattr(customer, "metadata", None) or {}
-                logger.info(f"WEBHOOK Customer metadata: {cust_meta}")
+        # Get user_id from client_reference_id (reliable)
+        user_id_str = getattr(session, "client_reference_id", None)
 
-                if isinstance(cust_meta, dict):
-                    user_id_str = cust_meta.get("user_id")
-            except Exception as e:
-                logger.warning(f"Customer retrieve failed: {e}")
-
-        # Get price_type from Session metadata
-        price_type = None
+        # Get price_type from metadata
         meta = getattr(session, "metadata", None) or {}
-        if isinstance(meta, dict):
-            price_type = meta.get("price_type")
+        if not isinstance(meta, dict):
+            try:
+                meta = dict(meta)
+            except:
+                meta = {}
+        price_type = meta.get("price_type")
 
-        logger.info(f"WEBHOOK FINAL → user_id: {user_id_str}, price_type: {price_type}")
+        logger.info(f"WEBHOOK → user_id: {user_id_str}, price_type: {price_type}")
 
         if user_id_str and price_type:
             try:
@@ -113,10 +105,10 @@ async def stripe_webhook(request: Request):
                 if success:
                     logger.info(f"✅ WEBHOOK SUCCESS: User {user_id} upgraded to {tier}")
                 else:
-                    logger.error(f"❌ WEBHOOK: update_user_subscription returned False")
+                    logger.error(f"❌ WEBHOOK: update failed for user {user_id}")
             except Exception as e:
                 logger.error(f"Webhook upgrade error: {e}")
         else:
-            logger.warning("WEBHOOK: Could not extract user_id or price_type")
+            logger.warning("WEBHOOK: Missing user_id or price_type")
 
     return {"status": "success"}

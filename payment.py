@@ -81,29 +81,25 @@ async def stripe_webhook(request: Request):
 
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
-
-        # Get user_id from Customer (primary source)
+    
+        # Get user_id from Customer metadata
         user_id_str = None
-        customer_id = getattr(session, "customer", None)
-        
+        customer_id = session.get("customer")  # ← fix
+    
         if customer_id:
             try:
                 customer = stripe.Customer.retrieve(customer_id)
-                cust_meta = getattr(customer, "metadata", None) or {}
-                
+                cust_meta = customer.get("metadata") or {}  # ← fix
                 logger.info(f"WEBHOOK Customer metadata: {cust_meta}")
-
                 if isinstance(cust_meta, dict):
                     user_id_str = cust_meta.get("user_id")
             except Exception as e:
                 logger.warning(f"Customer error: {e}")
-
+    
         # Get price_type from Session metadata
-        price_type = None
-        meta = getattr(session, "metadata", None) or {}
-        if isinstance(meta, dict):
-            price_type = meta.get("price_type")
-
+        meta = session.get("metadata") or {}  # ← fix
+        price_type = meta.get("price_type") if isinstance(meta, dict) else None
+    
         logger.info(f"WEBHOOK FINAL → user_id: {user_id_str}, price_type: {price_type}")
 
         if user_id_str and price_type:

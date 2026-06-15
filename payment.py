@@ -81,25 +81,27 @@ async def stripe_webhook(request: Request):
 
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
-    
-        # Get user_id from Customer metadata
+
+        # Get user_id from Customer
         user_id_str = None
-        customer_id = session.get("customer")  # ← fix
-    
+        customer_id = getattr(session, "customer", None)
         if customer_id:
             try:
                 customer = stripe.Customer.retrieve(customer_id)
-                cust_meta = customer.get("metadata") or {}  # ← fix
+                cust_meta = getattr(customer, "metadata", None) or {}
                 logger.info(f"WEBHOOK Customer metadata: {cust_meta}")
+
                 if isinstance(cust_meta, dict):
                     user_id_str = cust_meta.get("user_id")
             except Exception as e:
-                logger.warning(f"Customer error: {e}")
-    
+                logger.warning(f"Customer retrieve failed: {e}")
+
         # Get price_type from Session metadata
-        meta = session.get("metadata") or {}  # ← fix
-        price_type = meta.get("price_type") if isinstance(meta, dict) else None
-    
+        price_type = None
+        meta = getattr(session, "metadata", None) or {}
+        if isinstance(meta, dict):
+            price_type = meta.get("price_type")
+
         logger.info(f"WEBHOOK FINAL → user_id: {user_id_str}, price_type: {price_type}")
 
         if user_id_str and price_type:
@@ -111,10 +113,10 @@ async def stripe_webhook(request: Request):
                 if success:
                     logger.info(f"✅ WEBHOOK SUCCESS: User {user_id} upgraded to {tier}")
                 else:
-                    logger.error(f"❌ WEBHOOK failed for user {user_id}")
+                    logger.error(f"❌ WEBHOOK: update_user_subscription returned False")
             except Exception as e:
-                logger.error(f"Webhook error: {e}")
+                logger.error(f"Webhook upgrade error: {e}")
         else:
-            logger.warning("WEBHOOK: Missing user_id or price_type after extraction")
+            logger.warning("WEBHOOK: Could not extract user_id or price_type")
 
     return {"status": "success"}

@@ -280,6 +280,27 @@
         }
     
         // ==================== AUTH ====================
+        async function authFetch(url, options = {}) {
+            const res = await fetch(url, {
+                ...options,
+                headers: {
+                    ...(options.headers || {}),
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+        
+            if (res.status === 401) {
+                // Token is invalid or expired → force logout
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                alert("Your session has expired. Please log in again.");
+                window.location.reload();
+                return null;
+            }
+        
+            return res;
+        }
+       
         function showLogin() {
             document.getElementById('login-form').style.display = 'block';
             document.getElementById('register-form').style.display = 'none';
@@ -361,20 +382,17 @@
             }
         }
         
-        // NEW: Refresh user data after payment
         async function refreshUserData() {
             if (!token) return;
             try {
-                const res = await fetch('/auth/me', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (res.ok) {
-                    const freshUser = await res.json();
-                    currentUser = freshUser;
-                    localStorage.setItem('user', JSON.stringify(freshUser));
-                    await updateSubscriptionDisplay();
-                    console.log("✅ User data refreshed - New Tier:", freshUser.subscription_tier);
-                }
+                const res = await authFetch('/auth/me');
+                if (!res) return;
+        
+                const freshUser = await res.json();
+                currentUser = freshUser;
+                localStorage.setItem('user', JSON.stringify(freshUser));
+                await updateSubscriptionDisplay();
+                console.log("✅ User data refreshed - New Tier:", freshUser.subscription_tier);
             } catch(e) {
                 console.error("Failed to refresh user data");
             }
@@ -390,19 +408,20 @@
         async function loadUserHistory() {
             if (!token) return;
             try {
-                const res = await fetch('/api/history', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
+                const res = await authFetch('/api/history');
+                if (!res) return;
+        
                 const data = await res.json();
-               
                 convoId = data.convo_id || `user_${currentUser.id}`;
                 localStorage.setItem('convo_id', convoId);
                 messagesContainer.innerHTML = '';
-               
-                data.messages.forEach(m => {
-                    const type = m.role === 'user' ? 'sent' : 'received';
-                    addMessage(m.content, type);
-                });
+        
+                if (data.messages) {
+                    data.messages.forEach(m => {
+                        const type = m.role === 'user' ? 'sent' : 'received';
+                        addMessage(m.content, type);
+                    });
+                }
                 scrollToBottom();
             } catch(e) {
                 console.error("Failed to load history", e);
@@ -489,20 +508,27 @@
         }
     
         async function upgradePlan(priceType) {
-            if (!token) return alert("Please login first");
+            if (!token) {
+                alert("Please login first");
+                return;
+            }
             try {
-                const res = await fetch('/payments/create-checkout-session', {
+                const res = await authFetch('/payments/create-checkout-session', {
                     method: 'POST',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ price_type: priceType })
                 });
+        
+                if (!res) return;
+        
                 const data = await res.json();
-                if (data.url) window.location.href = data.url;
+                if (data.url) {
+                    window.location.href = data.url;
+                } else {
+                    alert(data.detail || "Payment error");
+                }
             } catch (error) {
-                alert("Payment error");
+                alert("Payment error. Please try again.");
             }
         }
     
@@ -529,20 +555,19 @@
         async function updateUsageCounter() {
             const counterEl = document.getElementById('usage-counter');
             if (!counterEl || !currentUser || !token) return;
-           
+        
             try {
-                const res = await fetch('/api/usage', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-               
+                const res = await authFetch('/api/usage');
+                if (!res) return;
+        
                 if (!res.ok) {
                     counterEl.innerHTML = '—';
                     return;
                 }
-               
+        
                 const data = await res.json();
                 const tier = (currentUser.subscription_tier || 'free').toLowerCase();
-               
+        
                 if (tier === 'premium' || tier === 'ultimate') {
                     counterEl.innerHTML = 'Unlimited ✨';
                     counterEl.style.background = 'rgba(0, 200, 100, 0.15)';
@@ -550,7 +575,7 @@
                 } else {
                     const remaining = Math.max(0, 30 - (data.daily_count || 0));
                     counterEl.innerHTML = `${remaining} / 30 today`;
-                   
+        
                     if (remaining < 10) {
                         counterEl.style.background = 'rgba(255, 100, 100, 0.2)';
                         counterEl.style.border = '1px solid #ff6464';
@@ -563,7 +588,7 @@
                 counterEl.innerHTML = '—';
             }
         }
-    
+            
         // ==================== INIT ====================
         window.addEventListener('load', () => {
             if (token) {

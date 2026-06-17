@@ -337,7 +337,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     is_premium = tier in ["premium", "ultimate"]
 
     if not is_premium:
-        daily_limit = 30
+        daily_limit = 10
         conn = get_db_connection()
         cur = conn.cursor()
         try:
@@ -356,7 +356,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         if daily_count >= daily_limit:
             return {
                 "replies": [
-                    "Hey papi 💕 You've reached your daily free message limit (30 messages). "
+                    "Hey papi 💕 You've reached your daily free message limit (10 messages). "
                     "Upgrade to Premium or Ultimate for unlimited chats with me ✨"
                 ]
             }

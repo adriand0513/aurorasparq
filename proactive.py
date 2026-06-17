@@ -25,16 +25,20 @@ def should_send_proactive(convo_id: str, last_message_time, tier: str) -> bool:
     return True
 
 
-def generate_proactive_message(convo_id: str, tier: str) -> str:
+def generate_proactive_message(
+    convo_id: str,
+    tier: str,
+    generate_llm_response_func,           # Your LLM generation function
+    postprocess_func=None                 # Optional post-processing function
+) -> str:
     """
-    Generate a natural, contextual proactive message using memory.
-    This version pulls from key facts and recent narratives.
+    Generate a natural proactive message for Ultimate users after a period of silence.
+    Uses memory (facts + narratives) to make the message feel personal.
     """
     state = get_relationship_state(convo_id) or {}
     facts = get_relevant_facts(convo_id, limit=6)
-    recent_history = get_history(convo_id, limit=8)
 
-    # Build helpful context
+    # Build helpful context from memory
     context_parts = []
 
     if facts:
@@ -45,14 +49,14 @@ def generate_proactive_message(convo_id: str, tier: str) -> str:
         context_parts.append(f"Recent moments: {recent}")
 
     if state.get("current_mood"):
-        context_parts.append(f"His current vibe/mood: {state['current_mood']}")
+        context_parts.append(f"Current vibe: {state['current_mood']}")
 
     context = "\n".join(context_parts)
 
-    proactive_prompt = f"""You are Isabella Andrade. The user hasn't texted you in over a day and a half.
+    proactive_prompt = f"""You are Isabella Andrade. The user hasn't texted in over a day and a half.
 
-Generate one short, natural, warm message that feels like something a real girl would send after some time apart. 
-It should feel personal, slightly playful or flirty, and make him want to reply.
+Generate one short, natural, warm message that feels like something a real girl would send. 
+It should feel personal and make him want to reply.
 
 Use the context below only if it feels natural. Do not force it.
 
@@ -66,11 +70,11 @@ Rules:
 
 Write only the message. No explanations, no quotes."""
 
-    # Call your existing LLM generation function
-    message = generate_llm_response(proactive_prompt)
+    # Generate the message using the passed function
+    message = generate_llm_response_func(proactive_prompt)
 
-    # Optional: Run through your postprocess function
-    if 'postprocess' in globals():
-        message = postprocess(message)
+    # Optionally run through postprocessing
+    if postprocess_func:
+        message = postprocess_func(message)
 
     return message.strip()

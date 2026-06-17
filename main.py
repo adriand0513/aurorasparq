@@ -112,13 +112,19 @@ def run_proactive_messages():
                 message = generate_proactive_message(
                     convo_id=convo_id,
                     tier=tier,
-                    generate_llm_response_func=generate_llm_response,  # type: ignore
-                    postprocess_func=postprocess                         # type: ignore
+                    generate_llm_response_func=generate_llm_response,
+                    postprocess_func=postprocess
                 )
 
                 if message:
-                    # TODO: Replace this with your actual way of sending messages
-                    print(f"[PROACTIVE] Sent to user {user['user_id']}: {message}")
+                    # Save the proactive message into chat history
+                    save_message(
+                        convo_id=convo_id,
+                        message={"role": "assistant", "content": message},
+                        user_id=user["user_id"]
+                    )
+
+                    print(f"[PROACTIVE] Message sent to user {user['user_id']}: {message}")
 
         except Exception as e:
             logger.error(f"Error processing proactive message for user {user.get('user_id')}: {e}")

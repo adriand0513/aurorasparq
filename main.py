@@ -71,10 +71,12 @@ logger.info(f"Starting Isabella server - {datetime.now().isoformat()}")
 
 app = FastAPI(title="Isabella Chatbot", default_response_class=DateTimeJSONResponse)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.include_router(payment_router)
+
+AUDIO_DIR = Path("/var/data/audio")
 
 ensure_users_table()
 
-app.include_router(payment_router)
 # ── Guards ─────────────────────────────────────
 last_reply_time = defaultdict(float)
 REPLY_COOLDOWN_SECONDS = 4.5
@@ -198,6 +200,26 @@ async def payment_success(session_id: str = None):
                 setTimeout(() => window.location.href = '/', 2500);
             </script>
         """)
+
+@app.get("/audio/{filename}")
+async def get_audio(filename: str):
+    """
+    Serve voice note audio files from the persistent disk.
+    """
+    # Basic security: only allow .mp3 files and prevent directory traversal
+    if not filename.endswith(".mp3") or ".." in filename or "/" in filename:
+        raise HTTPException(status_code=400, detail="Invalid file")
+
+    file_path = AUDIO_DIR / filename
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Audio file not found")
+
+    return FileResponse(
+        path=file_path,
+        media_type="audio/mpeg",
+        filename=filename
+    )
 
 # ── Admin All Past Chats ─────────────────────────────────────
 @app.get("/api/admin/chats")
@@ -460,6 +482,17 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         for bubble in bubbles:
             save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user.get("id"))
 
+        # ==================== VOICE GENERATION ====================
+        voice_url = None
+
+        if tier in ["premium", "ultimate"]:
+            try:
+                last_reply = bubbles[-1] if bubbles else ""
+                if len(last_reply) > 15:
+                    voice_url = generate_voice_note(last_reply, tier=tier)
+            except Exception as e:
+                logger.error(f"Voice generation error: {e}")
+
         # ==================== CONVERSATION SUMMARIZATION ====================
         if tier == "ultimate":
             try:
@@ -491,7 +524,12 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                 importance=6
             )
 
-        return {"replies": bubbles}
+        # Return response
+        response = {"replies": bubbles}
+        if voice_url:
+            response["voice_url"] = voice_url
+
+        return response
 
     except Exception as e:
         logger.error(f"💥 Unexpected error in /api/reply: {e}", exc_info=True)

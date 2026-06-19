@@ -20,8 +20,10 @@ def get_system_prompt(
         state_context = f"\n\nCurrent relationship state:\n- Closeness: {temp}/10\n- Current mood: {mood}\n- Phase: {phase}"
         
         if recent_narratives:
-            recent = " | ".join([n.get("desc", "")[:120] for n in recent_narratives[:3]])
-            state_context += f"\n- Recent shared moments: {recent}"
+            # Only show the most important/recent narrative
+            most_important = recent_narratives[0].get("desc", "")[:100] if recent_narratives else ""
+            if most_important:
+                state_context += f"\n- Recent moment: {most_important}"
 
     # === TIER BEHAVIOR ===
     tier_guide = {

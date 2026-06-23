@@ -249,7 +249,7 @@
         let token = localStorage.getItem('token');
         let currentUser = null;
         let convoId = null;
-    
+   
         const messagesContainer = document.getElementById('messages');
         const typingContainer = document.getElementById('typing-container');
         const input = document.getElementById('user-input');
@@ -258,21 +258,21 @@
         const chatWrapper = document.getElementById('chat-wrapper');
         const userInfo = document.getElementById('user-info');
         const offlineMessage = document.getElementById('offline-message');
-     
+    
         let isSending = false;
- 
+
         // ==================== AVAILABILITY (DISABLED FOR TESTING) ====================
         function isIsabellaAvailable() {
             return true;
         }
- 
+
         function updateAvailability() {
             offlineMessage.style.display = 'none';
             chatWrapper.style.opacity = '1';
             if (input) input.disabled = false;
             if (sendBtn) sendBtn.disabled = false;
         }
- 
+
         // ==================== AUTH ====================
         async function authFetch(url, options = {}) {
             const res = await fetch(url, {
@@ -282,7 +282,7 @@
                     'Authorization': `Bearer ${token}`
                 }
             });
-     
+    
             if (res.status === 401) {
                 localStorage.removeItem('token');
                 localStorage.removeItem('user');
@@ -290,52 +290,52 @@
                 window.location.reload();
                 return null;
             }
-     
+    
             return res;
         }
-    
+   
         function showLogin() {
             document.getElementById('login-form').style.display = 'block';
             document.getElementById('register-form').style.display = 'none';
         }
- 
+
         function showRegister() {
             document.getElementById('login-form').style.display = 'none';
             document.getElementById('register-form').style.display = 'block';
         }
- 
+
         async function register() {
             const fullName = document.getElementById('reg-fullname').value.trim();
             const email = document.getElementById('reg-email').value.trim();
             const password = document.getElementById('reg-password').value.trim();
-        
+       
             if (!email || !password) return alert("Email and password required");
-        
+       
             try {
                 const res = await fetch('/auth/register', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email, password, full_name: fullName })
                 });
-        
+       
                 const data = await res.json();
-        
+       
                 if (res.ok) {
                     // Show Premium offer after successful registration
                     document.getElementById('register-form').style.display = 'none';
                     document.getElementById('login-form').style.display = 'none';
-        
+       
                     const authCard = document.querySelector('.auth-card');
                     authCard.innerHTML = `
                         <h2 style="color:#c300ff; margin-bottom:20px;">Welcome, ${fullName.split(" ")[0]}!</h2>
                         <p style="margin-bottom:25px; line-height:1.5;">Would you like to start with <strong>Premium</strong> for the best experience?</p>
-                        
-                        <button onclick="upgradeAfterRegister('${email}', '${password}')" 
+                       
+                        <button onclick="upgradeAfterRegister('${email}', '${password}')"
                                 style="width:100%; padding:18px; background:#6b00b3; border:none; border-radius:16px; color:white; font-size:1.1rem; margin-bottom:12px; cursor:pointer;">
                             Yes, Upgrade to Premium ($14.99/mo)
                         </button>
-                        
-                        <button onclick="showLoginAfterRegister()" 
+                       
+                        <button onclick="showLoginAfterRegister()"
                                 style="width:100%; padding:14px; background:transparent; border:1px solid #666; color:#ccc; border-radius:50px; cursor:pointer;">
                             No thanks, continue with Free
                         </button>
@@ -347,40 +347,40 @@
                 alert("Error during registration");
             }
         }
- 
+
         async function login() {
             const email = document.getElementById('login-email').value.trim();
             const password = document.getElementById('login-password').value.trim();
-        
+       
             if (!email || !password) {
                 alert("Please enter email and password");
                 return;
             }
-     
+    
             try {
                 const formData = new FormData();
                 formData.append('username', email);
                 formData.append('password', password);
-            
+           
                 const res = await fetch('/auth/login', {
                     method: 'POST',
                     body: formData
                 });
-            
+           
                 const data = await res.json();
-            
+           
                 if (res.ok) {
                     token = data.access_token;
                     currentUser = data.user;
-                
+               
                     localStorage.setItem('token', token);
                     localStorage.setItem('user', JSON.stringify(currentUser));
-                
+               
                     authScreen.style.display = 'none';
                     chatWrapper.style.display = 'flex';
-                
+               
                     userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email}`;
-                
+               
                     await updateSubscriptionDisplay();
                     await loadUserHistory();
                     updateAvailability();
@@ -394,13 +394,13 @@
                 alert("Login error. Please try again.");
             }
         }
-     
+    
         async function refreshUserData() {
             if (!token) return;
             try {
                 const res = await authFetch('/auth/me');
                 if (!res) return;
-     
+    
                 const freshUser = await res.json();
                 currentUser = freshUser;
                 localStorage.setItem('user', JSON.stringify(freshUser));
@@ -410,25 +410,25 @@
                 console.error("Failed to refresh user data");
             }
         }
- 
+
         function logout() {
             localStorage.removeItem('token');
             localStorage.removeItem('user');
             window.location.reload();
         }
- 
+
         // ==================== CHAT CORE ====================
         async function loadUserHistory() {
             if (!token) return;
             try {
                 const res = await authFetch('/api/history');
                 if (!res) return;
-     
+    
                 const data = await res.json();
                 convoId = data.convo_id || `user_${currentUser.id}`;
                 localStorage.setItem('convo_id', convoId);
                 messagesContainer.innerHTML = '';
-     
+    
                 if (data.messages) {
                     data.messages.forEach(m => {
                         const type = m.role === 'user' ? 'sent' : 'received';
@@ -441,7 +441,7 @@
                 convoId = `user_${currentUser.id}_${Date.now()}`;
             }
         }
- 
+
         function addMessage(text, type) {
             const div = document.createElement('div');
             div.className = `message ${type}`;
@@ -449,41 +449,23 @@
             messagesContainer.appendChild(div);
             scrollToBottom();
         }
- 
-        function addMessageWithVoice(text, type, voiceUrl = null) {
-            const div = document.createElement('div');
-            div.className = `message ${type}`;
-            if (voiceUrl) {
-                div.innerHTML = `
-                    <div style="margin-bottom: 6px;">${text}</div>
-                    <audio controls style="width: 100%; max-width: 260px; height: 32px; margin-top: 4px;">
-                        <source src="${voiceUrl}" type="audio/mpeg">
-                        Your browser does not support the audio element.
-                    </audio>
-                `;
-            } else {
-                div.textContent = text;
-            }
-            messagesContainer.appendChild(div);
-            scrollToBottom();
-        }
- 
+
         function scrollToBottom() {
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
- 
+
         function showTyping() {
             typingContainer.style.display = 'block';
             scrollToBottom();
         }
- 
+
         function hideTyping() {
             typingContainer.style.display = 'none';
         }
- 
+
         function playVoiceNote(voiceUrl) {
             const audio = new Audio(voiceUrl);
-         
+        
             if (typingContainer) {
                 typingContainer.innerHTML = `
                     <div style="display:flex; align-items:center; gap:8px; padding:8px 12px;
@@ -493,11 +475,9 @@
                 `;
                 typingContainer.style.display = 'block';
             }
- 
             audio.play().catch(err => {
                 console.error("Audio playback failed:", err);
             });
- 
             audio.onended = () => {
                 if (typingContainer) {
                     typingContainer.style.display = 'none';
@@ -505,7 +485,7 @@
                 }
             };
         }
- 
+
         async function sendToBackend(msg) {
             isSending = true;
             showTyping();
@@ -525,18 +505,18 @@
        
                 const data = await res.json();
        
-                // Handle text replies safely
+                // Send text replies normally
                 if (data.replies && Array.isArray(data.replies)) {
                     data.replies.forEach(bubble => {
                         if (bubble) addMessage(bubble, 'received');
                     });
                 }
        
-                // Handle voice message (new format)
+                // Send voice note as its own separate message
                 if (data.voice_message && data.voice_message.voice_url) {
                     addVoiceMessageOnly(data.voice_message.voice_url);
                 } 
-                // Fallback for old format
+                // Fallback support for old response format
                 else if (data.voice_url) {
                     addVoiceMessageOnly(data.voice_url);
                 }
@@ -549,7 +529,7 @@
                 await updateUsageCounter();
             }
         }
-       
+      
         function addVoiceMessageOnly(voiceUrl) {
             const div = document.createElement('div');
             div.className = `message received voice-only`;
@@ -564,25 +544,24 @@
             messagesContainer.appendChild(div);
             scrollToBottom();
         }
- 
+
         function sendMessage() {
             const msg = input.value.trim();
             if (!msg || isSending) return;
- 
             addMessage(msg, 'sent');
             input.value = '';
             sendToBackend(msg);
         }
- 
+
         // ==================== PAYMENTS & USAGE ====================
         function showPricingModal() {
             document.getElementById('pricing-modal').style.display = 'flex';
         }
- 
+
         function hidePricingModal() {
             document.getElementById('pricing-modal').style.display = 'none';
         }
- 
+
         async function upgradePlan(priceType) {
             if (!token) {
                 alert("Please login first");
@@ -594,9 +573,9 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ price_type: priceType })
                 });
-     
+    
                 if (!res) return;
-     
+    
                 const data = await res.json();
                 if (data.url) {
                     window.location.href = data.url;
@@ -607,16 +586,16 @@
                 alert("Payment error. Please try again.");
             }
         }
- 
+
         async function updateSubscriptionDisplay() {
             if (!currentUser) return;
-          
+         
             const statusEl = document.getElementById('subscription-status');
             const tierEl = document.getElementById('current-tier');
             const counterEl = document.getElementById('usage-counter');
-          
+         
             const tier = (currentUser.subscription_tier || 'free').toLowerCase();
-          
+         
             if (tier === 'premium') {
                 tierEl.textContent = "PREMIUM Plan";
                 if (counterEl) counterEl.style.display = 'none';
@@ -624,26 +603,26 @@
                 tierEl.textContent = 'Free Plan';
                 if (counterEl) counterEl.style.display = 'block';
             }
-          
+         
             statusEl.style.display = 'block';
         }
-        
+       
         async function updateUsageCounter() {
             const counterEl = document.getElementById('usage-counter');
             if (!counterEl || !currentUser || !token) return;
-        
+       
             try {
                 const res = await authFetch('/api/usage');
                 if (!res) return;
-        
+       
                 if (!res.ok) {
                     counterEl.innerHTML = '—';
                     return;
                 }
-        
+       
                 const data = await res.json();
                 const tier = (currentUser.subscription_tier || 'free').toLowerCase();
-        
+       
                 if (tier === 'premium') {
                     counterEl.innerHTML = 'Unlimited ✨';
                     counterEl.style.background = 'rgba(0, 200, 100, 0.15)';
@@ -651,7 +630,7 @@
                 } else {
                     const remaining = Math.max(0, 10 - (data.daily_count || 0));
                     counterEl.innerHTML = `${remaining} / 10 today`;
-        
+       
                     if (remaining < 5) {
                         counterEl.style.background = 'rgba(255, 100, 100, 0.2)';
                         counterEl.style.border = '1px solid #ff6464';
@@ -664,7 +643,7 @@
                 counterEl.innerHTML = '—';
             }
         }
-         
+        
         // ==================== INIT ====================
         window.addEventListener('load', () => {
             if (token) {
@@ -672,7 +651,7 @@
                 authScreen.style.display = 'none';
                 chatWrapper.style.display = 'flex';
                 userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email || 'User'}`;
-             
+            
                 loadUserHistory();
                 updateSubscriptionDisplay();
                 updateUsageCounter();
@@ -680,7 +659,7 @@
             }
             updateAvailability();
         });
- 
+
         // ==================== EVENT LISTENERS ====================
         if (input) {
             input.addEventListener('keypress', function(e) {
@@ -690,7 +669,7 @@
                 }
             });
         }
- 
+
         if (sendBtn) {
             sendBtn.addEventListener('click', sendMessage);
         }

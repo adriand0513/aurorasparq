@@ -347,13 +347,13 @@
                 const data = await res.json();
         
                 if (res.ok) {
-                    // Hide forms
+                    // Hide the forms
                     document.getElementById('register-form').style.display = 'none';
                     document.getElementById('login-form').style.display = 'none';
         
                     const authCard = document.querySelector('.auth-card');
         
-                    // Step 1: Show success animation
+                    // STEP 1: Show success animation
                     authCard.innerHTML = `
                         <div style="text-align: center; padding: 30px 10px;">
                             <div style="font-size: 60px; margin-bottom: 15px; animation: popIn 0.4s ease;">✅</div>
@@ -362,7 +362,7 @@
                         </div>
                     `;
         
-                    // Step 2: After 1.4 seconds, show the Premium offer
+                    // STEP 2: After 1.4 seconds, show the Premium offer screen
                     setTimeout(() => {
                         authCard.innerHTML = `
                             <div style="text-align: center; padding: 10px 0;">
@@ -372,7 +372,7 @@
                                     Want the <strong>best experience</strong> with Isabella?
                                 </p>
         
-                                <!-- Premium Benefits -->
+                                <!-- Premium Benefits Box -->
                                 <div style="background: rgba(107, 0, 179, 0.12); border: 1px solid #6b00b3; border-radius: 16px; padding: 18px 20px; margin-bottom: 26px; text-align: left;">
                                     <div style="color:#c300ff; font-weight:600; margin-bottom:10px; font-size:1rem;">Premium includes:</div>
                                     <ul style="margin:0; padding-left:18px; color:#e0d4ff; line-height:1.75; font-size:0.95rem;">
@@ -444,7 +444,7 @@
                             }
                         };
         
-                    }, 1400); // Show success for 1.4 seconds
+                    }, 1400); // Show success animation for 1.4 seconds
         
                 } else {
                     alert(data.detail || "Registration failed");

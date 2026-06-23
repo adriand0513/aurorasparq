@@ -1,4 +1,4 @@
-# main.py - Isabella Chatbot (Final PostgreSQL + Permanent JSON Fix)
+# main.py - Isabella Chatbot (Premium Only Version)
 import os
 import re
 import time
@@ -29,7 +29,7 @@ class DateTimeJSONResponse(JSONResponse):
                 return obj.isoformat()
             raise TypeError(f"Type {type(obj)} not serializable")
         return json.dumps(
-            content, 
+            content,
             default=custom_serializer,
             ensure_ascii=False
         ).encode("utf-8")
@@ -64,7 +64,6 @@ from relationship_state import (
 )
 from payment import router as payment_router
 from voice import generate_voice_note
-from proactive import should_send_proactive, generate_proactive_message
 
 scheduler = BackgroundScheduler()
 
@@ -75,7 +74,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(payment_router)
 
 AUDIO_DIR = Path("/var/data/audio")
-
 ensure_users_table()
 
 # ── Guards ─────────────────────────────────────
@@ -89,89 +87,6 @@ def is_rate_limited(convo_id: str, max_per_minute: int = 20) -> bool:
     convo_rate_limits[convo_id] = [t for t in convo_rate_limits[convo_id] if now - t < 60]
     convo_rate_limits[convo_id].append(now)
     return len(convo_rate_limits[convo_id]) > max_per_minute
-
-def get_all_ultimate_users():
-    """
-    TODO: Implement this function to return Ultimate users with:
-    user_id, convo_id, last_message_time
-    """
-    return []  # Placeholder - implement later
-
-def run_proactive_messages():
-    print("🔄 Running proactive message check...")
-
-    ultimate_users = get_all_ultimate_users()
-    print(f"Found {len(ultimate_users)} ultimate users")
-
-    for user in ultimate_users:
-        try:
-            convo_id = user["convo_id"]
-            last_message_time = user["last_message_time"]
-            tier = "ultimate"
-
-            hours_since = (datetime.datetime.now() - last_message_time).total_seconds() / 3600
-            print(f"User {user['user_id']} | Hours since last message: {hours_since:.2f}")
-
-            if should_send_proactive(convo_id, last_message_time, tier):
-                print(f"✅ Sending proactive message to user {user['user_id']}")
-                
-                message = generate_proactive_message(
-                    convo_id=convo_id,
-                    tier=tier,
-                    generate_llm_response_func=generate_llm_response,
-                    postprocess_func=postprocess
-                )
-
-                if message:
-                    save_message(
-                        convo_id=convo_id,
-                        message={"role": "assistant", "content": message},
-                        user_id=user["user_id"]
-                    )
-                    print(f"[PROACTIVE] Message sent successfully to user {user['user_id']}")
-                else:
-                    print(f"⚠️ No message generated for user {user['user_id']}")
-            else:
-                print(f"⏭️ Skipped user {user['user_id']} (time condition not met)")
-
-        except Exception as e:
-            logger.error(f"Error processing proactive message for user {user.get('user_id')}: {e}")
-
-def get_all_ultimate_users():
-    """
-    Returns Ultimate users with user_id, convo_id, and last_message_time.
-    """
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-
-        cur.execute("""
-            SELECT 
-                u.id AS user_id,
-                CONCAT('user_', u.id) AS convo_id,
-                COALESCE(MAX(ch.timestamp), u.created_at) AS last_message_time
-            FROM users u
-            LEFT JOIN chat_history ch ON ch.user_id = u.id
-            WHERE LOWER(COALESCE(u.subscription_tier, 'free')) = 'ultimate'
-            GROUP BY u.id, u.created_at
-            ORDER BY last_message_time DESC
-        """)
-
-        users = []
-        for row in cur.fetchall():
-            users.append({
-                "user_id": row[0],
-                "convo_id": row[1],
-                "last_message_time": row[2]
-            })
-
-        cur.close()
-        conn.close()
-        return users
-
-    except Exception as e:
-        logger.error(f"Error fetching ultimate users: {e}")
-        return []
 
 # ── NYC Context ─────────────────────────────────
 def get_nyc_context() -> Dict[str, str]:
@@ -285,23 +200,6 @@ async def payment_success(session_id: str = None):
                 setTimeout(() => window.location.href = '/', 2500);
             </script>
         """)
-    
-# ── Test Proactive Messages (Admin Only) ─────────────────────────────
-@app.get("/api/test/proactive")
-async def test_proactive_messages(token: str = None):
-    """
-    Manually trigger the proactive message check for testing.
-    Only accessible with the admin token.
-    """
-    if token != ADMIN_TOKEN:
-        raise HTTPException(status_code=403, detail="Unauthorized")
-
-    try:
-        run_proactive_messages()
-        return {"message": "Proactive message check triggered successfully"}
-    except Exception as e:
-        logger.error(f"Test proactive error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/audio/{filename}")
 async def get_audio(filename: str):
@@ -309,7 +207,6 @@ async def get_audio(filename: str):
         raise HTTPException(status_code=400, detail="Invalid file")
 
     file_path = AUDIO_DIR / filename
-
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Audio file not found")
 
@@ -324,11 +221,11 @@ async def get_audio(filename: str):
 async def admin_all_chats(token: str = None):
     if token != ADMIN_TOKEN:
         raise HTTPException(403, "Unauthorized")
-   
+  
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
-       
+      
         cur.execute('''
             SELECT
                 u.email,
@@ -340,25 +237,25 @@ async def admin_all_chats(token: str = None):
             GROUP BY u.email, ch.convo_id
             ORDER BY last_message_at DESC
         ''')
-       
+      
         chats = []
         for row in cur.fetchall():
             email = row[0]
             convo_id = row[1]
             message_count = row[3]
-           
+          
             cur.execute('''
                 SELECT role, content, timestamp
                 FROM chat_history
                 WHERE convo_id = %s
                 ORDER BY timestamp ASC
             ''', (convo_id,))
-           
+          
             messages = [
-                {"role": m[0], "content": m[1], "time": str(m[2])} 
+                {"role": m[0], "content": m[1], "time": str(m[2])}
                 for m in cur.fetchall()
             ]
-           
+          
             chats.append({
                 "email": email,
                 "convo_id": convo_id,
@@ -366,7 +263,7 @@ async def admin_all_chats(token: str = None):
                 "message_count": message_count,
                 "messages": messages
             })
-       
+      
         cur.close()
         conn.close()
         return {"chats": chats}
@@ -451,7 +348,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         raise HTTPException(400, "convo_id required")
 
     tier = user.get("subscription_tier", "free").lower()
-    is_premium = tier in ["premium", "ultimate"]
+    is_premium = tier == "premium"
 
     # Daily limit for Free users
     if not is_premium:
@@ -493,10 +390,8 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         if user_message:
             save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
 
-            # Auto fact extraction
-            if tier == "ultimate":
-                extract_and_save_facts(convo_id, user_message, tier)
-            elif tier == "premium":
+            # Auto fact extraction (Premium only)
+            if tier == "premium":
                 import random
                 if random.randint(1, 4) == 1:
                     extract_and_save_facts(convo_id, user_message, tier)
@@ -570,45 +465,25 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         for bubble in bubbles:
             save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user.get("id"))
 
-        # ==================== VOICE GENERATION (Updated) ====================
+        # ==================== VOICE GENERATION (Premium Only - 40% chance) ====================
         voice_url = None
         import random
 
-        if tier in ["premium", "ultimate"]:
+        if tier == "premium":
             try:
                 final_text = " ".join(bubbles) if bubbles else ""
-
                 if len(final_text) > 15:
-                    if tier == "premium":
-                        # 40% chance for Premium
-                        if random.random() < 0.40:
-                            max_chars = 1400  # ~1 min 33 sec
-                            text_for_voice = final_text[:max_chars]
-                            voice_url = generate_voice_note(text_for_voice, tier=tier)
-
-                    elif tier == "ultimate":
-                        # Always generate for Ultimate (for now)
-                        max_chars = 1400
+                    if random.random() < 0.40:  # 40% chance
+                        max_chars = 1400  # ~1 min 33 sec
                         text_for_voice = final_text[:max_chars]
                         voice_url = generate_voice_note(text_for_voice, tier=tier)
-
             except Exception as e:
                 logger.error(f"Voice generation error: {e}")
 
         # ==================== RESPONSE ====================
         response = {"replies": bubbles}
-
         if voice_url:
             response["voice_message"] = {"voice_url": voice_url}
-
-        # ==================== CONVERSATION SUMMARIZATION ====================
-        if tier == "ultimate":
-            try:
-                message_count = len(get_history(convo_id, limit=300))
-                if message_count % 25 == 0 and message_count > 20:
-                    generate_and_save_summary(convo_id, tier)
-            except Exception as e:
-                logger.error(f"Summarization trigger error: {e}")
 
         duration_ms = int((time.time() - start_time) * 1000)
         log_event("response_generated", convo_id, user_id=user.get("id"), duration_ms=duration_ms)
@@ -637,10 +512,6 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     except Exception as e:
         logger.error(f"💥 Unexpected error in /api/reply: {e}", exc_info=True)
         return {"replies": []}
-
-# Start background scheduler
-scheduler.add_job(run_proactive_messages, 'interval', hours=6)
-scheduler.start()
 
 
 if __name__ == "__main__":

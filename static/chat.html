@@ -145,6 +145,32 @@
             width: 90%;
             text-align: center;
         }
+
+        .loading-dots {
+            display: inline-block;
+            animation: loadingDots 1.2s infinite;
+        }
+        
+        @keyframes loadingDots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60%, 100% { content: '...'; }
+        }
+
+        @keyframes popIn {
+            0% {
+                transform: scale(0.3);
+                opacity: 0;
+            }
+            50% {
+                transform: scale(1.2);
+            }
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+        
     </style>
 </head>
 <body>
@@ -321,35 +347,104 @@
                 const data = await res.json();
         
                 if (res.ok) {
-                    // Show Premium offer screen
+                    // Hide forms
                     document.getElementById('register-form').style.display = 'none';
                     document.getElementById('login-form').style.display = 'none';
         
                     const authCard = document.querySelector('.auth-card');
-                    
+        
+                    // Step 1: Show success animation
                     authCard.innerHTML = `
-                        <h2 style="color:#c300ff; margin-bottom:20px;">Welcome, ${fullName.split(" ")[0]}!</h2>
-                        <p style="margin-bottom:25px; line-height:1.5;">Would you like to start with <strong>Premium</strong> for the best experience?</p>
-                        
-                        <button id="upgrade-btn"
-                                style="width:100%; padding:18px; background:#6b00b3; border:none; border-radius:16px; color:white; font-size:1.1rem; margin-bottom:12px; cursor:pointer;">
-                            Yes, Upgrade to Premium ($14.99/mo)
-                        </button>
-                        
-                        <button id="skip-btn"
-                                style="width:100%; padding:14px; background:transparent; border:1px solid #666; color:#ccc; border-radius:50px; cursor:pointer;">
-                            No thanks, continue with Free
-                        </button>
+                        <div style="text-align: center; padding: 30px 10px;">
+                            <div style="font-size: 60px; margin-bottom: 15px; animation: popIn 0.4s ease;">✅</div>
+                            <h2 style="color:#c300ff; margin-bottom:10px; font-size:1.6rem;">Account Created!</h2>
+                            <p style="color:#e0d4ff; font-size:1.05rem;">You're all set, ${fullName.split(" ")[0]}.</p>
+                        </div>
                     `;
         
-                    // Attach event listeners properly
-                    document.getElementById('upgrade-btn').onclick = () => {
-                        upgradeAfterRegister(email, password);
-                    };
+                    // Step 2: After 1.4 seconds, show the Premium offer
+                    setTimeout(() => {
+                        authCard.innerHTML = `
+                            <div style="text-align: center; padding: 10px 0;">
+                                <h2 style="color:#c300ff; margin-bottom:12px; font-size:1.85rem;">Welcome, ${fullName.split(" ")[0]}!</h2>
+                                
+                                <p style="margin-bottom:24px; line-height:1.6; color:#e0d4ff; font-size:1.05rem;">
+                                    Want the <strong>best experience</strong> with Isabella?
+                                </p>
         
-                    document.getElementById('skip-btn').onclick = () => {
-                        showLoginAfterRegister();
-                    };
+                                <!-- Premium Benefits -->
+                                <div style="background: rgba(107, 0, 179, 0.12); border: 1px solid #6b00b3; border-radius: 16px; padding: 18px 20px; margin-bottom: 26px; text-align: left;">
+                                    <div style="color:#c300ff; font-weight:600; margin-bottom:10px; font-size:1rem;">Premium includes:</div>
+                                    <ul style="margin:0; padding-left:18px; color:#e0d4ff; line-height:1.75; font-size:0.95rem;">
+                                        <li>Unlimited messages with Isabella</li>
+                                        <li>Voice notes from her</li>
+                                        <li>Smarter memory &amp; better conversations</li>
+                                        <li>Priority access</li>
+                                    </ul>
+                                </div>
+        
+                                <!-- Upgrade Button -->
+                                <button id="upgrade-btn"
+                                        style="width:100%; padding:18px 20px; background: linear-gradient(135deg, #6b00b3, #c300ff); border:none; border-radius:16px; color:white; font-size:1.1rem; font-weight:600; margin-bottom:14px; cursor:pointer; box-shadow: 0 4px 20px rgba(195, 0, 255, 0.5); transition: all 0.2s ease;">
+                                    Yes, Upgrade to Premium — $14.99/mo
+                                </button>
+                                
+                                <!-- Skip Button -->
+                                <button id="skip-btn"
+                                        style="width:100%; padding:13px 20px; background:transparent; border:1px solid #555; color:#aaa; border-radius:50px; cursor:pointer; font-size:0.95rem; transition: all 0.2s ease;">
+                                    No thanks, continue with Free
+                                </button>
+                            </div>
+                        `;
+        
+                        const upgradeBtn = document.getElementById('upgrade-btn');
+                        const skipBtn = document.getElementById('skip-btn');
+        
+                        // Click handlers with loading states
+                        upgradeBtn.onclick = async () => {
+                            upgradeBtn.disabled = true;
+                            upgradeBtn.style.opacity = '0.7';
+                            upgradeBtn.innerHTML = 'Processing... Please wait';
+                            await upgradeAfterRegister(email, password);
+                        };
+        
+                        skipBtn.onclick = () => {
+                            skipBtn.disabled = true;
+                            skipBtn.style.opacity = '0.6';
+                            skipBtn.innerHTML = 'Continuing with Free...';
+                            setTimeout(() => {
+                                showLoginAfterRegister();
+                            }, 500);
+                        };
+        
+                        // Hover effects
+                        upgradeBtn.onmouseover = () => {
+                            if (!upgradeBtn.disabled) {
+                                upgradeBtn.style.transform = 'translateY(-2px)';
+                                upgradeBtn.style.boxShadow = '0 6px 25px rgba(195, 0, 255, 0.6)';
+                            }
+                        };
+                        upgradeBtn.onmouseout = () => {
+                            if (!upgradeBtn.disabled) {
+                                upgradeBtn.style.transform = 'translateY(0)';
+                                upgradeBtn.style.boxShadow = '0 4px 20px rgba(195, 0, 255, 0.5)';
+                            }
+                        };
+        
+                        skipBtn.onmouseover = () => {
+                            if (!skipBtn.disabled) {
+                                skipBtn.style.borderColor = '#888';
+                                skipBtn.style.color = '#ccc';
+                            }
+                        };
+                        skipBtn.onmouseout = () => {
+                            if (!skipBtn.disabled) {
+                                skipBtn.style.borderColor = '#555';
+                                skipBtn.style.color = '#aaa';
+                            }
+                        };
+        
+                    }, 1400); // Show success for 1.4 seconds
         
                 } else {
                     alert(data.detail || "Registration failed");
@@ -357,6 +452,57 @@
             } catch(e) {
                 alert("Error during registration");
             }
+        }
+        
+        // Auto-login + Upgrade to Premium
+        async function upgradeAfterRegister(email, password) {
+            const upgradeBtn = document.getElementById('upgrade-btn');
+            
+            // Show loading state
+            if (upgradeBtn) {
+                upgradeBtn.disabled = true;
+                upgradeBtn.style.opacity = '0.7';
+                upgradeBtn.innerHTML = 'Processing... Please wait';
+            }
+        
+            try {
+                // Step 1: Auto login
+                const formData = new FormData();
+                formData.append('username', email);
+                formData.append('password', password);
+        
+                const loginRes = await fetch('/auth/login', {
+                    method: 'POST',
+                    body: formData
+                });
+        
+                const loginData = await loginRes.json();
+        
+                if (!loginRes.ok) {
+                    alert("Something went wrong during auto-login. Please try logging in manually.");
+                    showLogin();
+                    return;
+                }
+        
+                // Step 2: Save token and user data
+                token = loginData.access_token;
+                currentUser = loginData.user;
+                localStorage.setItem('token', token);
+                localStorage.setItem('user', JSON.stringify(currentUser));
+        
+                // Step 3: Trigger Stripe checkout
+                await upgradePlan('premium_monthly');
+        
+            } catch (error) {
+                console.error(error);
+                alert("Something went wrong. Please try logging in and upgrading manually.");
+                showLogin();
+            }
+        }
+        
+        function showLoginAfterRegister() {
+            showLogin();
+            alert("Account created! You can upgrade to Premium anytime from the Upgrade button.");
         }
 
         async function login() {

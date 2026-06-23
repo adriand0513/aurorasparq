@@ -596,21 +596,21 @@
  
         async function updateSubscriptionDisplay() {
             if (!currentUser) return;
-         
+          
             const statusEl = document.getElementById('subscription-status');
             const tierEl = document.getElementById('current-tier');
             const counterEl = document.getElementById('usage-counter');
-         
+          
             const tier = (currentUser.subscription_tier || 'free').toLowerCase();
-         
-            if (tier === 'premium' || tier === 'ultimate') {
-                tierEl.textContent = tier.toUpperCase() + " Plan";
+          
+            if (tier === 'premium') {
+                tierEl.textContent = "PREMIUM Plan";
                 if (counterEl) counterEl.style.display = 'none';
             } else {
                 tierEl.textContent = 'Free Plan';
                 if (counterEl) counterEl.style.display = 'block';
             }
-         
+          
             statusEl.style.display = 'block';
         }
  

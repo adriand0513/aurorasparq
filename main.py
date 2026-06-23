@@ -569,10 +569,17 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         if tier in ["premium", "ultimate"]:
             try:
                 final_text = " ".join(bubbles) if bubbles else ""
-                if len(final_text) > 15:
+                if len(final_text) > 15:                    # ← Make sure this is not too high
                     voice_url = generate_voice_note(final_text, tier=tier)
             except Exception as e:
                 logger.error(f"Voice generation error: {e}")
+        
+        response = {"replies": bubbles}
+        
+        if voice_url:
+            response["voice_message"] = {"voice_url": voice_url}
+
+return response
         
         # ==================== RESPONSE ====================
         response = {"replies": bubbles}

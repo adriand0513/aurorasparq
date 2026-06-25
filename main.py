@@ -20,6 +20,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 import uvicorn
 import asyncio
 from character_context import get_relevant_character_context
+from apscheduler.schedulers.background import BackgroundScheduler
 
 # ==================== PERMANENT GLOBAL FIX ====================
 class DateTimeJSONResponse(JSONResponse):

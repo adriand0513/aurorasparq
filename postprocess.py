@@ -1,4 +1,4 @@
-# postprocess.py - Stronger Repetition Reduction + Natural Flow
+# postprocess.py - Advanced Repetition Reduction + Natural Flow
 import re
 import random
 import requests
@@ -12,40 +12,39 @@ def clean_reply(text: str) -> str:
     text = text.strip()
 
     # === BASIC CLEANING ===
-    text = re.sub(r'[-—–]', ' ', text)           # Remove dashes
-    text = re.sub(r'\s{2,}', ' ', text)          # Clean extra spaces
-    text = re.sub(r"<\|[^>]*\|>", "", text)      # Remove special tokens
+    text = re.sub(r'[-—–]', ' ', text)
+    text = re.sub(r'\s{2,}', ' ', text)
+    text = re.sub(r"<\|[^>]*\|>", "", text)
     text = re.sub(r"__.*?__", "", text)
     text = re.sub(r'\[.*?]\s*', '', text)
     text = re.sub(r'\*.*?\*', '', text)
-
-    # Remove common AI starter phrases
     text = re.sub(r"^(Mmm|Hmm|Ahh|Ohh|Well|So|Hey there)\s*", "", text, flags=re.IGNORECASE)
 
-    # === REPETITION REDUCTION (Stronger Version) ===
+    # === REPETITION REDUCTION ===
     text = reduce_repetition(text)
 
-    # === LIGHT HUMANIZING (only on longer replies) ===
-    if len(text) > 120 and random.random() < 0.15:
+    # === OPTIONAL LLM REWRITE FOR HIGH REPETITION ===
+    # Only triggers if repetition is still detected after rule-based reduction
+    if detect_high_repetition(text) and random.random() < 0.25:
+        text = rewrite_for_variety(text)
+
+    # === LIGHT HUMANIZING ===
+    if len(text) > 110 and random.random() < 0.12:
         text = humanize_text(text)
 
     return text.strip()
 
 
-def reduce_repetition(text: str, max_overlap: float = 0.55) -> str:
+def reduce_repetition(text: str, max_overlap: float = 0.52) -> str:
     """
-    Reduces repetition by removing sentences that are too similar 
-    to previously seen sentences in the same reply.
+    Removes sentences that are too semantically similar to previous ones.
+    This is the main rule-based repetition filter.
     """
-    if not text:
-        return text
-
-    # Split into sentences
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())
     if len(sentences) <= 2:
         return text
 
-    cleaned_sentences = []
+    cleaned = []
     seen_word_sets = []
 
     for sentence in sentences:
@@ -53,7 +52,6 @@ def reduce_repetition(text: str, max_overlap: float = 0.55) -> str:
         if not sentence:
             continue
 
-        # Get set of words in current sentence
         current_words = set(re.findall(r'\b\w+\b', sentence.lower()))
 
         is_repetitive = False
@@ -61,31 +59,81 @@ def reduce_repetition(text: str, max_overlap: float = 0.55) -> str:
             if len(current_words) == 0:
                 is_repetitive = True
                 break
-
             overlap = len(current_words & prev_words) / len(current_words)
             if overlap > max_overlap:
                 is_repetitive = True
                 break
 
         if not is_repetitive:
-            cleaned_sentences.append(sentence)
+            cleaned.append(sentence)
             seen_word_sets.append(current_words)
 
-    # Safety fallback: if too much was removed, return original
-    if len(cleaned_sentences) < max(2, len(sentences) // 2):
+    if len(cleaned) < max(2, len(sentences) // 2):
         return text
 
-    return " ".join(cleaned_sentences)
+    return " ".join(cleaned)
+
+
+def detect_high_repetition(text: str) -> bool:
+    """
+    Quick check to see if the text still feels repetitive after basic reduction.
+    """
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    if len(sentences) < 3:
+        return False
+
+    word_sets = [set(re.findall(r'\b\w+\b', s.lower())) for s in sentences if s.strip()]
+    repetitive_count = 0
+
+    for i in range(1, len(word_sets)):
+        overlap = len(word_sets[i] & word_sets[i-1]) / max(len(word_sets[i]), 1)
+        if overlap > 0.45:
+            repetitive_count += 1
+
+    return repetitive_count >= 2
+
+
+def rewrite_for_variety(text: str) -> str:
+    """
+    Uses an LLM call to rewrite the reply when repetition is detected.
+    This gives much better results than pure rule-based methods.
+    """
+    try:
+        rewrite_prompt = f"""Rewrite this message to sound more natural and less repetitive.
+Keep the same meaning and warm, feminine tone. Vary the sentence structure and avoid repeating similar ideas.
+Do not add explanations or prefixes.
+
+Original: {text}
+Rewritten version:"""
+
+        resp = requests.post(
+            XAI_API_BASE,
+            headers={"Authorization": f"Bearer {XAI_API_KEY}", "Content-Type": "application/json"},
+            json={
+                "model": XAI_MODEL,
+                "messages": [{"role": "user", "content": rewrite_prompt}],
+                "temperature": 0.8,
+                "max_tokens": 350
+            },
+            timeout=10
+        )
+
+        if resp.status_code == 200:
+            rewritten = resp.json()["choices"][0]["message"]["content"].strip()
+            if 25 < len(rewritten) < len(text) * 1.5:
+                return rewritten
+
+    except Exception:
+        pass
+
+    return text
 
 
 def humanize_text(text: str) -> str:
-    """
-    Occasionally rewrites longer replies to sound more natural.
-    """
+    """Light humanizing for longer replies."""
     try:
-        humanize_prompt = f"""Rewrite this reply to sound like a real 25-year-old woman texting naturally.
-Keep it warm, feminine, and slightly seductive. Avoid sounding robotic or repetitive.
-Do not add any explanations or prefixes.
+        prompt = f"""Rewrite this reply to sound like a real 25-year-old woman texting naturally.
+Keep it warm and feminine. Avoid robotic or repetitive phrasing.
 
 Original: {text}
 Natural version:"""
@@ -95,7 +143,7 @@ Natural version:"""
             headers={"Authorization": f"Bearer {XAI_API_KEY}", "Content-Type": "application/json"},
             json={
                 "model": XAI_MODEL,
-                "messages": [{"role": "user", "content": humanize_prompt}],
+                "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.75,
                 "max_tokens": 300
             },
@@ -106,8 +154,6 @@ Natural version:"""
             rewritten = resp.json()["choices"][0]["message"]["content"].strip()
             if 30 < len(rewritten) < len(text) * 1.4:
                 return rewritten
-
-    except Exception:
+    except:
         pass
-
     return text

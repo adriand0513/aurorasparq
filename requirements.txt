@@ -15,3 +15,4 @@ psycopg2-binary
 sqlalchemy
 apscheduler==3.10.4
 sentence-transformers
+openai

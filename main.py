@@ -21,6 +21,8 @@ import uvicorn
 import asyncio
 from character_context import get_relevant_character_context
 from apscheduler.schedulers.background import BackgroundScheduler
+from psycopg2.extras import RealDictCursor
+from sentence_transformers import SentenceTransformer
 
 # ==================== PERMANENT GLOBAL FIX ====================
 class DateTimeJSONResponse(JSONResponse):
@@ -77,6 +79,9 @@ app.include_router(payment_router)
 AUDIO_DIR = Path("/var/data/audio")
 ensure_users_table()
 
+# Load embedding model once
+embedding_model = SentenceTransformer('BAAI/bge-large-en-v1.5')
+
 # ── Guards ─────────────────────────────────────
 last_reply_time = defaultdict(float)
 REPLY_COOLDOWN_SECONDS = 4.5
@@ -88,6 +93,33 @@ def is_rate_limited(convo_id: str, max_per_minute: int = 20) -> bool:
     convo_rate_limits[convo_id] = [t for t in convo_rate_limits[convo_id] if now - t < 60]
     convo_rate_limits[convo_id].append(now)
     return len(convo_rate_limits[convo_id]) > max_per_minute
+
+
+def get_embedding(text: str) -> list:
+    embedding = embedding_model.encode(text, normalize_embeddings=True)
+    return embedding.tolist()
+
+
+def get_relevant_memories(user_message: str, convo_id: str, limit: int = 4) -> list:
+    """Retrieve semantically relevant past conversation summaries."""
+    query_embedding = get_embedding(user_message)
+    
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    cur.execute("""
+        SELECT summary, created_at
+        FROM conversation_summaries
+        WHERE convo_id = %s
+        ORDER BY embedding <=> %s
+        LIMIT %s
+    """, (convo_id, query_embedding, limit))
+    
+    results = cur.fetchall()
+    cur.close()
+    conn.close()
+    
+    return results
 
 # ── NYC Context ─────────────────────────────────
 def get_nyc_context() -> Dict[str, str]:
@@ -344,13 +376,13 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     convo_id = body.get("convo_id")
     user_message = body.get("message", "").strip()
     logger.info(f"📥 /api/reply | user={user.get('id')} | tier={user.get('subscription_tier')} | convo={convo_id}")
-    
+   
     if not convo_id:
         raise HTTPException(400, "convo_id required")
-    
+   
     tier = user.get("subscription_tier", "free").lower()
     is_premium = tier == "premium"
-    
+   
     # Daily limit for Free users
     if not is_premium:
         daily_limit = 10
@@ -375,31 +407,30 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                     "Upgrade to Premium if you want to keep talking to me today ✨"
                 ]
             }
-    
+   
     # Rate limiting
     now = time.time()
     if now - last_reply_time.get(convo_id, 0) < REPLY_COOLDOWN_SECONDS:
         return {"replies": []}
     last_reply_time[convo_id] = now
-    
+   
     if is_rate_limited(convo_id):
         return {"replies": []}
-    
+   
     try:
         # Save user message
         if user_message:
             save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
-            
-            # Auto fact extraction (Premium only)
+           
             if tier == "premium":
                 import random
                 if random.randint(1, 4) == 1:
                     extract_and_save_facts(convo_id, user_message, tier)
-        
+       
         # Get context
         state = get_relationship_state(convo_id)
         history = get_history(convo_id)
-        
+       
         def sanitize_for_json(data):
             if isinstance(data, list):
                 return [sanitize_for_json(item) for item in data]
@@ -408,10 +439,10 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             if isinstance(data, datetime):
                 return data.isoformat()
             return data
-        
+       
         clean_history = sanitize_for_json(history)
         context = get_nyc_context()
-        
+       
         # Build base system prompt
         system_prompt = get_system_prompt(
             user_name=user.get("full_name"),
@@ -419,10 +450,10 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             state=state,
             tier=tier
         )
-        
+       
         # === DYNAMIC CHARACTER CONTEXT INJECTION ===
         rel_level = state.get("level", 1) if state else 1
-        
+       
         try:
             character_context = get_relevant_character_context(
                 convo_id=convo_id,
@@ -433,19 +464,30 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                 system_prompt += "\n\n" + character_context
         except Exception as e:
             logger.error(f"Character context injection error: {e}")
-        
+       
+        # === SEMANTIC MEMORY RETRIEVAL ===
+        try:
+            relevant_memories = get_relevant_memories(user_message, convo_id, limit=4)
+            if relevant_memories:
+                memory_text = "\n\nRelevant memories from past conversations:\n"
+                for mem in relevant_memories:
+                    memory_text += f"- {mem['summary']}\n"
+                system_prompt += memory_text
+        except Exception as e:
+            logger.error(f"Semantic memory retrieval error: {e}")
+       
         # Add relevant facts
         relevant_facts = get_relevant_facts(convo_id, limit=3)
         if relevant_facts:
             system_prompt += f"\n\nImportant things about him: {' | '.join(relevant_facts)}"
-        
+       
         pet_name = state.get("pet_name") if state else None
         system_prompt += f"\nCurrent relationship level: {rel_level}/10."
         if pet_name:
             system_prompt += f" You sometimes call him '{pet_name}'."
-        
+       
         messages = [{"role": "system", "content": system_prompt}] + clean_history[-12:]
-        
+       
         # Call xAI
         raw_reply = None
         for attempt in range(2):
@@ -472,14 +514,14 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                 else:
                     logger.error(f"xAI API failed: {e}")
                     return {"replies": []}
-        
+       
         bubbles = split_into_bubbles(clean_reply(raw_reply))
-        
+       
         # Save assistant replies
         for bubble in bubbles:
             save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user.get("id"))
-        
-        # ==================== VOICE GENERATION (Premium Only - 40% chance) ====================
+       
+        # Voice generation (Premium)
         voice_url = None
         import random
         if tier == "premium":
@@ -492,15 +534,15 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                         voice_url = generate_voice_note(text_for_voice, tier=tier)
             except Exception as e:
                 logger.error(f"Voice generation error: {e}")
-        
-        # ==================== RESPONSE ====================
+       
+        # Response
         response = {"replies": bubbles}
         if voice_url:
             response["voice_message"] = {"voice_url": voice_url}
-        
+       
         duration_ms = int((time.time() - start_time) * 1000)
         log_event("response_generated", convo_id, user_id=user.get("id"), duration_ms=duration_ms)
-        
+       
         # Update relationship state
         emotional_delta = 1 if any(word in user_message.lower() for word in ["miss", "want", "love", "beautiful", "hot", "sexy"]) else 0
         update_relationship_state(
@@ -509,7 +551,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             new_mood="flirty" if emotional_delta > 0 else None,
             note=f"User said: {user_message[:120]}"
         )
-        
+       
         if len(user_message) > 25:
             add_narrative_moment(
                 convo_id,
@@ -518,12 +560,13 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                 emotional_tag="flirty" if emotional_delta > 0 else "normal",
                 importance=6
             )
-        
+       
         return response
-        
+       
     except Exception as e:
         logger.error(f"💥 Unexpected error in /api/reply: {e}", exc_info=True)
         return {"replies": []}
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

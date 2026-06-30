@@ -97,11 +97,6 @@ def is_rate_limited(convo_id: str, max_per_minute: int = 20) -> bool:
     return len(convo_rate_limits[convo_id]) > max_per_minute
 
 
-def get_embedding(text: str) -> list:
-    embedding = embedding_model.encode(text, normalize_embeddings=True)
-    return embedding.tolist()
-
-
 def get_relevant_memories(user_message: str, convo_id: str, limit: int = 4) -> list:
     """Retrieve semantically relevant past conversation summaries."""
     query_embedding = get_embedding(user_message)

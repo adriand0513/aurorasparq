@@ -62,10 +62,10 @@ from memory import (
     get_pet_name,
     extract_and_save_facts,
     generate_and_save_summary,
-    summarize_conversation,
-    store_conversation_summary,
-    get_embedding,              
-    get_relevant_memories       
+    summarize_conversation,         
+    store_conversation_summary,      
+    get_embedding,                   
+    get_relevant_memories            
 )
 from analytics import log_event, get_live_stats
 from auth import register_user, authenticate_user, create_access_token, get_current_user, get_db_connection, ensure_users_table, update_user_subscription

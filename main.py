@@ -54,6 +54,7 @@ from memory import (
     save_message,
     get_relevant_facts,
     get_relationship_level,
+    get_embedding,
     get_pet_name,
     extract_and_save_facts,
     generate_and_save_summary,

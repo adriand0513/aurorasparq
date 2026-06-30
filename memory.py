@@ -5,7 +5,6 @@ import json
 import logging
 from datetime import datetime
 from typing import List, Dict, Optional
-from dotenv import load_dotenv
 from config import DATABASE_URL, XAI_API_KEY, XAI_API_BASE, XAI_MODEL, OPENAI_API_KEY
 import openai
 
@@ -152,7 +151,7 @@ def update_relationship_state(convo_id: str, level_delta=0, emotional_delta=0,
         "trust_level": 3, "current_mood": "playful", "pet_name": None, "notes": ""
     }
     new_level = max(1, min(10, current["level"] + level_delta))
-    new_temp = max(1, min(10, current["emotional_temperature"] + emotional_delta))
+    nou_temp = max(1, min(10, current["emotional_temperature"] + emotional_delta))
     phase = new_phase or current["relationship_phase"]
     mood = new_mood or current["current_mood"]
 

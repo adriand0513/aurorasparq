@@ -86,9 +86,6 @@ app.include_router(payment_router)
 AUDIO_DIR = Path("/var/data/audio")
 ensure_users_table()
 
-# Load embedding model once
-embedding_model = SentenceTransformer('BAAI/bge-large-en-v1.5')
-
 # ── Guards ─────────────────────────────────────
 last_reply_time = defaultdict(float)
 REPLY_COOLDOWN_SECONDS = 4.5

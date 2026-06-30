@@ -1,4 +1,4 @@
-# memory.py - Complete PostgreSQL Version (Cleaned & Improved)
+# memory.py - PostgreSQL Version with OpenAI Embeddings
 import psycopg2
 import requests
 import json
@@ -6,13 +6,14 @@ import logging
 from datetime import datetime
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
-from config import DATABASE_URL, XAI_API_KEY, XAI_API_BASE, XAI_MODEL
-from sentence_transformers import SentenceTransformer
+from config import DATABASE_URL, XAI_API_KEY, XAI_API_BASE, XAI_MODEL, OPENAI_API_KEY
+import openai
 
 logger = logging.getLogger(__name__)
 
-# Load embedding model
-embedding_model = SentenceTransformer('BAAI/bge-large-en-v1.5')
+# OpenAI Configuration
+openai.api_key = OPENAI_API_KEY
+
 
 def get_db_connection():
     """Create PostgreSQL connection"""
@@ -20,9 +21,16 @@ def get_db_connection():
 
 
 def get_embedding(text: str) -> list:
-    """Generate normalized embedding vector."""
-    embedding = embedding_model.encode(text, normalize_embeddings=True)
-    return embedding.tolist()
+    """Generate embedding using OpenAI's text-embedding-3-small."""
+    try:
+        response = openai.embeddings.create(
+            input=text,
+            model="text-embedding-3-small"
+        )
+        return response.data[0].embedding
+    except Exception as e:
+        logger.error(f"OpenAI embedding error: {e}")
+        return []
 
 
 # ==================== INITIALIZATION ====================
@@ -90,7 +98,7 @@ def init_relationship_state():
 
 
 def init_conversation_summaries():
-    """Initialize conversation summaries table with vector support"""
+    """Initialize with OpenAI embedding dimension (1536)"""
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute('''
@@ -98,7 +106,7 @@ def init_conversation_summaries():
             id SERIAL PRIMARY KEY,
             convo_id TEXT NOT NULL,
             summary TEXT NOT NULL,
-            embedding VECTOR(1024),
+            embedding VECTOR(1536),
             start_message_id INTEGER,
             end_message_id INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -321,7 +329,7 @@ Summary:"""
 
 
 def store_conversation_summary(convo_id: str, summary: str, start_id: int = None, end_id: int = None):
-    """Generate embedding and store the summary in the vector database."""
+    """Generate embedding using OpenAI and store the summary."""
     if not summary or len(summary) < 30:
         return
 

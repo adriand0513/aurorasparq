@@ -97,9 +97,11 @@ def init_relationship_state():
 
 
 def init_conversation_summaries():
-    """Initialize with OpenAI embedding dimension (1536)"""
+    """Initialize conversation summaries table with vector support (safe for existing tables)"""
     conn = get_db_connection()
     cur = conn.cursor()
+
+    # Create table if it doesn't exist
     cur.execute('''
         CREATE TABLE IF NOT EXISTS conversation_summaries (
             id SERIAL PRIMARY KEY,
@@ -112,8 +114,27 @@ def init_conversation_summaries():
             importance INTEGER DEFAULT 5
         )
     ''')
+
+    # Add embedding column if it doesn't exist (for old tables)
+    cur.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 
+                FROM information_schema.columns 
+                WHERE table_name = 'conversation_summaries' 
+                AND column_name = 'embedding'
+            ) THEN
+                ALTER TABLE conversation_summaries 
+                ADD COLUMN embedding VECTOR(1536);
+            END IF;
+        END $$;
+    """)
+
+    # Create indexes (safe to run multiple times)
     cur.execute('CREATE INDEX IF NOT EXISTS idx_summary_convo ON conversation_summaries(convo_id)')
     cur.execute('CREATE INDEX IF NOT EXISTS idx_summary_embedding ON conversation_summaries USING ivfflat (embedding vector_cosine_ops)')
+
     conn.commit()
     cur.close()
     conn.close()

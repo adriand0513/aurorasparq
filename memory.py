@@ -1,4 +1,4 @@
-# memory.py - Complete PostgreSQL Version (Cleaned & Improved + Layer 3)
+# memory.py - Complete PostgreSQL Version (Cleaned & Improved)
 import psycopg2
 import requests
 import json
@@ -7,21 +7,29 @@ from datetime import datetime
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
 from config import DATABASE_URL, XAI_API_KEY, XAI_API_BASE, XAI_MODEL
+from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
 
+# Load embedding model
+embedding_model = SentenceTransformer('BAAI/bge-large-en-v1.5')
 
 def get_db_connection():
     """Create PostgreSQL connection"""
     return psycopg2.connect(DATABASE_URL)
 
 
+def get_embedding(text: str) -> list:
+    """Generate normalized embedding vector."""
+    embedding = embedding_model.encode(text, normalize_embeddings=True)
+    return embedding.tolist()
+
+
 # ==================== INITIALIZATION ====================
+
 def init_db():
-    """Initialize core tables"""
     conn = get_db_connection()
     cur = conn.cursor()
-
     cur.execute('''
         CREATE TABLE IF NOT EXISTS chat_history (
             id SERIAL PRIMARY KEY,
@@ -32,7 +40,6 @@ def init_db():
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-
     cur.execute('''
         CREATE TABLE IF NOT EXISTS key_facts (
             id SERIAL PRIMARY KEY,
@@ -43,7 +50,6 @@ def init_db():
             last_recalled TIMESTAMP
         )
     ''')
-
     conn.commit()
     cur.close()
     conn.close()
@@ -53,7 +59,6 @@ def init_db():
 def init_relationship_state():
     conn = get_db_connection()
     cur = conn.cursor()
-
     cur.execute('''
         CREATE TABLE IF NOT EXISTS relationship_state (
             convo_id TEXT PRIMARY KEY,
@@ -67,7 +72,6 @@ def init_relationship_state():
             notes TEXT
         )
     ''')
-
     cur.execute('''
         CREATE TABLE IF NOT EXISTS narrative_memories (
             id SERIAL PRIMARY KEY,
@@ -79,7 +83,6 @@ def init_relationship_state():
             importance INTEGER DEFAULT 5
         )
     ''')
-
     conn.commit()
     cur.close()
     conn.close()
@@ -87,6 +90,7 @@ def init_relationship_state():
 
 
 def init_conversation_summaries():
+    """Initialize conversation summaries table with vector support"""
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute('''
@@ -109,72 +113,8 @@ def init_conversation_summaries():
     print("✅ Conversation summaries table initialized with vector support")
 
 
-# ==================== LAYER 3: RECENT RESPONSE TRACKING ====================
-def init_recent_responses():
-    conn = get_db_connection()
-    cur = conn.cursor()
-
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS recent_responses (
-            convo_id TEXT PRIMARY KEY,
-            messages TEXT,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-
-    conn.commit()
-    cur.close()
-    conn.close()
-    print("✅ Recent responses table initialized")
-
-
-def save_recent_response(convo_id: str, assistant_message: str):
-    """Save the latest assistant message. Keeps only the last 4 messages."""
-    conn = get_db_connection()
-    cur = conn.cursor()
-
-    cur.execute("SELECT messages FROM recent_responses WHERE convo_id = %s", (convo_id,))
-    row = cur.fetchone()
-
-    if row:
-        messages = json.loads(row[0])
-        messages.append(assistant_message)
-        messages = messages[-4:]  # Keep only last 4
-    else:
-        messages = [assistant_message]
-
-    cur.execute('''
-        INSERT INTO recent_responses (convo_id, messages, updated_at)
-        VALUES (%s, %s, CURRENT_TIMESTAMP)
-        ON CONFLICT (convo_id)
-        DO UPDATE SET messages = %s, updated_at = CURRENT_TIMESTAMP
-    ''', (convo_id, json.dumps(messages), json.dumps(messages)))
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
-def get_embedding(text: str) -> list:
-    embedding = embedding_model.encode(text, normalize_embeddings=True)
-    return embedding.tolist()
-
-
-def get_recent_responses(convo_id: str) -> list:
-    """Get the last 4 assistant messages."""
-    conn = get_db_connection()
-    cur = conn.cursor()
-
-    cur.execute("SELECT messages FROM recent_responses WHERE convo_id = %s", (convo_id,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-
-    if row:
-        return json.loads(row[0])
-    return []
-
-
 # ==================== RELATIONSHIP STATE ====================
+
 def get_relationship_state(convo_id: str):
     conn = get_db_connection()
     cur = conn.cursor()
@@ -182,7 +122,6 @@ def get_relationship_state(convo_id: str):
     row = cur.fetchone()
     cur.close()
     conn.close()
-
     if row:
         return {
             "convo_id": row[0],
@@ -204,7 +143,6 @@ def update_relationship_state(convo_id: str, level_delta=0, emotional_delta=0,
         "level": 1, "emotional_temperature": 5, "relationship_phase": "early_flirt",
         "trust_level": 3, "current_mood": "playful", "pet_name": None, "notes": ""
     }
-
     new_level = max(1, min(10, current["level"] + level_delta))
     new_temp = max(1, min(10, current["emotional_temperature"] + emotional_delta))
     phase = new_phase or current["relationship_phase"]
@@ -212,7 +150,6 @@ def update_relationship_state(convo_id: str, level_delta=0, emotional_delta=0,
 
     conn = get_db_connection()
     cur = conn.cursor()
-
     cur.execute('''
         INSERT INTO relationship_state
         (convo_id, level, pet_name, emotional_temperature, relationship_phase,
@@ -229,13 +166,13 @@ def update_relationship_state(convo_id: str, level_delta=0, emotional_delta=0,
     ''', (convo_id, new_level, pet_name, new_temp, phase, current["trust_level"],
           mood, note or "",
           new_level, pet_name, new_temp, phase, mood, note or ""))
-
     conn.commit()
     cur.close()
     conn.close()
 
 
 # ==================== HISTORY & FACTS ====================
+
 def get_history(convo_id: str, limit: int = 50) -> List[Dict]:
     conn = get_db_connection()
     cur = conn.cursor()
@@ -293,6 +230,7 @@ def add_key_fact(convo_id: str, fact: str, importance: int = 7):
 
 
 # ==================== AUTOMATIC FACT EXTRACTION ====================
+
 def extract_and_save_facts(convo_id: str, user_message: str, tier: str = "free"):
     if tier == "free":
         return
@@ -302,15 +240,11 @@ def extract_and_save_facts(convo_id: str, user_message: str, tier: str = "free")
     extraction_prompt = f"""Extract any important personal facts about the user from this message.
 Only extract clear, useful, and specific information such as preferences, habits, life details,
 strong opinions, background, or things he mentioned about himself.
-
 If nothing meaningful is mentioned, return nothing.
-
 User message: "{user_message}"
-
 Return facts in this format (one per line):
 fact: [fact here]
 importance: [6-10]
-
 Only include facts with importance 6 or higher."""
 
     try:
@@ -325,9 +259,7 @@ Only include facts with importance 6 or higher."""
             },
             timeout=12
         )
-
         if resp.status_code != 200:
-            logger.warning(f"Fact extraction failed: {resp.status_code}")
             return
 
         content = resp.json()["choices"][0]["message"]["content"].strip()
@@ -349,102 +281,23 @@ Only include facts with importance 6 or higher."""
         for fact in facts:
             if fact.get("fact") and fact.get("importance", 0) >= 6:
                 add_key_fact(convo_id, fact["fact"], fact["importance"])
-
     except Exception as e:
         logger.error(f"Fact extraction error: {e}")
 
 
 # ==================== CONVERSATION SUMMARIZATION ====================
-def generate_and_save_summary(convo_id: str, tier: str = "free"):
-    if tier != "ultimate":
-        return
-
-    conn = get_db_connection()
-    cur = conn.cursor()
-
-    cur.execute('''
-        SELECT MAX(end_message_id) FROM conversation_summaries 
-        WHERE convo_id = %s
-    ''', (convo_id,))
-    last_summary_end = cur.fetchone()[0] or 0
-
-    cur.execute('''
-        SELECT id, role, content 
-        FROM chat_history 
-        WHERE convo_id = %s AND id > %s
-        ORDER BY timestamp ASC
-        LIMIT 40
-    ''', (convo_id, last_summary_end))
-
-    messages = cur.fetchall()
-    cur.close()
-    conn.close()
-
-    if len(messages) < 15:
-        return
-
-    conversation_text = "\n".join([f"{m[1]}: {m[2]}" for m in messages])
-
-    summary_prompt = f"""Summarize the following conversation between a user and Isabella.
-Focus on important events, emotional moments, key things the user shared,
-and any ongoing topics. Keep it concise (4-8 sentences).
-
-Conversation:
-{conversation_text}
-
-Summary:"""
-
-    try:
-        resp = requests.post(
-            XAI_API_BASE,
-            headers={"Authorization": f"Bearer {XAI_API_KEY}", "Content-Type": "application/json"},
-            json={
-                "model": XAI_MODEL,
-                "messages": [{"role": "user", "content": summary_prompt}],
-                "temperature": 0.4,
-                "max_tokens": 400
-            },
-            timeout=30
-        )
-
-        if resp.status_code == 200:
-            summary = resp.json()["choices"][0]["message"]["content"].strip()
-
-            if len(summary) < 30:
-                return
-
-            start_id = messages[0][0]
-            end_id = messages[-1][0]
-
-            conn = get_db_connection()
-            cur = conn.cursor()
-            cur.execute('''
-                INSERT INTO conversation_summaries 
-                (convo_id, summary, start_message_id, end_message_id, importance)
-                VALUES (%s, %s, %s, %s, %s)
-            ''', (convo_id, summary, start_id, end_id, 6))
-            conn.commit()
-            cur.close()
-            conn.close()
-
-            logger.info(f"✅ Summary saved for {convo_id}")
-
-    except Exception as e:
-        logger.error(f"Summary error: {e}")
 
 def summarize_conversation(convo_id: str, recent_messages: list) -> str:
     """Generate a concise summary of recent conversation messages."""
     conversation_text = "\n".join([
         f"{msg['role']}: {msg['content']}" for msg in recent_messages
     ])
-    
-    summary_prompt = f"""Summarize the following conversation between a user and Isabella in 4-8 sentences. 
-Focus on key topics discussed, important things the user shared, and the overall emotional tone. 
-Be concise and factual.
 
+    summary_prompt = f"""Summarize the following conversation between a user and Isabella in 4-8 sentences.
+Focus on key topics discussed, important things the user shared, and the overall emotional tone.
+Be concise and factual.
 Conversation:
 {conversation_text}
-
 Summary:"""
 
     try:
@@ -463,7 +316,7 @@ Summary:"""
             return resp.json()["choices"][0]["message"]["content"].strip()
     except Exception as e:
         logger.error(f"Summarization error: {e}")
-    
+
     return ""
 
 
@@ -471,18 +324,18 @@ def store_conversation_summary(convo_id: str, summary: str, start_id: int = None
     """Generate embedding and store the summary in the vector database."""
     if not summary or len(summary) < 30:
         return
-    
+
     embedding = get_embedding(summary)
-    
+
     conn = get_db_connection()
     cur = conn.cursor()
-    
+
     cur.execute("""
-        INSERT INTO conversation_summaries 
+        INSERT INTO conversation_summaries
         (convo_id, summary, embedding, start_message_id, end_message_id)
         VALUES (%s, %s, %s, %s, %s)
     """, (convo_id, summary, embedding, start_id, end_id))
-    
+
     conn.commit()
     cur.close()
     conn.close()
@@ -490,6 +343,7 @@ def store_conversation_summary(convo_id: str, summary: str, start_id: int = None
 
 
 # ==================== LEGACY COMPATIBILITY ====================
+
 def get_relationship_level(convo_id: str) -> int:
     state = get_relationship_state(convo_id)
     return state["level"] if state else 1
@@ -501,7 +355,7 @@ def get_pet_name(convo_id: str) -> str:
 
 
 # ==================== INITIALIZE ON IMPORT ====================
+
 init_db()
 init_relationship_state()
 init_conversation_summaries()
-init_recent_responses()

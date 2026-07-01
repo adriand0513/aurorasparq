@@ -120,12 +120,12 @@ def init_conversation_summaries():
         DO $$
         BEGIN
             IF NOT EXISTS (
-                SELECT 1 
-                FROM information_schema.columns 
-                WHERE table_name = 'conversation_summaries' 
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_name = 'conversation_summaries'
                 AND column_name = 'embedding'
             ) THEN
-                ALTER TABLE conversation_summaries 
+                ALTER TABLE conversation_summaries
                 ADD COLUMN embedding VECTOR(1536);
             END IF;
         END $$;
@@ -172,7 +172,7 @@ def update_relationship_state(convo_id: str, level_delta=0, emotional_delta=0,
         "trust_level": 3, "current_mood": "playful", "pet_name": None, "notes": ""
     }
     new_level = max(1, min(10, current["level"] + level_delta))
-    nou_temp = max(1, min(10, current["emotional_temperature"] + emotional_delta))
+    new_temp = max(1, min(10, current["emotional_temperature"] + emotional_delta))
     phase = new_phase or current["relationship_phase"]
     mood = new_mood or current["current_mood"]
 
@@ -266,14 +266,14 @@ def extract_and_save_facts(convo_id: str, user_message: str, tier: str = "free")
         return
 
     extraction_prompt = f"""Extract any important personal facts about the user from this message.
-Only extract clear, useful, and specific information such as preferences, habits, life details,
-strong opinions, background, or things he mentioned about himself.
-If nothing meaningful is mentioned, return nothing.
-User message: "{user_message}"
+    Only extract clear, useful, and specific information such as preferences, habits, life details,
+    strong opinions, background, or things he mentioned about himself.
+    If nothing meaningful is mentioned, return nothing.
+    User message: "{user_message}"
 Return facts in this format (one per line):
 fact: [fact here]
 importance: [6-10]
-Only include facts with importance 6 or higher."""
+Only include facts with importance 6 or higher.""
 
     try:
         resp = requests.post(
@@ -316,17 +316,29 @@ Only include facts with importance 6 or higher."""
 # ==================== CONVERSATION SUMMARIZATION ====================
 
 def summarize_conversation(convo_id: str, recent_messages: list) -> str:
-    """Generate a concise summary of recent conversation messages."""
+    """Generate a high-quality, structured summary for long-term memory."""
     conversation_text = "\n".join([
         f"{msg['role']}: {msg['content']}" for msg in recent_messages
     ])
 
-    summary_prompt = f"""Summarize the following conversation between a user and Isabella in 4-8 sentences.
-Focus on key topics discussed, important things the user shared, and the overall emotional tone.
-Be concise and factual.
+    summary_prompt = f"""You are creating a memory summary for an AI girlfriend chatbot named Isabella.
+
+Your job is to extract the **most important information** from this conversation so Isabella can remember it in future conversations.
+
+Focus on these categories:
+
+1. **Key things the user shared about himself** (goals, struggles, preferences, background, personality traits, daily life, etc.)
+2. **Emotional tone** of the conversation (how the user was feeling, how Isabella responded)
+3. **Important topics discussed** (especially recurring ones)
+4. **Relationship progression** (any moments of closeness, teasing, vulnerability, or tension)
+5. **Things Isabella should remember** for future conversations
+
+Be concise but specific. Write in paragraph form (4-8 sentences max). Do not write generic summaries.
+
 Conversation:
 {conversation_text}
-Summary:"""
+
+Structured Memory Summary:"""
 
     try:
         resp = requests.post(
@@ -335,8 +347,8 @@ Summary:"""
             json={
                 "model": XAI_MODEL,
                 "messages": [{"role": "user", "content": summary_prompt}],
-                "temperature": 0.4,
-                "max_tokens": 400
+                "temperature": 0.35,
+                "max_tokens": 450
             },
             timeout=30
         )

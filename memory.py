@@ -101,7 +101,6 @@ def init_conversation_summaries():
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # Create table if it doesn't exist
     cur.execute('''
         CREATE TABLE IF NOT EXISTS conversation_summaries (
             id SERIAL PRIMARY KEY,
@@ -115,7 +114,6 @@ def init_conversation_summaries():
         )
     ''')
 
-    # Add embedding column if it doesn't exist (for old tables)
     cur.execute("""
         DO $$
         BEGIN
@@ -131,7 +129,6 @@ def init_conversation_summaries():
         END $$;
     """)
 
-    # Create indexes (safe to run multiple times)
     cur.execute('CREATE INDEX IF NOT EXISTS idx_summary_convo ON conversation_summaries(convo_id)')
     cur.execute('CREATE INDEX IF NOT EXISTS idx_summary_embedding ON conversation_summaries USING ivfflat (embedding vector_cosine_ops)')
 
@@ -266,14 +263,14 @@ def extract_and_save_facts(convo_id: str, user_message: str, tier: str = "free")
         return
 
     extraction_prompt = f"""Extract any important personal facts about the user from this message.
-    Only extract clear, useful, and specific information such as preferences, habits, life details,
-    strong opinions, background, or things he mentioned about himself.
-    If nothing meaningful is mentioned, return nothing.
-    User message: "{user_message}"
+Only extract clear, useful, and specific information such as preferences, habits, life details,
+strong opinions, background, or things he mentioned about himself.
+If nothing meaningful is mentioned, return nothing.
+User message: "{user_message}"
 Return facts in this format (one per line):
 fact: [fact here]
 importance: [6-10]
-Only include facts with importance 6 or higher.""
+Only include facts with importance 6 or higher."""
 
     try:
         resp = requests.post(
@@ -321,20 +318,23 @@ def summarize_conversation(convo_id: str, recent_messages: list) -> str:
         f"{msg['role']}: {msg['content']}" for msg in recent_messages
     ])
 
-    summary_prompt = (
-        "You are creating a memory summary for an AI girlfriend chatbot named Isabella.\n\n"
-        "Your job is to extract the most important information from this conversation "
-        "so Isabella can remember it in future conversations.\n\n"
-        "Focus on these categories:\n"
-        "1. Key things the user shared about himself (goals, struggles, preferences, background, personality traits, daily life, etc.)\n"
-        "2. Emotional tone of the conversation\n"
-        "3. Important topics discussed (especially recurring ones)\n"
-        "4. Relationship progression (any moments of closeness, teasing, vulnerability, or tension)\n"
-        "5. Things Isabella should remember for future conversations\n\n"
-        "Be concise but specific. Write in paragraph form (4-8 sentences max).\n\n"
-        f"Conversation:\n{conversation_text}\n\n"
-        "Structured Memory Summary:"
-    )
+    summary_prompt = f"""You are creating a memory summary for an AI girlfriend chatbot named Isabella.
+
+Your job is to extract the most important information from this conversation so Isabella can remember it in future conversations.
+
+Focus on these categories:
+1. Key things the user shared about himself (goals, struggles, preferences, background, personality traits, daily life, etc.)
+2. Emotional tone of the conversation
+3. Important topics discussed (especially recurring ones)
+4. Relationship progression (any moments of closeness, teasing, vulnerability, or tension)
+5. Things Isabella should remember for future conversations
+
+Be concise but specific. Write in paragraph form (4-8 sentences max).
+
+Conversation:
+{conversation_text}
+
+Structured Memory Summary:"""
 
     try:
         resp = requests.post(
@@ -354,6 +354,7 @@ def summarize_conversation(convo_id: str, recent_messages: list) -> str:
         logger.error(f"Summarization error: {e}")
 
     return ""
+
 
 def store_conversation_summary(convo_id: str, summary: str, start_id: int = None, end_id: int = None):
     """Generate embedding using OpenAI and store the summary."""

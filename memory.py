@@ -321,24 +321,20 @@ def summarize_conversation(convo_id: str, recent_messages: list) -> str:
         f"{msg['role']}: {msg['content']}" for msg in recent_messages
     ])
 
-    summary_prompt = f"""You are creating a memory summary for an AI girlfriend chatbot named Isabella.
-
-Your job is to extract the **most important information** from this conversation so Isabella can remember it in future conversations.
-
-Focus on these categories:
-
-1. **Key things the user shared about himself** (goals, struggles, preferences, background, personality traits, daily life, etc.)
-2. **Emotional tone** of the conversation (how the user was feeling, how Isabella responded)
-3. **Important topics discussed** (especially recurring ones)
-4. **Relationship progression** (any moments of closeness, teasing, vulnerability, or tension)
-5. **Things Isabella should remember** for future conversations
-
-Be concise but specific. Write in paragraph form (4-8 sentences max). Do not write generic summaries.
-
-Conversation:
-{conversation_text}
-
-Structured Memory Summary:"""
+    summary_prompt = (
+        "You are creating a memory summary for an AI girlfriend chatbot named Isabella.\n\n"
+        "Your job is to extract the most important information from this conversation "
+        "so Isabella can remember it in future conversations.\n\n"
+        "Focus on these categories:\n"
+        "1. Key things the user shared about himself (goals, struggles, preferences, background, personality traits, daily life, etc.)\n"
+        "2. Emotional tone of the conversation\n"
+        "3. Important topics discussed (especially recurring ones)\n"
+        "4. Relationship progression (any moments of closeness, teasing, vulnerability, or tension)\n"
+        "5. Things Isabella should remember for future conversations\n\n"
+        "Be concise but specific. Write in paragraph form (4-8 sentences max).\n\n"
+        f"Conversation:\n{conversation_text}\n\n"
+        "Structured Memory Summary:"
+    )
 
     try:
         resp = requests.post(
@@ -358,7 +354,6 @@ Structured Memory Summary:"""
         logger.error(f"Summarization error: {e}")
 
     return ""
-
 
 def store_conversation_summary(convo_id: str, summary: str, start_id: int = None, end_id: int = None):
     """Generate embedding using OpenAI and store the summary."""

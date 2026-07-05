@@ -1,60 +1,159 @@
-# postprocess.py
+# postprocess.py - Advanced Repetition Reduction + Natural Flow
 import re
+import random
+import requests
+from config import XAI_API_KEY, XAI_API_BASE, XAI_MODEL
+
 
 def clean_reply(text: str) -> str:
     if not text:
-        return ""
+        return "Hey..."
 
     text = text.strip()
 
-    # ── Step 1: Replace dashes with ellipses (the most natural texting feel) ─────
-    dash_patterns = [
-        r'—',                               # em dash
-        r'–',                               # en dash
-        r'\s*-\s*(?=[A-Za-z])',             # hyphen with spaces before word
-        r'\s*-\s*$',                        # trailing hyphen
-        r'(?<=[A-Za-z])\s*-\s*(?=[A-Za-z])',# mid-sentence hyphen with spaces
-        r'-\s+',                            # hyphen followed by space
-    ]
+    # === BASIC CLEANING ===
+    text = re.sub(r'[-—–]', ' ', text)
+    text = re.sub(r'\s{2,}', ' ', text)
+    text = re.sub(r"<\|[^>]*\|>", "", text)
+    text = re.sub(r"__.*?__", "", text)
+    text = re.sub(r'\[.*?]\s*', '', text)
+    text = re.sub(r'\*.*?\*', '', text)
+    text = re.sub(r"^(Mmm|Hmm|Ahh|Ohh|Well|So|Hey there)\s*", "", text, flags=re.IGNORECASE)
 
-    # Replace any matched dash pattern with ellipsis + space
-    for pattern in dash_patterns:
-        text = re.sub(pattern, '… ', text)
+    # === REPETITION REDUCTION ===
+    text = reduce_repetition(text)
 
-    # Normalize multiple ellipses (people don't usually write .......)
-    text = re.sub(r'[…]{2,}', '…', text)
+    # === OPTIONAL LLM REWRITE FOR HIGH REPETITION ===
+    # Only triggers if repetition is still detected after rule-based reduction
+    if detect_high_repetition(text) and random.random() < 0.25:
+        text = rewrite_for_variety(text)
 
-    # ── Your original rules ─────────────────────────────────────────────────────
-
-    # Remove trailing question mark → turn into period
-    text = re.sub(r'\?\s*$', '.', text)
-
-    # Turn mid-sentence questions into statements
-    text = re.sub(r'(\S+)\?\s*', r'\1. ', text)
-
-    # Remove very common unwanted words/patterns
-    banned = r'\b(boo|papi|baby|cutie|wassup|sup|wyd|hiii|heyyy|miss ?me|already\??|fr|lma?o+|omg+|no ?way)\b'
-    text = re.sub(banned, '', text, flags=re.IGNORECASE)
-
-    # Limit emojis severely (keep at most 1)
-    emojis = re.findall(r'[\U0001F300-\U0001F9FF]', text)
-    if len(emojis) > 1:
-        keep_first = True
-        def repl(m):
-            nonlocal keep_first
-            if keep_first:
-                keep_first = False
-                return m.group(0)
-            return ''
-        text = re.sub(r'[\U0001F300-\U0001F9FF]', repl, text)
-
-    # ── Final cleanup ───────────────────────────────────────────────────────────
-    # Collapse multiple spaces/punctuation
-    text = re.sub(r'([.!?]){2,}', r'\1', text)      # !! → !
-    text = re.sub(r'\s{2,}', ' ', text)             # multiple spaces → single
-    text = re.sub(r'\s*\.\s*', '. ', text)          # normalize periods + spaces
-
-    # Trim trailing punctuation that looks off
-    text = re.sub(r'[.!?]\s*$', lambda m: m.group(0).rstrip(), text)
+    # === LIGHT HUMANIZING ===
+    if len(text) > 110 and random.random() < 0.12:
+        text = humanize_text(text)
 
     return text.strip()
+
+
+def reduce_repetition(text: str, max_overlap: float = 0.52) -> str:
+    """
+    Removes sentences that are too semantically similar to previous ones.
+    This is the main rule-based repetition filter.
+    """
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    if len(sentences) <= 2:
+        return text
+
+    cleaned = []
+    seen_word_sets = []
+
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+
+        current_words = set(re.findall(r'\b\w+\b', sentence.lower()))
+
+        is_repetitive = False
+        for prev_words in seen_word_sets:
+            if len(current_words) == 0:
+                is_repetitive = True
+                break
+            overlap = len(current_words & prev_words) / len(current_words)
+            if overlap > max_overlap:
+                is_repetitive = True
+                break
+
+        if not is_repetitive:
+            cleaned.append(sentence)
+            seen_word_sets.append(current_words)
+
+    if len(cleaned) < max(2, len(sentences) // 2):
+        return text
+
+    return " ".join(cleaned)
+
+
+def detect_high_repetition(text: str) -> bool:
+    """
+    Quick check to see if the text still feels repetitive after basic reduction.
+    """
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    if len(sentences) < 3:
+        return False
+
+    word_sets = [set(re.findall(r'\b\w+\b', s.lower())) for s in sentences if s.strip()]
+    repetitive_count = 0
+
+    for i in range(1, len(word_sets)):
+        overlap = len(word_sets[i] & word_sets[i-1]) / max(len(word_sets[i]), 1)
+        if overlap > 0.45:
+            repetitive_count += 1
+
+    return repetitive_count >= 2
+
+
+def rewrite_for_variety(text: str) -> str:
+    """
+    Uses an LLM call to rewrite the reply when repetition is detected.
+    This gives much better results than pure rule-based methods.
+    """
+    try:
+        rewrite_prompt = f"""Rewrite this message to sound more natural and less repetitive.
+Keep the same meaning and warm, feminine tone. Vary the sentence structure and avoid repeating similar ideas.
+Do not add explanations or prefixes.
+
+Original: {text}
+Rewritten version:"""
+
+        resp = requests.post(
+            XAI_API_BASE,
+            headers={"Authorization": f"Bearer {XAI_API_KEY}", "Content-Type": "application/json"},
+            json={
+                "model": XAI_MODEL,
+                "messages": [{"role": "user", "content": rewrite_prompt}],
+                "temperature": 0.8,
+                "max_tokens": 350
+            },
+            timeout=10
+        )
+
+        if resp.status_code == 200:
+            rewritten = resp.json()["choices"][0]["message"]["content"].strip()
+            if 25 < len(rewritten) < len(text) * 1.5:
+                return rewritten
+
+    except Exception:
+        pass
+
+    return text
+
+
+def humanize_text(text: str) -> str:
+    """Light humanizing for longer replies."""
+    try:
+        prompt = f"""Rewrite this reply to sound like a real 25-year-old woman texting naturally.
+Keep it warm and feminine. Avoid robotic or repetitive phrasing.
+
+Original: {text}
+Natural version:"""
+
+        resp = requests.post(
+            XAI_API_BASE,
+            headers={"Authorization": f"Bearer {XAI_API_KEY}", "Content-Type": "application/json"},
+            json={
+                "model": XAI_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.75,
+                "max_tokens": 300
+            },
+            timeout=8
+        )
+
+        if resp.status_code == 200:
+            rewritten = resp.json()["choices"][0]["message"]["content"].strip()
+            if 30 < len(rewritten) < len(text) * 1.4:
+                return rewritten
+    except:
+        pass
+    return text

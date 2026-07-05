@@ -2,1093 +2,834 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Isabella</title>
-    <link rel="stylesheet" href="/static/style.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aurora Sparq • Isabella</title>
     <style>
         :root {
             --bg: #0d0015;
-            --card: rgba(30, 10, 50, 0.88);
-            --accent-purple: #c300ff;
-            --accent-pink: #ff0099;
-            --accent-glow: rgba(195, 0, 255, 0.4);
-            --danger: #ff3366;
-            --success: #00ff99;
-            --text: #f8f0ff;
-            --text-muted: #bb99cc;
-            --input-bg: rgba(50, 20, 80, 0.6);
+            --accent: #c300ff;
+            --accent2: #ff0099;
         }
-
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-
+        * { margin:0; padding:0; box-sizing:border-box; }
         body {
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: var(--bg);
-            color: var(--text);
+            color: #f8f0ff;
+            font-family: system-ui, sans-serif;
             height: 100vh;
+            overflow: hidden;
             display: flex;
             flex-direction: column;
-            overflow: hidden;
         }
-
-        .chat-header {
-            padding: 14px 20px;
-            background: linear-gradient(to right, rgba(20,5,40,0.95), rgba(40,10,60,0.95));
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border-bottom: 1px solid rgba(195,0,255,0.12);
+        .header {
+            padding: 12px 16px;
+            background: rgba(20,5,40,0.95);
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            z-index: 100;
+            gap: 12px;
+            border-bottom: 1px solid rgba(195,0,255,0.3);
+            flex-shrink: 0;
         }
-
         .avatar {
-            width: 48px;
-            height: 48px;
+            width: 48px; height: 48px;
             border-radius: 50%;
-            background-size: cover;
-            background-position: center;
-            margin-right: 14px;
-            border: 2px solid var(--accent-purple);
-            box-shadow: 0 0 16px var(--accent-glow);
+            background: url('/static/images/isabella.png') center/cover;
+            border: 2px solid var(--accent);
         }
 
-        .contact-info h2 {
-            margin: 0;
-            font-size: 19px;
-            font-weight: 600;
-        }
-
-        .status {
-            font-size: 13px;
-            color: #ff66cc;
+        #auth-screen, #chat-wrapper {
+            flex: 1;
             display: flex;
+            flex-direction: column;
+        }
+        #auth-screen {
+            justify-content: center;
             align-items: center;
-            gap: 8px;
+            padding: 20px;
+        }
+        .auth-card {
+            background: rgba(30,20,50,0.95);
+            padding: 32px;
+            border-radius: 24px;
+            border: 1px solid var(--accent);
+            width: 100%;
+            max-width: 380px;
+        }
+        input {
+            width: 100%;
+            padding: 14px 16px;
+            margin: 8px 0;
+            background: rgba(50,20,80,0.7);
+            border: none;
+            border-radius: 30px;
+            color: white;
+            font-size: 16px;
+        }
+        button {
+            width: 100%;
+            padding: 14px;
+            margin: 8px 0;
+            border: none;
+            border-radius: 30px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            color: white;
         }
 
-        .status::before {
-            content: '';
-            width: 10px;
-            height: 10px;
-            background: #ff66cc;
-            border-radius: 50%;
-            box-shadow: 0 0 10px #ff66cc;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-
-        #messages-container {
+        #chat-wrapper { min-height: 0; }
+        #messages {
             flex: 1;
             overflow-y: auto;
-            padding: 20px;
+            padding: 16px;
             display: flex;
             flex-direction: column;
-            gap: 14px;
-            background: linear-gradient(to bottom, rgba(13,0,21,0.6), transparent);
+            gap: 12px;
         }
-
         .message {
-            max-width: 82%;
-            padding: 12px 18px;
-            border-radius: 22px;
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 20px;
             font-size: 15.5px;
             line-height: 1.45;
         }
+        .sent { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: white; align-self: flex-end; }
+        .received { background: rgba(30,20,50,0.95); align-self: flex-start; }
 
-        .sent {
-            background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
-            color: white;
-            align-self: flex-end;
-            border-bottom-right-radius: 8px;
-        }
-
-        .received {
-            background: rgba(30,20,50,0.9);
-            color: white;
-            align-self: flex-start;
-            border-bottom-left-radius: 8px;
-            backdrop-filter: blur(4px);
-        }
-
-        .input-area {
-            padding: 14px 20px;
-            background: linear-gradient(to right, rgba(20,5,40,0.95), rgba(40,10,60,0.95));
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border-top: 1px solid rgba(195,0,255,0.12);
+        .typing-indicator {
             display: flex;
             align-items: center;
-            gap: 14px;
-        }
-
-        #user-input {
-            flex: 1;
-            padding: 14px 22px;
-            border: none;
-            border-radius: 32px;
-            background: var(--input-bg);
-            color: white;
-            font-size: 16px;
-            backdrop-filter: blur(6px);
-        }
-
-        #user-input:focus {
-            outline: none;
-            box-shadow: 0 0 0 3px rgba(195,0,255,0.3);
-        }
-
-        #send-btn {
-            width: 52px;
-            height: 52px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
-            color: white;
-            border: none;
-            font-size: 24px;
-            cursor: pointer;
-            transition: all 0.25s;
-        }
-
-        #send-btn:hover {
-            transform: scale(1.1);
-            box-shadow: 0 0 24px var(--accent-glow);
-        }
-
-        .tip-btn {
-            padding: 12px 24px;
-            font-size: 15px;
-            font-weight: 600;
-            background: linear-gradient(135deg, var(--accent-pink), var(--accent-purple));
-            color: white;
-            border: none;
-            border-radius: 50px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .tip-btn:hover {
-            transform: scale(1.05);
-            box-shadow: 0 0 20px var(--accent-glow);
-        }
-
-        .tip-btn:disabled {
-            background: #444;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
-
-        #logout-btn {
-            padding: 10px 20px;
-            font-size: 14px;
-            background: linear-gradient(135deg, var(--danger), #d50000);
-            color: white;
-            border: none;
-            border-radius: 50px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        #logout-btn:hover {
-            transform: scale(1.05);
-            box-shadow: 0 0 20px var(--danger-glow);
-        }
-
-        /* ── PREMIUM AGE CONFIRMATION MODAL ── */
-        #age-modal {
-            position: fixed;
-            inset: 0;
-            background: rgba(10, 0, 20, 0.94);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 3000;
-            opacity: 0;
-            transition: opacity 0.6s ease;
-        }
-
-        #age-modal.show {
-            display: flex;
-            opacity: 1;
-        }
-
-        .age-modal-content {
-            background: linear-gradient(145deg, rgba(20, 0, 40, 0.96), rgba(10, 0, 30, 0.98));
-            backdrop-filter: blur(28px);
-            -webkit-backdrop-filter: blur(28px);
-            border-radius: 36px;
-            padding: 64px 48px;
-            width: 92%;
-            max-width: 540px;
-            text-align: center;
-            border: 1px solid rgba(195,0,255,0.15);
-            box-shadow: 0 30px 120px rgba(0,0,0,0.8);
-            animation: modalPop 0.8s cubic-bezier(0.23, 1, 0.32, 1);
-        }
-
-        @keyframes modalPop {
-            from { transform: translateY(80px) scale(0.88); opacity: 0; }
-            to { transform: translateY(0) scale(1); opacity: 1; }
-        }
-
-        .age-title {
-            font-size: 38px;
-            font-weight: 800;
-            margin: 0 0 28px;
-            background: linear-gradient(90deg, #ff0099, #c300ff, #ff33cc);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            letter-spacing: -1px;
-        }
-
-        .age-text {
-            font-size: 18px;
-            color: #e0c0ff;
-            line-height: 1.6;
-            margin: 0 0 52px;
-        }
-
-        .age-btns {
-            display: flex;
-            flex-direction: column;
-            gap: 28px;
-        }
-
-        .age-btn {
-            padding: 22px 64px;
-            font-size: 21px;
-            font-weight: 700;
-            border: none;
-            border-radius: 70px;
-            cursor: pointer;
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
-            letter-spacing: 1px;
-        }
-
-        #age-yes {
-            background: linear-gradient(135deg, #ff0099, #c300ff);
-            color: white;
-        }
-
-        #age-yes:hover {
-            transform: translateY(-10px) scale(1.08);
-            box-shadow: 0 40px 100px var(--accent-glow);
-            background: linear-gradient(135deg, #ff33cc, #e600ff);
-        }
-
-        #age-no {
-            background: linear-gradient(135deg, #ff3366, #d50000);
-            color: white;
-        }
-
-        #age-no:hover {
-            transform: translateY(-10px) scale(1.08);
-            box-shadow: 0 40px 100px var(--danger-glow);
-            background: linear-gradient(135deg, #ff4d7a, #ff1744);
-        }
-
-        .age-legal {
-            font-size: 14px;
-            color: #aa88cc;
-            margin-top: 48px;
-            line-height: 1.6;
-        }
-
-        .age-legal a {
-            color: var(--accent-purple);
-            text-decoration: none;
-            font-weight: 500;
-        }
-
-        /* ── SIMPLE AUTH MODAL ── */
-        #auth-modal {
-            position: fixed;
-            inset: 0;
-            background: rgba(10, 0, 20, 0.92);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 2000;
-        }
-
-        .modal-content {
-            background: linear-gradient(145deg, rgba(20, 0, 40, 0.96), rgba(10, 0, 30, 0.98));
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border-radius: 28px;
-            padding: 48px 40px;
-            width: 90%;
-            max-width: 440px;
-            text-align: center;
-            border: 1px solid rgba(195,0,255,0.12);
-            box-shadow: 0 20px 80px rgba(0,0,0,0.7);
-        }
-
-        .modal-header h2 {
-            font-size: 32px;
-            font-weight: 700;
-            margin-bottom: 32px;
-            background: linear-gradient(90deg, #ff0099, #c300ff);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .modal-tabs {
-            display: flex;
-            justify-content: center;
-            margin-bottom: 32px;
             gap: 8px;
+            padding: 12px 16px;
+            background: rgba(30,20,50,0.9);
+            border-radius: 22px;
+            width: fit-content;
+        }
+        .typing-dot {
+            width: 8px; height: 8px;
+            background: #bb99cc;
+            border-radius: 50%;
+            animation: typingBounce 1.4s infinite ease-in-out;
+        }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes typingBounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+
+        #offline-message {
+            padding: 20px;
+            text-align: center;
+            background: rgba(30,20,50,0.95);
+            margin: 10px;
+            border-radius: 16px;
+            border: 1px solid var(--accent);
+            display: none;
         }
 
-        .tab {
-            padding: 12px 32px;
-            font-size: 16px;
-            font-weight: 600;
-            background: rgba(50,20,80,0.6);
-            border: none;
-            color: var(--text-muted);
-            cursor: pointer;
-            border-radius: 50px;
-            transition: all 0.3s;
-        }
-
-        .tab.active, .tab:hover {
-            background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
-            color: white;
-            box-shadow: 0 0 20px var(--accent-glow);
-        }
-
-        input[type="email"], input[type="password"] {
-            width: 100%;
-            padding: 16px 20px;
-            margin: 12px 0;
-            border: none;
-            border-radius: 50px;
-            background: rgba(50,20,80,0.5);
-            color: white;
-            font-size: 16px;
-            backdrop-filter: blur(6px);
-        }
-
-        input:focus {
-            outline: none;
-            box-shadow: 0 0 0 3px rgba(195,0,255,0.3);
-        }
-
-        #auth-btn {
-            width: 100%;
-            padding: 16px;
-            margin-top: 20px;
-            background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
-            color: white;
-            border: none;
-            border-radius: 50px;
-            font-size: 18px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        #auth-btn:hover {
-            transform: scale(1.04);
-            box-shadow: 0 0 30px var(--accent-glow);
-        }
-
-        #auth-error {
-            color: var(--danger);
-            margin-top: 12px;
-            font-size: 14px;
-        }
-
-        .hidden { display: none !important; }
-
-        .avatar-container {
-            position: relative;
-            width: 48px;
-            height: 48px;
-            cursor: pointer;
-            flex-shrink: 0;
-        }
-
-        .avatar-container:hover .avatar {
-            transform: scale(1.08);
-            box-shadow: 0 0 30px var(--accent-glow);
-            transition: all 0.2s ease;
-        }
-
-        .avatar-modal {
+        /* Modal */
+        .modal {
             display: none;
             position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.92);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            z-index: 9999;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 1000;
             align-items: center;
             justify-content: center;
         }
-
-        .avatar-modal.show {
-            display: flex;
+        .modal-content {
+            background: rgba(30,20,50,0.98);
+            padding: 32px;
+            border-radius: 24px;
+            border: 2px solid var(--accent);
+            max-width: 420px;
+            width: 90%;
+            text-align: center;
         }
 
-        .avatar-modal-inner {
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            max-width: 90vw;
-            max-height: 90vh;
+        .loading-dots {
+            display: inline-block;
+            animation: loadingDots 1.2s infinite;
+        }
+        
+        @keyframes loadingDots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60%, 100% { content: '...'; }
         }
 
-        .avatar-modal-content {
-            max-width: 100%;
-            max-height: 90vh;
-            border-radius: 16px;
-            box-shadow: 0 0 60px rgba(195,0,255,0.7);
-            object-fit: contain;
+        @keyframes popIn {
+            0% {
+                transform: scale(0.3);
+                opacity: 0;
+            }
+            50% {
+                transform: scale(1.2);
+            }
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
         }
-
-        .avatar-modal-close {
-            position: absolute;
-            top: 30px;
-            right: 40px;
-            color: white;
-            font-size: 60px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.3s;
-            text-shadow: 0 0 10px rgba(0,0,0,0.8);
-            z-index: 10000;
-        }
-
-        .avatar-modal-close:hover {
-            color: var(--accent-pink);
-            transform: scale(1.15);
-        }
+        
     </style>
 </head>
 <body>
-    <div class="chat-header">
-        <div style="display: flex; align-items: center;">
-            <div class="avatar-container" onclick="openFullAvatar()" title="Click to enlarge">
-                <div class="avatar" style="background-image: url('/static/images/isabella.png');"></div>
+    <!-- Auth Screen -->
+    <div id="auth-screen">
+        <div class="auth-card">
+            <h2 class="text-center text-2xl mb-6">Welcome to Aurora Sparq</h2>
+            
+            <div id="login-form">
+                <input id="login-email" type="email" placeholder="Email" />
+                <input id="login-password" type="password" placeholder="Password" />
+                <button class="btn-primary" onclick="login()">Login</button>
+                <p class="text-center text-sm mt-4">
+                    No account? <span onclick="showRegister()" style="color:var(--accent); cursor:pointer;">Register</span>
+                </p>
             </div>
-            <div class="contact-info">
-                <h2>Isabella</h2>
-                <span class="status">online</span>
+
+            <div id="register-form" style="display:none;">
+                <input id="reg-fullname" type="text" placeholder="Full Name" />
+                <input id="reg-email" type="email" placeholder="Email" />
+                <input id="reg-password" type="password" placeholder="Password" />
+                <button class="btn-primary" onclick="register()">Create Account</button>
+                <p class="text-center text-sm mt-4">
+                    Already have an account? <span onclick="showLogin()" style="color:var(--accent); cursor:pointer;">Login</span>
+                </p>
             </div>
-        </div>
-        <div id="user-info">
-            <span id="logged-in-header">Not logged in</span>
-            <button id="logout-btn" class="hidden">Logout</button>
-        </div>
-    </div>
-
-    <!-- Full Avatar Modal -->
-    <div id="avatar-modal" class="avatar-modal">
-        <span class="avatar-modal-close" onclick="closeFullAvatar()">×</span>
-        <div class="avatar-modal-inner">
-            <img class="avatar-modal-content" id="full-avatar" src="/static/images/isabella.png" alt="Isabella">
-        </div>
-    </div>
-
-    <div id="messages-container">
-        <div id="loading-history">Loading conversation...</div>
-    </div>
-
-    <div id="typing-indicator" class="typing-indicator hidden">
-        <div class="typing-dot"></div>
-        <div class="typing-dot"></div>
-        <div class="typing-dot"></div>
-        <span>Isabella is typing...</span>
-    </div>
-
-    <div class="input-area">
-        <input id="user-input" type="text" placeholder="Message Isabella..." autocomplete="off" autofocus disabled />
-        <button id="send-btn" disabled>➤</button>
-        <button id="tip-btn" class="tip-btn hidden">Tip for Exclusive Pic</button>
-    </div>
-
-    <!-- Age Confirmation Modal -->
-    <div id="age-modal">
-        <div class="age-modal-content">
-            <h2 class="age-title">One last thing...</h2>
-            <p class="age-text">
-                This is an exclusive 18+ experience.<br>
-                Are you 18 years of age or older?
-            </p>
-            <div class="age-btns">
-                <button id="age-yes" class="age-btn">Yes, I'm 18+</button>
-                <button id="age-no" class="age-btn">No</button>
-            </div>
-            <p class="age-legal">
-                By continuing you confirm you are of legal age in your jurisdiction<br>
-                and agree to our <a href="#">Terms of Service</a> & <a href="#">Privacy Policy</a>.
-            </p>
         </div>
     </div>
 
-    <!-- Simple Auth Modal (email + password) -->
-    <div id="auth-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="modal-title">Welcome</h2>
+    <!-- Chat Screen -->
+    <div id="chat-wrapper" style="display: none;">
+        <div class="header">
+            <div class="avatar"></div>
+            <h2>Isabella</h2>
+            
+            <div style="margin-left:auto; display:flex; align-items:center; gap:12px;">
+                <div id="user-info"></div>
+                
+                <!-- Usage Counter -->
+                <div id="usage-counter" 
+                     style="font-size:0.85rem; padding:6px 12px; border-radius:20px; background:rgba(195,0,255,0.15); border:1px solid var(--accent); color:#f8f0ff;">
+                    <!-- Populated by JS -->
+                </div>
+                
+                <div id="subscription-status" style="display:none; font-size:0.85rem; padding:6px 12px; border-radius:20px; background:rgba(195,0,255,0.2); border:1px solid var(--accent); cursor:pointer;" onclick="showPricingModal()">
+                    <span id="current-tier"></span>
+                </div>
+                
+                <button onclick="showPricingModal()" 
+                        style="padding:8px 16px; font-size:0.9rem; background:linear-gradient(135deg, #c300ff, #ff0099); border:none; border-radius:20px; color:white; cursor:pointer;">
+                    Upgrade
+                </button>
+
+                <button onclick="logout()" 
+                        style="padding:6px 12px; font-size:0.85rem; background:rgba(255,100,100,0.2); border:1px solid #ff6464; border-radius:20px; color:white; cursor:pointer;">
+                    Log Out
+                </button>
             </div>
-            <div class="modal-tabs">
-                <button class="tab active" id="tab-register">Register</button>
-                <button class="tab" id="tab-login">Login</button>
+        </div>
+        
+        <div id="messages"></div>
+
+        <div id="offline-message">
+            <h3>🌙 Isabella is Offline</h3>
+            <p>Only available between <strong>5:00 PM - 2:00 AM ET</strong></p>
+            <p style="margin-top: 8px; opacity: 0.8;">Come back during those hours ✨</p>
+        </div>
+
+        <div id="typing-container" style="display:none; padding:8px 16px;">
+            <div class="typing-indicator">
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <span>Isabella is typing...</span>
             </div>
-            <form id="auth-form">
-                <input type="email" id="email" placeholder="Email" required />
-                <input type="password" id="password" placeholder="Password" required />
-                <button type="submit" id="auth-btn">Register</button>
-                <div id="auth-error"></div>
-            </form>
+        </div>
+
+        <div class="input-area" style="padding:12px 16px; display:flex; gap:10px;">
+            <input id="user-input" placeholder="Message Isabella..." autocomplete="off" />
+            <button id="send-btn" style="width:50px;height:50px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));color:white;border:none;font-size:20px;cursor:pointer;">➤</button>
         </div>
     </div>
 
-    <script>
-        const API_BASE = '/';
-        let token = localStorage.getItem('auth_token');
-        let currentUserEmail = localStorage.getItem('user_email') || 'Guest';
-        let picCount = 0;
-
-        const messagesContainer = document.getElementById('messages-container');
-        const typingIndicator = document.getElementById('typing-indicator');
+    <!-- Pricing Modal -->
+    <div id="pricing-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 9999; align-items: center; justify-content: center;">
+        <div style="background: #1a0033; padding: 40px 30px; border-radius: 24px; border: 3px solid #c300ff; max-width: 420px; text-align: center; box-shadow: 0 0 60px rgba(195,0,255,0.6);">
+            <h2 style="color: #c300ff; margin-bottom: 30px;">Choose Your Experience</h2>
+           
+            <button onclick="upgradePlan('premium_monthly')"
+                    style="width: 100%; padding: 20px; margin: 12px 0; background: #6b00b3; border: none; border-radius: 16px; color: white; font-size: 1.15rem; cursor: pointer;">
+                <strong>Premium — $14.99/mo</strong><br>
+                <small style="opacity: 0.9;">Unlimited messages • Voice Notes • Better Memory</small>
+            </button>
+           
+            <button onclick="hidePricingModal()"
+                    style="margin-top: 25px; background: transparent; border: 1px solid #666; color: #ccc; padding: 12px 50px; border-radius: 50px; cursor: pointer;">
+                Maybe Later
+            </button>
+        </div>
+    </div>
+   <script>
+        let token = localStorage.getItem('token');
+        let currentUser = null;
+        let convoId = null;
+   
+        const messagesContainer = document.getElementById('messages');
+        const typingContainer = document.getElementById('typing-container');
         const input = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
-        const tipBtn = document.getElementById('tip-btn');
-        const logoutBtn = document.getElementById('logout-btn');
-        const loggedInHeader = document.getElementById('logged-in-header');
-        const authModal = document.getElementById('auth-modal');
-        const ageModal = document.getElementById('age-modal');
-        const modalTitle = document.getElementById('modal-title');
-        const authBtn = document.getElementById('auth-btn');
-        const authForm = document.getElementById('auth-form');
-        const authError = document.getElementById('auth-error');
-        const tabRegister = document.getElementById('tab-register');
-        const tabLogin = document.getElementById('tab-login');
-        const loadingHistory = document.getElementById('loading-history');
-        const ageYesBtn = document.getElementById('age-yes');
-        const ageNoBtn = document.getElementById('age-no');
+        const authScreen = document.getElementById('auth-screen');
+        const chatWrapper = document.getElementById('chat-wrapper');
+        const userInfo = document.getElementById('user-info');
+        const offlineMessage = document.getElementById('offline-message');
+    
+        let isSending = false;
 
-        let debounceTimer = null;
-        const DEBOUNCE_MS = 8000;
-        let isProcessing = false;
-
-        // ── Helper functions ─────────────────────────────────────────────────────
-        function enableChatUI() {
-            input.disabled = false;
-            sendBtn.disabled = false;
-            input.focus();
+        // ==================== AVAILABILITY (DISABLED FOR TESTING) ====================
+        function isIsabellaAvailable() {
+            return true;
         }
 
-        function disableChatUI() {
-            input.disabled = true;
-            sendBtn.disabled = true;
+        function updateAvailability() {
+            offlineMessage.style.display = 'none';
+            chatWrapper.style.opacity = '1';
+            if (input) input.disabled = false;
+            if (sendBtn) sendBtn.disabled = false;
         }
 
-        function showAuthModal() {
-            authModal.style.display = 'flex';
-            loggedInHeader.textContent = 'Not logged in';
-            logoutBtn.classList.add('hidden');
-            tipBtn.classList.add('hidden');
-            ageModal.style.display = 'none';
-            disableChatUI();
-        }
-
-        function hideAuthModal() {
-            authModal.style.display = 'none';
-        }
-
-        function setLoggedIn(email) {
-            currentUserEmail = email;
-            localStorage.setItem('user_email', email);
-            loggedInHeader.textContent = `Logged in as ${email}`;
-            logoutBtn.classList.remove('hidden');
-            tipBtn.classList.remove('hidden');
-            hideAuthModal();
-        }
-
-        tabRegister.onclick = () => {
-            tabRegister.classList.add('active');
-            tabLogin.classList.remove('active');
-            modalTitle.textContent = 'Register';
-            authBtn.textContent = 'Register';
-        };
-
-        tabLogin.onclick = () => {
-            tabLogin.classList.add('active');
-            tabRegister.classList.remove('active');
-            modalTitle.textContent = 'Login';
-            authBtn.textContent = 'Login';
-        };
-
-        authForm.onsubmit = async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('email').value.trim();
-            const password = document.getElementById('password').value;
-            const isRegister = authBtn.textContent === 'Register';
-            const endpoint = isRegister ? '/auth/register' : '/auth/login';
-
-            authError.textContent = '';
-            authError.style.color = 'white';
-
-            try {
-                let res;
-                if (isRegister) {
-                    res = await fetch(endpoint, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ email, password })
-                    });
-                } else {
-                    const params = new URLSearchParams();
-                    params.append('username', email);
-                    params.append('password', password);
-                    res = await fetch(endpoint, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                        body: params
-                    });
+        // ==================== AUTH ====================
+        async function authFetch(url, options = {}) {
+            const res = await fetch(url, {
+                ...options,
+                headers: {
+                    ...(options.headers || {}),
+                    'Authorization': `Bearer ${token}`
                 }
+            });
+    
+            if (res.status === 401) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                alert("Your session has expired. Please log in again.");
+                window.location.reload();
+                return null;
+            }
+    
+            return res;
+        }
+   
+        function showLogin() {
+            document.getElementById('login-form').style.display = 'block';
+            document.getElementById('register-form').style.display = 'none';
+        }
 
+        function showRegister() {
+            document.getElementById('login-form').style.display = 'none';
+            document.getElementById('register-form').style.display = 'block';
+        }
+
+        async function register() {
+            const fullName = document.getElementById('reg-fullname').value.trim();
+            const email = document.getElementById('reg-email').value.trim();
+            const password = document.getElementById('reg-password').value.trim();
+        
+            if (!email || !password) return alert("Email and password required");
+        
+            try {
+                const res = await fetch('/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password, full_name: fullName })
+                });
+        
                 const data = await res.json();
-
-                if (!res.ok) {
-                    authError.textContent = data.detail || (isRegister ? 'Registration failed' : 'Login failed');
-                    authError.style.color = '#ff3366';
+        
+                if (res.ok) {
+                    // Hide the forms
+                    document.getElementById('register-form').style.display = 'none';
+                    document.getElementById('login-form').style.display = 'none';
+        
+                    const authCard = document.querySelector('.auth-card');
+        
+                    // STEP 1: Show success animation
+                    authCard.innerHTML = `
+                        <div style="text-align: center; padding: 30px 10px;">
+                            <div style="font-size: 60px; margin-bottom: 15px; animation: popIn 0.4s ease;">✅</div>
+                            <h2 style="color:#c300ff; margin-bottom:10px; font-size:1.6rem;">Account Created!</h2>
+                            <p style="color:#e0d4ff; font-size:1.05rem;">You're all set, ${fullName.split(" ")[0]}.</p>
+                        </div>
+                    `;
+        
+                    // STEP 2: After 1.4 seconds, show the Premium offer screen
+                    setTimeout(() => {
+                        authCard.innerHTML = `
+                            <div style="text-align: center; padding: 10px 0;">
+                                <h2 style="color:#c300ff; margin-bottom:12px; font-size:1.85rem;">Welcome, ${fullName.split(" ")[0]}!</h2>
+                                
+                                <p style="margin-bottom:24px; line-height:1.6; color:#e0d4ff; font-size:1.05rem;">
+                                    Want the <strong>best experience</strong> with Isabella?
+                                </p>
+        
+                                <!-- Premium Benefits Box -->
+                                <div style="background: rgba(107, 0, 179, 0.12); border: 1px solid #6b00b3; border-radius: 16px; padding: 18px 20px; margin-bottom: 26px; text-align: left;">
+                                    <div style="color:#c300ff; font-weight:600; margin-bottom:10px; font-size:1rem;">Premium includes:</div>
+                                    <ul style="margin:0; padding-left:18px; color:#e0d4ff; line-height:1.75; font-size:0.95rem;">
+                                        <li>Unlimited messages with Isabella</li>
+                                        <li>Voice notes from her</li>
+                                        <li>Smarter memory &amp; better conversations</li>
+                                        <li>Priority access</li>
+                                    </ul>
+                                </div>
+        
+                                <!-- Upgrade Button -->
+                                <button id="upgrade-btn"
+                                        style="width:100%; padding:18px 20px; background: linear-gradient(135deg, #6b00b3, #c300ff); border:none; border-radius:16px; color:white; font-size:1.1rem; font-weight:600; margin-bottom:14px; cursor:pointer; box-shadow: 0 4px 20px rgba(195, 0, 255, 0.5); transition: all 0.2s ease;">
+                                    Yes, Upgrade to Premium — $14.99/mo
+                                </button>
+                                
+                                <!-- Skip Button -->
+                                <button id="skip-btn"
+                                        style="width:100%; padding:13px 20px; background:transparent; border:1px solid #555; color:#aaa; border-radius:50px; cursor:pointer; font-size:0.95rem; transition: all 0.2s ease;">
+                                    No thanks, continue with Free
+                                </button>
+                            </div>
+                        `;
+        
+                        const upgradeBtn = document.getElementById('upgrade-btn');
+                        const skipBtn = document.getElementById('skip-btn');
+        
+                        // Click handlers with loading states
+                        upgradeBtn.onclick = async () => {
+                            upgradeBtn.disabled = true;
+                            upgradeBtn.style.opacity = '0.7';
+                            upgradeBtn.innerHTML = 'Processing... Please wait';
+                            await upgradeAfterRegister(email, password);
+                        };
+        
+                        skipBtn.onclick = () => {
+                            skipBtn.disabled = true;
+                            skipBtn.style.opacity = '0.6';
+                            skipBtn.innerHTML = 'Continuing with Free...';
+                            setTimeout(() => {
+                                showLoginAfterRegister();
+                            }, 500);
+                        };
+        
+                        // Hover effects
+                        upgradeBtn.onmouseover = () => {
+                            if (!upgradeBtn.disabled) {
+                                upgradeBtn.style.transform = 'translateY(-2px)';
+                                upgradeBtn.style.boxShadow = '0 6px 25px rgba(195, 0, 255, 0.6)';
+                            }
+                        };
+                        upgradeBtn.onmouseout = () => {
+                            if (!upgradeBtn.disabled) {
+                                upgradeBtn.style.transform = 'translateY(0)';
+                                upgradeBtn.style.boxShadow = '0 4px 20px rgba(195, 0, 255, 0.5)';
+                            }
+                        };
+        
+                        skipBtn.onmouseover = () => {
+                            if (!skipBtn.disabled) {
+                                skipBtn.style.borderColor = '#888';
+                                skipBtn.style.color = '#ccc';
+                            }
+                        };
+                        skipBtn.onmouseout = () => {
+                            if (!skipBtn.disabled) {
+                                skipBtn.style.borderColor = '#555';
+                                skipBtn.style.color = '#aaa';
+                            }
+                        };
+        
+                    }, 1400); // Show success animation for 1.4 seconds
+        
+                } else {
+                    alert(data.detail || "Registration failed");
+                }
+            } catch(e) {
+                alert("Error during registration");
+            }
+        }
+        
+        // Auto-login + Upgrade to Premium
+        async function upgradeAfterRegister(email, password) {
+            const upgradeBtn = document.getElementById('upgrade-btn');
+            
+            // Show loading state
+            if (upgradeBtn) {
+                upgradeBtn.disabled = true;
+                upgradeBtn.style.opacity = '0.7';
+                upgradeBtn.innerHTML = 'Processing... Please wait';
+            }
+        
+            try {
+                // Step 1: Auto login
+                const formData = new FormData();
+                formData.append('username', email);
+                formData.append('password', password);
+        
+                const loginRes = await fetch('/auth/login', {
+                    method: 'POST',
+                    body: formData
+                });
+        
+                const loginData = await loginRes.json();
+        
+                if (!loginRes.ok) {
+                    alert("Something went wrong during auto-login. Please try logging in manually.");
+                    showLogin();
                     return;
                 }
-
-                if (isRegister) {
-                    authError.textContent = "Registration successful! Logging you in...";
-                    authError.style.color = '#00ff99';
-                    // Auto-login after register
-                    setTimeout(() => tabLogin.click(), 1500);
-                } else {
-                    // Login success
-                    localStorage.setItem('auth_token', data.access_token);
-                    token = data.access_token;
-                    setLoggedIn(email);
-                    showAgeModal();  // proceed to age confirmation if needed
-                }
-
-            } catch (err) {
-                authError.textContent = 'Connection error – please try again';
-                authError.style.color = '#ff3366';
-                console.error(err);
-            }
-        };
-
-        logoutBtn.onclick = logout;
-
-        function logout() {
-            localStorage.clear();
-            token = null;
-            currentUserEmail = null;
-            picCount = 0;
-            messagesContainer.innerHTML = '';
-            showAuthModal();
-        }
-
-        // ── Age Confirmation ─────────────────────────────────────────────────────
-        async function checkAgeConfirmation() {
-            try {
-                const res = await fetch('/api/history', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-
-                if (res.status === 403) {
-                    showAgeModal();
-                } else if (res.ok) {
-                    const data = await res.json();
-                    messagesContainer.innerHTML = '';
-                    data.messages.forEach(msg => {
-                        const type = msg.role === 'user' ? 'sent' : 'received';
-                        addMessage(msg.content, type);
-                    });
-                    loadingHistory?.remove();
-                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-                    await updatePicButtonState();
-                    enableChatUI();
-                } else {
-                    throw new Error('Failed to load');
-                }
-            } catch (err) {
-                console.error('Age check failed:', err);
-                showAgeModal();
+        
+                // Step 2: Save token and user data
+                token = loginData.access_token;
+                currentUser = loginData.user;
+                localStorage.setItem('token', token);
+                localStorage.setItem('user', JSON.stringify(currentUser));
+        
+                // Step 3: Trigger Stripe checkout
+                await upgradePlan('premium_monthly');
+        
+            } catch (error) {
+                console.error(error);
+                alert("Something went wrong. Please try logging in and upgrading manually.");
+                showLogin();
             }
         }
-
-        function showAgeModal() {
-            ageModal.style.display = 'flex';
-            setTimeout(() => ageModal.classList.add('show'), 50);
-            disableChatUI();
-            tipBtn.disabled = true;
+        
+        function showLoginAfterRegister() {
+            showLogin();
+            alert("Account created! You can upgrade to Premium anytime from the Upgrade button.");
         }
 
-        function hideAgeModal() {
-            ageModal.classList.remove('show');
-            setTimeout(() => ageModal.style.display = 'none', 500);
-            enableChatUI();
-            tipBtn.disabled = picCount >= 5;
-        }
-
-        document.getElementById('age-yes').onclick = async () => {
-            try {
-                const res = await fetch('/api/confirm-age', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({ confirmed: true })
-                });
-
-                const data = await res.json();
-                if (res.ok && data.success) {
-                    hideAgeModal();
-                    await loadHistory();
-                } else {
-                    alert(data.message || "Access denied.");
-                    logout();
-                }
-            } catch (err) {
-                alert("Error confirming age. Please try again.");
-            }
-        };
-
-        document.getElementById('age-no').onclick = () => {
-            alert("You must be 18+ to use this service.");
-            logout();
-        };
-
-        // ── On page load ─────────────────────────────────────────────────────────
-        window.addEventListener('load', async () => {
-            const urlParams = new URLSearchParams(window.location.search);
-            const paymentStatus = urlParams.get('payment');
-
-            if (token) {
-                try {
-                    const meRes = await fetch('/auth/me', {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    if (meRes.ok) {
-                        const user = await meRes.json();
-                        setLoggedIn(user.email || 'User');
-                        await checkAgeConfirmation();
-
-                        if (ageModal.style.display !== 'flex') {
-                            enableChatUI();
-                        }
-
-                        if (paymentStatus === 'success') {
-                            await handlePaymentSuccess();
-                        }
-                    } else {
-                        throw new Error('Invalid token');
-                    }
-                } catch (err) {
-                    console.error('Auth check failed:', err);
-                    localStorage.removeItem('auth_token');
-                    showAuthModal();
-                }
-            } else {
-                showAuthModal();
-            }
-
-            if (paymentStatus) {
-                window.history.replaceState({}, document.title, '/chat');
-            }
-        });
-
-        // ── Chat Functions (unchanged) ──────────────────────────────────────────
-        async function loadHistory() {
-            if (!token) return;
-            loadingHistory.textContent = "Loading conversation...";
-
-            try {
-                const res = await fetch('/api/history', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (!res.ok) throw new Error('Failed to load history');
-                const data = await res.json();
-                messagesContainer.innerHTML = '';
-                data.messages.forEach(msg => {
-                    const type = msg.role === 'user' ? 'sent' : 'received';
-                    addMessage(msg.content, type);
-                });
-                loadingHistory?.remove();
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-            } catch (err) {
-                console.error('History load failed:', err);
-                loadingHistory.textContent = "Couldn't load history";
-            }
-        }
-
-        async function updatePicButtonState() {
-            if (!token) return;
-            try {
-                const res = await fetch('/api/can-send-pic', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await res.json();
-                picCount = data.current_count || 0;
-                tipBtn.disabled = !data.can_send;
-                tipBtn.textContent = data.can_send ? "Tip for Exclusive Pic" : "Max Pics Reached";
-            } catch (err) {
-                console.error('Pic status check failed:', err);
-                tipBtn.disabled = true;
-                tipBtn.textContent = "Check limit later";
-            }
-        }
-
-        async function sendMessage() {
-            if (!token) {
-                showAuthModal();
+        async function login() {
+            const email = document.getElementById('login-email').value.trim();
+            const password = document.getElementById('login-password').value.trim();
+       
+            if (!email || !password) {
+                alert("Please enter email and password");
                 return;
             }
-
-            const msg = input.value.trim();
-            if (!msg) return;
-
-            addMessage(msg, 'sent');
-            input.value = '';
-
+    
             try {
-                const res = await fetch('/api/send', {
+                const formData = new FormData();
+                formData.append('username', email);
+                formData.append('password', password);
+           
+                const res = await fetch('/auth/login', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({ message: msg })
+                    body: formData
                 });
-
-                if (!res.ok) throw new Error('Send failed');
-
-                if (debounceTimer) clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(triggerBotReply, DEBOUNCE_MS);
-            } catch (err) {
-                console.error('Send error:', err);
-                addMessage("Couldn't send... try again", 'received');
-            } finally {
-                input.focus();
+           
+                const data = await res.json();
+           
+                if (res.ok) {
+                    token = data.access_token;
+                    currentUser = data.user;
+               
+                    localStorage.setItem('token', token);
+                    localStorage.setItem('user', JSON.stringify(currentUser));
+               
+                    authScreen.style.display = 'none';
+                    chatWrapper.style.display = 'flex';
+               
+                    userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email}`;
+               
+                    await updateSubscriptionDisplay();
+                    await loadUserHistory();
+                    updateAvailability();
+                    await updateUsageCounter();
+                    refreshUserData();
+                } else {
+                    alert(data.detail || "Login failed. Please check your credentials.");
+                }
+            } catch(e) {
+                console.error("Login error:", e);
+                alert("Login error. Please try again.");
+            }
+        }
+    
+        async function refreshUserData() {
+            if (!token) return;
+            try {
+                const res = await authFetch('/auth/me');
+                if (!res) return;
+    
+                const freshUser = await res.json();
+                currentUser = freshUser;
+                localStorage.setItem('user', JSON.stringify(freshUser));
+                await updateSubscriptionDisplay();
+                console.log("✅ User data refreshed - New Tier:", freshUser.subscription_tier);
+            } catch(e) {
+                console.error("Failed to refresh user data");
             }
         }
 
-        async function triggerBotReply() {
-            if (isProcessing || !token) return;
-            isProcessing = true;
-            debounceTimer = null;
+        function logout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.reload();
+        }
 
-            typingIndicator.classList.remove('hidden');
+        // ==================== CHAT CORE ====================
+        async function loadUserHistory() {
+            if (!token) return;
+            try {
+                const res = await authFetch('/api/history');
+                if (!res) return;
+    
+                const data = await res.json();
+                convoId = data.convo_id || `user_${currentUser.id}`;
+                localStorage.setItem('convo_id', convoId);
+                messagesContainer.innerHTML = '';
+    
+                if (data.messages) {
+                    data.messages.forEach(m => {
+                        const type = m.role === 'user' ? 'sent' : 'received';
+                        addMessage(m.content, type);
+                    });
+                }
+                scrollToBottom();
+            } catch(e) {
+                console.error("Failed to load history", e);
+                convoId = `user_${currentUser.id}_${Date.now()}`;
+            }
+        }
 
+        function addMessage(text, type) {
+            const div = document.createElement('div');
+            div.className = `message ${type}`;
+            div.textContent = text;
+            messagesContainer.appendChild(div);
+            scrollToBottom();
+        }
+
+        function scrollToBottom() {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function showTyping() {
+            typingContainer.style.display = 'block';
+            scrollToBottom();
+        }
+
+        function hideTyping() {
+            typingContainer.style.display = 'none';
+        }
+
+        function playVoiceNote(voiceUrl) {
+            const audio = new Audio(voiceUrl);
+        
+            if (typingContainer) {
+                typingContainer.innerHTML = `
+                    <div style="display:flex; align-items:center; gap:8px; padding:8px 12px;
+                                background:rgba(195,0,255,0.1); border-radius:12px; width:fit-content;">
+                        <span style="font-size:13px; color:#c300ff;">🔊 Isabella is speaking...</span>
+                    </div>
+                `;
+                typingContainer.style.display = 'block';
+            }
+            audio.play().catch(err => {
+                console.error("Audio playback failed:", err);
+            });
+            audio.onended = () => {
+                if (typingContainer) {
+                    typingContainer.style.display = 'none';
+                    typingContainer.innerHTML = '';
+                }
+            };
+        }
+
+        async function sendToBackend(msg) {
+            isSending = true;
+            showTyping();
+       
             try {
                 const res = await fetch('/api/reply', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${token}`
-                    }
+                    },
+                    body: JSON.stringify({
+                        convo_id: convoId,
+                        message: msg
+                    })
                 });
-
+       
                 const data = await res.json();
-                typingIndicator.classList.add('hidden');
-
-                for (let i = 0; i < data.replies.length; i++) {
-                    const isLast = i === data.replies.length - 1;
-
-                    if (i > 0) {
-                        typingIndicator.classList.remove('hidden');
-                        await new Promise(r => setTimeout(r, 1200 + Math.random() * 1400));
-                        typingIndicator.classList.add('hidden');
-                    }
-
-                    addMessage(data.replies[i], 'received', isLast ? data.voice_note : null);
-
-                    if (!isLast) {
-                        await new Promise(r => setTimeout(r, 900 + Math.random() * 1100));
-                    }
+       
+                // Send text replies normally
+                if (data.replies && Array.isArray(data.replies)) {
+                    data.replies.forEach(bubble => {
+                        if (bubble) addMessage(bubble, 'received');
+                    });
                 }
+       
+                // Send voice note as its own separate message
+                if (data.voice_message && data.voice_message.voice_url) {
+                    addVoiceMessageOnly(data.voice_message.voice_url);
+                } 
+                // Fallback support for old response format
+                else if (data.voice_url) {
+                    addVoiceMessageOnly(data.voice_url);
+                }
+       
             } catch (err) {
-                console.error(err);
-                addMessage("Sorry… got distracted for a sec", 'received');
+                console.error("SendToBackend error:", err);
             } finally {
-                isProcessing = false;
-                input.focus();
-                messagesContainer.scrollTo({ top: messagesContainer.scrollHeight, behavior: 'smooth' });
+                hideTyping();
+                isSending = false;
+                await updateUsageCounter();
             }
         }
+      
+        function addVoiceMessageOnly(voiceUrl) {
+            const div = document.createElement('div');
+            div.className = `message received voice-only`;
+           
+            div.innerHTML = `
+                <audio controls style="width: 100%; max-width: 260px; height: 32px;">
+                    <source src="${voiceUrl}" type="audio/mpeg">
+                    Your browser does not support the audio element.
+                </audio>
+            `;
+           
+            messagesContainer.appendChild(div);
+            scrollToBottom();
+        }
 
-        tipBtn.onclick = async () => {
+        function sendMessage() {
+            const msg = input.value.trim();
+            if (!msg || isSending) return;
+            addMessage(msg, 'sent');
+            input.value = '';
+            sendToBackend(msg);
+        }
+
+        // ==================== PAYMENTS & USAGE ====================
+        function showPricingModal() {
+            document.getElementById('pricing-modal').style.display = 'flex';
+        }
+
+        function hidePricingModal() {
+            document.getElementById('pricing-modal').style.display = 'none';
+        }
+
+        async function upgradePlan(priceType) {
             if (!token) {
-                showAuthModal();
+                alert("Please login first");
                 return;
             }
             try {
-                const res = await fetch('/api/create-checkout-session', {
+                const res = await authFetch('/payments/create-checkout-session', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({ tip_type: 'pic_tease' })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ price_type: priceType })
                 });
-
+    
+                if (!res) return;
+    
                 const data = await res.json();
-                if (res.ok && data.checkout_url) {
-                    window.location.href = data.checkout_url;
+                if (data.url) {
+                    window.location.href = data.url;
                 } else {
-                    alert(data.detail || 'Payment setup failed');
+                    alert(data.detail || "Payment error");
                 }
-            } catch (err) {
-                alert('Error: ' + err.message);
+            } catch (error) {
+                alert("Payment error. Please try again.");
             }
-        };
-
-        function addMessage(text, type, mediaUrl = null, isImage = false) {
-            typingIndicator.classList.add('hidden');
-
-            const msgDiv = document.createElement('div');
-            msgDiv.className = `message ${type}`;
-
-            if (text && text.trim() !== "") {
-                const textDiv = document.createElement('div');
-                textDiv.className = 'text-content';
-                textDiv.textContent = text;
-                msgDiv.appendChild(textDiv);
-            }
-
-            if (mediaUrl) {
-                if (isImage) {
-                    const img = document.createElement('img');
-                    img.src = mediaUrl;
-                    img.className = 'exclusive-pic';
-                    img.alt = 'Exclusive pic from Isabella';
-                    img.onerror = () => { img.alt = 'Image failed to load'; };
-                    msgDiv.appendChild(img);
-                } else {
-                    const player = createAudioPlayer(mediaUrl);
-                    msgDiv.appendChild(player);
-                }
-            }
-
-            const time = document.createElement('div');
-            time.className = 'message-time';
-            time.textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-            msgDiv.appendChild(time);
-
-            messagesContainer.appendChild(msgDiv);
-            messagesContainer.scrollTo({ top: messagesContainer.scrollHeight, behavior: 'smooth' });
         }
 
-        function createAudioPlayer(src) {
-            const container = document.createElement('div');
-            container.className = 'audio-player';
-
-            const playBtn = document.createElement('button');
-            playBtn.className = 'audio-play-btn';
-            playBtn.textContent = '▶';
-
-            const progress = document.createElement('div');
-            progress.className = 'audio-progress';
-            const progressFill = document.createElement('div');
-            progressFill.className = 'audio-progress-fill';
-            progress.appendChild(progressFill);
-
-            const timeDisplay = document.createElement('span');
-            timeDisplay.className = 'audio-time';
-            timeDisplay.textContent = '0:00 / 0:00';
-
-            container.appendChild(playBtn);
-            container.appendChild(progress);
-            container.appendChild(timeDisplay);
-
-            const audio = new Audio(src);
-
-            audio.addEventListener('timeupdate', () => {
-                const percent = (audio.currentTime / audio.duration) * 100;
-                progressFill.style.width = `${percent}%`;
-                const current = formatTime(audio.currentTime);
-                const duration = formatTime(audio.duration || 0);
-                timeDisplay.textContent = `${current} / ${duration}`;
-            });
-
-            audio.addEventListener('ended', () => playBtn.textContent = '▶');
-
-            playBtn.onclick = () => {
-                if (audio.paused) {
-                    audio.play();
-                    playBtn.textContent = '❚❚';
-                } else {
-                    audio.pause();
-                    playBtn.textContent = '▶';
-                }
-            };
-
-            progress.onclick = (e) => {
-                const rect = progress.getBoundingClientRect();
-                const pos = (e.clientX - rect.left) / rect.width;
-                audio.currentTime = pos * audio.duration;
-            };
-
-            return container;
-        }
-
-        function formatTime(seconds) {
-            if (isNaN(seconds)) return '0:00';
-            const mins = Math.floor(seconds / 60);
-            const secs = Math.floor(seconds % 60);
-            return `${mins}:${secs.toString().padStart(2, '0')}`;
-        }
-
-        // ── Event listeners ────────────────────────────────────────────────────────
-        input.addEventListener('keypress', e => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
+        async function updateSubscriptionDisplay() {
+            if (!currentUser) return;
+         
+            const statusEl = document.getElementById('subscription-status');
+            const tierEl = document.getElementById('current-tier');
+            const counterEl = document.getElementById('usage-counter');
+         
+            const tier = (currentUser.subscription_tier || 'free').toLowerCase();
+         
+            if (tier === 'premium') {
+                tierEl.textContent = "PREMIUM Plan";
+                if (counterEl) counterEl.style.display = 'none';
+            } else {
+                tierEl.textContent = 'Free Plan';
+                if (counterEl) counterEl.style.display = 'block';
             }
+         
+            statusEl.style.display = 'block';
+        }
+       
+        async function updateUsageCounter() {
+            const counterEl = document.getElementById('usage-counter');
+            if (!counterEl || !currentUser || !token) return;
+       
+            try {
+                const res = await authFetch('/api/usage');
+                if (!res) return;
+       
+                if (!res.ok) {
+                    counterEl.innerHTML = '—';
+                    return;
+                }
+       
+                const data = await res.json();
+                const tier = (currentUser.subscription_tier || 'free').toLowerCase();
+       
+                if (tier === 'premium') {
+                    counterEl.innerHTML = 'Unlimited ✨';
+                    counterEl.style.background = 'rgba(0, 200, 100, 0.15)';
+                    counterEl.style.border = '1px solid #00c864';
+                } else {
+                    const remaining = Math.max(0, 10 - (data.daily_count || 0));
+                    counterEl.innerHTML = `${remaining} / 10 today`;
+       
+                    if (remaining < 5) {
+                        counterEl.style.background = 'rgba(255, 100, 100, 0.2)';
+                        counterEl.style.border = '1px solid #ff6464';
+                    } else {
+                        counterEl.style.background = 'rgba(195,0,255,0.15)';
+                        counterEl.style.border = '1px solid var(--accent)';
+                    }
+                }
+            } catch (e) {
+                counterEl.innerHTML = '—';
+            }
+        }
+        
+        // ==================== INIT ====================
+        window.addEventListener('load', () => {
+            if (token) {
+                currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+                authScreen.style.display = 'none';
+                chatWrapper.style.display = 'flex';
+                userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email || 'User'}`;
+            
+                loadUserHistory();
+                updateSubscriptionDisplay();
+                updateUsageCounter();
+                refreshUserData();
+            }
+            updateAvailability();
         });
 
-        sendBtn.addEventListener('click', sendMessage);
-        input.focus();
-
-        function openFullAvatar() {
-            const modal = document.getElementById('avatar-modal');
-            if (modal) {
-                modal.style.display = 'block';
-                setTimeout(() => modal.classList.add('show'), 10);
-            }
+        // ==================== EVENT LISTENERS ====================
+        if (input) {
+            input.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
         }
 
-        function closeFullAvatar() {
-            const modal = document.getElementById('avatar-modal');
-            if (modal) {
-                modal.classList.remove('show');
-                setTimeout(() => modal.style.display = 'none', 300);
-            }
+        if (sendBtn) {
+            sendBtn.addEventListener('click', sendMessage);
         }
-
-        window.onclick = function(event) {
-            const modal = document.getElementById('avatar-modal');
-            if (event.target === modal) {
-                closeFullAvatar();
-            }
-        };
     </script>
 </body>
 </html>

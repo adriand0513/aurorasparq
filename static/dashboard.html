@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Isabella • Analytics Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background: #0d0015; color: #f8f0ff; }
+        .card { background: rgba(30,20,50,0.95); border: 1px solid #c300ff; }
+        .stat-number { font-size: 2.8rem; line-height: 1; font-weight: 700; }
+    </style>
+</head>
+<body class="p-8 min-h-screen">
+    <div class="max-w-7xl mx-auto">
+        <h1 class="text-4xl font-bold mb-10 text-center">Isabella Analytics</h1>
+
+        <!-- KPI Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12" id="kpi-cards">
+            <!-- Populated by JS -->
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Top Archetypes -->
+            <div class="card p-6 rounded-3xl">
+                <h3 class="text-xl mb-4">Top Archetypes</h3>
+                <div id="archetype-list" class="space-y-3 min-h-[260px]"></div>
+            </div>
+
+            <!-- Live Activity -->
+            <div class="card p-6 rounded-3xl">
+                <h3 class="text-xl mb-4">Live Activity</h3>
+                <canvas id="activityChart" height="220"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+
+        function connectWebSocket() {
+            const token = prompt("Enter ADMIN_TOKEN:");
+            if (!token) return;
+
+            ws = new WebSocket(`wss://${location.host}/ws/analytics?token=${token}`);
+
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                
+                // KPI Cards
+                document.getElementById('kpi-cards').innerHTML = `
+                    <div class="card p-6 rounded-3xl">
+                        <p class="text-sm opacity-70">Total Users</p>
+                        <p class="stat-number text-pink-400">${data.total_users || 0}</p>
+                    </div>
+                    <div class="card p-6 rounded-3xl">
+                        <p class="text-sm opacity-70">Daily Signups</p>
+                        <p class="stat-number text-purple-400">${data.daily_signups || 0}</p>
+                    </div>
+                    <div class="card p-6 rounded-3xl">
+                        <p class="text-sm opacity-70">Active (24h)</p>
+                        <p class="stat-number text-cyan-400">${data.active_users_24h || 0}</p>
+                    </div>
+                    <div class="card p-6 rounded-3xl">
+                        <p class="text-sm opacity-70">Retention Rate</p>
+                        <p class="stat-number text-amber-400">${data.retention_rate || 0}%</p>
+                    </div>
+                `;
+
+                // Archetypes
+                const list = document.getElementById('archetype-list');
+                list.innerHTML = '';
+                const arches = data.top_archetypes || {};
+                if (Object.keys(arches).length === 0) {
+                    list.innerHTML = `<p class="opacity-50">No archetypes detected yet...</p>`;
+                } else {
+                    Object.entries(arches).forEach(([name, count]) => {
+                        list.innerHTML += `
+                            <div class="flex justify-between bg-black/30 p-4 rounded-2xl">
+                                <span class="capitalize">${name.replace('_', ' ')}</span>
+                                <span class="font-bold text-purple-400">${count}</span>
+                            </div>
+                        `;
+                    });
+                }
+            };
+        }
+
+        window.onload = () => {
+            connectWebSocket();
+        };
+    </script>
+</body>
+</html>

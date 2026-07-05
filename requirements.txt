@@ -1,10 +1,18 @@
-fastapi
-uvicorn
-python-dotenv
-stripe
-requests
-pydantic
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-dotenv>=1.0.0
+pydantic[email]>=2.0.0
+passlib[argon2]>=1.7.4
+python-jose[cryptography]>=3.3.0
+requests>=2.32.0
+python-multipart>=0.0.9
 
-# ── New for authentication ──
-pyjwt[crypto]          # JWT encoding/decoding
-passlib[argon2]
+# Optional / Future
+stripe>=10.0.0
+aiosqlite>=0.20.0
+
+psycopg2-binary   
+sqlalchemy
+apscheduler==3.10.4
+sentence-transformers
+openai

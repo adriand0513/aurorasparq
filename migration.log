@@ -76,3 +76,44 @@
 2026-03-09 23:39:26,027 [INFO] violations table already exists
 2026-03-09 23:39:26,028 [INFO] Migration completed successfully!
 2026-03-09 23:39:26,028 [INFO] Database connection closed
+2026-03-16 13:43:32,164 [INFO] Migration starting - Using database: C:\Users\box3d\OneDrive\isabella_ai_clone\users.db
+2026-03-16 13:43:32,167 [INFO] DB file exists? True
+2026-03-16 13:43:32,167 [INFO] Connected to database successfully
+2026-03-16 13:43:32,169 [WARNING] Found legacy verification column 'is_email_verified' - consider dropping it manually if no longer needed (SQLite does not support DROP COLUMN easily)
+2026-03-16 13:43:32,169 [WARNING] Found legacy verification column 'email_verified_at' - consider dropping it manually if no longer needed (SQLite does not support DROP COLUMN easily)
+2026-03-16 13:43:32,170 [WARNING] Found legacy verification column 'phone' - consider dropping it manually if no longer needed (SQLite does not support DROP COLUMN easily)
+2026-03-16 13:43:32,170 [WARNING] Found legacy verification column 'is_phone_verified' - consider dropping it manually if no longer needed (SQLite does not support DROP COLUMN easily)
+2026-03-16 13:43:32,170 [WARNING] Found legacy verification column 'phone_verified_at' - consider dropping it manually if no longer needed (SQLite does not support DROP COLUMN easily)
+2026-03-16 13:43:32,170 [INFO] Users table columns verified (no verification fields added)
+2026-03-16 13:43:32,171 [INFO] user_pics table already exists
+2026-03-16 13:43:32,171 [INFO] violations table already exists
+2026-03-16 13:43:32,172 [INFO] Migration completed successfully!
+2026-03-16 13:43:32,172 [INFO] Database connection closed
+2026-03-16 14:04:57,097 [INFO] Migration starting - Using database: C:\Users\box3d\OneDrive\isabella_ai_clone\users.db
+2026-03-16 14:04:57,097 [INFO] DB file exists? True
+2026-03-16 14:04:57,098 [INFO] Connected to database successfully
+2026-03-16 14:04:57,098 [INFO] Migrating users table...
+2026-03-16 14:04:57,099 [ERROR] SQLite error during migration: Cannot add a NOT NULL column with default value NULL
+2026-03-16 14:04:57,099 [INFO] Database connection closed
+2026-03-16 14:05:56,280 [INFO] Migration starting - Using database: C:\Users\box3d\OneDrive\isabella_ai_clone\users.db
+2026-03-16 14:05:56,280 [INFO] DB file exists? True
+2026-03-16 14:05:56,281 [INFO] Connected to database successfully
+2026-03-16 14:05:56,281 [INFO] Migrating users table...
+2026-03-16 14:05:56,295 [INFO] Added column 'first_name' to users table (nullable)
+2026-03-16 14:05:56,296 [INFO] Set default 'User' for existing rows in first_name
+2026-03-16 14:05:56,296 [INFO] Added column 'last_name' to users table
+2026-03-16 14:05:56,296 [WARNING] Found legacy column 'is_email_verified' - consider dropping manually if unused (SQLite does not support DROP COLUMN easily)
+2026-03-16 14:05:56,296 [WARNING] Found legacy column 'email_verified_at' - consider dropping manually if unused (SQLite does not support DROP COLUMN easily)
+2026-03-16 14:05:56,298 [WARNING] Found legacy column 'phone' - consider dropping manually if unused (SQLite does not support DROP COLUMN easily)
+2026-03-16 14:05:56,298 [WARNING] Found legacy column 'is_phone_verified' - consider dropping manually if unused (SQLite does not support DROP COLUMN easily)
+2026-03-16 14:05:56,298 [WARNING] Found legacy column 'phone_verified_at' - consider dropping manually if unused (SQLite does not support DROP COLUMN easily)
+2026-03-16 14:05:56,298 [INFO] morning_sent table already exists
+2026-03-16 14:05:56,298 [INFO] user_activity_days table already exists
+2026-03-16 14:05:56,299 [INFO] teaser_sent table already exists
+2026-03-16 14:05:56,299 [INFO] user_pics table already exists
+2026-03-16 14:05:56,299 [INFO] violations table already exists
+2026-03-16 14:05:56,314 [INFO] Migration completed successfully!
+2026-03-16 14:05:56,315 [INFO] Database connection closed
+2026-06-09 14:33:04,972 [INFO] Using SQLite database: users.db
+2026-06-09 14:33:04,978 [ERROR] Migration error: no such column: convo_id
+2026-06-09 14:34:42,173 [INFO] Using SQLite database: users.db

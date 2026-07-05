@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Upgrade Complete • Aurora Sparq</title>
+    <style>
+        :root {
+            --bg: #0a0010;
+            --accent: #c300ff;
+            --accent2: #ff0099;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            background: var(--bg);
+            color: #f8f0ff;
+            font-family: system-ui, -apple-system, sans-serif;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        .success-card {
+            position: relative;
+            background: rgba(20, 10, 40, 0.9);
+            border-radius: 24px;
+            padding: 60px 70px;
+            max-width: 520px;
+            width: 90%;
+            text-align: center;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 25px 70px rgba(0, 0, 0, 0.6);
+            overflow: hidden;
+        }
+        /* Animated Border */
+        .success-card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: conic-gradient(
+                from 0deg at 50% 50%,
+                transparent 0deg,
+                var(--accent) 60deg,
+                var(--accent2) 120deg,
+                transparent 180deg
+            );
+            animation: rotateBorder 4s linear infinite;
+            z-index: -1;
+            opacity: 0.6;
+        }
+        .success-card::after {
+            content: '';
+            position: absolute;
+            inset: 2px;
+            background: rgba(20, 10, 40, 0.95);
+            border-radius: 22px;
+            z-index: -1;
+        }
+        @keyframes rotateBorder {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .success-icon {
+            width: 110px;
+            height: 110px;
+            margin: 0 auto 30px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 52px;
+            box-shadow: 0 0 50px rgba(195, 0, 255, 0.6);
+            animation: iconPop 0.6s cubic-bezier(0.23, 1, 0.32, 1);
+        }
+        h1 {
+            font-size: 2.9rem;
+            font-weight: 700;
+            margin-bottom: 18px;
+            background: linear-gradient(135deg, #fff, #e0b3ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .subtitle {
+            font-size: 1.2rem;
+            color: #c9a8ff;
+            margin-bottom: 40px;
+            line-height: 1.6;
+        }
+        .btn {
+            display: inline-block;
+            padding: 18px 60px;
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            color: white;
+            font-weight: 600;
+            font-size: 1.1rem;
+            border-radius: 50px;
+            text-decoration: none;
+            transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+            box-shadow: 0 10px 35px rgba(195, 0, 255, 0.4);
+        }
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 20px 55px rgba(195, 0, 255, 0.5);
+        }
+        .redirect-text {
+            margin-top: 35px;
+            font-size: 0.95rem;
+            color: #9c7cc7;
+        }
+        .countdown {
+            color: #c300ff;
+            font-weight: 600;
+        }
+        @keyframes iconPop {
+            0% { transform: scale(0.6); opacity: 0; }
+            60% { transform: scale(1.15); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="success-card">
+        <div class="success-icon">✧</div>
+        
+        <h1>Upgrade Complete</h1>
+        <p class="subtitle">Your account has been successfully upgraded.<br>
+            All features are now active.</p>
+
+        <a href="/" class="btn">Return to Isabella</a>
+
+        <div class="redirect-text">
+            Redirecting automatically in <span class="countdown" id="countdown">6</span> seconds
+        </div>
+    </div>
+
+    <script>
+        let timeLeft = 6;
+        const countdownEl = document.getElementById('countdown');
+
+        const timer = setInterval(() => {
+            timeLeft--;
+            countdownEl.textContent = timeLeft;
+
+            if (timeLeft <= 0) {
+                clearInterval(timer);
+                window.location.href = '/';
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

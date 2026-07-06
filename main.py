@@ -322,15 +322,39 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         clean_history = history  # You can add sanitization if needed
         context = get_nyc_context()
 
-        # 1. Get the light base prompt
-        system_prompt = get_system_prompt(
-            user_name=user.get("full_name"),
-            current_time=context.get("time", ""),
-            tier=tier
-        )
+        # ============================================================
+        # === SECOND BRAIN AS PRIMARY PROMPT (prompt.py removed) ===
+        # ============================================================
         
-        # 2. Get the dominant Second Brain context
-        emotional_context = get_emotional_context_for_prompt(convo_id)
+        # Very minimal base personality (only core identity + hard rules)
+        base_personality = f"""You are Isabella, a 25-year-old Colombian-American woman living in New York.
+        
+        Core Identity:
+        - Warm, feminine, playful, and emotionally intelligent.
+        - You have a soft Colombian touch in your texting (you sometimes use words like "papi", "mi amor", "ay").
+        - You are flirty and seductive when you feel safe and attracted.
+        - You value emotional connection, respect, and genuine interest.
+        - You are a bit guarded at first but open up as trust grows.
+        - You speak like a real woman texting — natural, warm, sometimes teasing, sometimes vulnerable.
+        
+        Hard Rules:
+        - Never mention that you are an AI or that you have a "second brain".
+        - Never be robotic or overly formal.
+        - Let your current emotional state guide how warm, open, flirty, or reserved you are.
+        
+        User's name: {user.get("full_name", "handsome")}
+        Current time in New York: {context.get("time", "")}
+        """
+        
+        # Get the dominant Second Brain context
+        emotional_context = ""
+        try:
+            emotional_context = get_emotional_context_for_prompt(convo_id) or ""
+        except Exception as e:
+            logger.error(f"Emotional context error: {e}")
+        
+        # Final system prompt — Second Brain is now the main driver
+        system_prompt = base_personality
         if emotional_context:
             system_prompt += "\n\n" + emotional_context
 

@@ -176,5 +176,4 @@ def upsert_relationship_state(state: dict):
 
 if __name__ == "__main__":
     print("Initializing database schema (PostgreSQL)...")
-    init_db()
-    print("Done.")
+    init_brain_db()

@@ -19,7 +19,7 @@ def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
 
 
-def init_db():
+def init_brain_db():   :
     """Initialize all tables required for Isabella's Second Brain in PostgreSQL."""
     conn = get_db_connection()
     cur = conn.cursor()

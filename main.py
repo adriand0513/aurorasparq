@@ -8,6 +8,7 @@ import psycopg2
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import requests
+
 from dotenv import load_dotenv
 from typing import Dict, List
 from collections import defaultdict
@@ -16,6 +17,7 @@ import sys
 import random
 import stripe
 from pathlib import Path
+
 from fastapi import FastAPI, HTTPException, Body, WebSocket, WebSocketDisconnect, Depends, status
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -61,7 +63,6 @@ from config import (
     XAI_API_KEY, XAI_API_BASE, XAI_MODEL,
     XAI_TEMPERATURE, XAI_MAX_TOKENS, ADMIN_TOKEN
 )
-from prompt import get_system_prompt
 from postprocess import clean_reply
 from memory import (
     get_history,

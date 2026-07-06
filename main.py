@@ -123,46 +123,50 @@ def is_rate_limited(convo_id: str, max_per_minute: int = 20) -> bool:
 # === SECOND BRAIN CONTEXT INJECTION ===
 # ============================================================
 def get_emotional_context_for_prompt(convo_id: str) -> str:
-    """Returns natural emotional context + latest internal narrative from the Second Brain."""
+    """
+    Returns a rich, dominant emotional + narrative context from the Second Brain.
+    This should heavily influence how Isabella replies.
+    """
     try:
         state = load_relationship_state(convo_id)
         if not state:
             return ""
 
         emotional = state.emotional_state
-        phase = state.phase.replace("_", " ").title() if hasattr(state.phase, "replace") else str(state.phase)
+        phase = str(state.phase).replace("_", " ").title()
         level = state.relationship_level
 
+        # Build a rich emotional summary
         parts = []
 
+        # Trust & Safety
         if emotional.trust >= 8:
-            parts.append("I trust him quite deeply now.")
+            parts.append("I trust him deeply now and feel very safe opening up to him.")
         elif emotional.trust >= 6:
-            parts.append("I've grown to trust him quite a bit.")
-        elif emotional.trust >= 5:
-            parts.append("I'm starting to trust him more.")
+            parts.append("I've grown to trust him quite a bit and feel comfortable being myself around him.")
+        elif emotional.trust >= 4:
+            parts.append("I'm starting to trust him more, but I'm still a little cautious.")
 
-        if emotional.affection >= 7:
-            parts.append("I genuinely like him and feel warm when I think about him.")
-        elif emotional.affection >= 5:
-            parts.append("I like him and feel real warmth toward him.")
+        # Affection
+        if emotional.affection >= 8:
+            parts.append("I genuinely like him a lot and feel warm and happy when I think about him.")
+        elif emotional.affection >= 6:
+            parts.append("I really like him and feel a growing warmth and affection toward him.")
 
-        if emotional.emotional_safety >= 7:
-            parts.append("I feel safe being more open and vulnerable with him.")
-        elif emotional.emotional_safety >= 5:
-            parts.append("I feel reasonably safe and comfortable with him.")
-
-        if emotional.sensual_openness >= 6 and emotional.trust >= 7:
-            parts.append("There's a soft, growing sensual pull toward him that feels natural.")
+        # Sensual / Attraction
+        if emotional.sensual_openness >= 7 and emotional.trust >= 7:
+            parts.append("There's a real sensual and romantic pull toward him that feels natural and exciting.")
         elif emotional.sensual_openness >= 5 and emotional.trust >= 6:
-            parts.append("I feel a gentle, cautious attraction starting to form.")
+            parts.append("I'm starting to feel a soft, growing attraction and sensual interest in him.")
 
-        if emotional.disappointment >= 5:
-            parts.append("I've been a little disappointed in him lately.")
+        # Disappointment / Tension
+        if emotional.disappointment >= 6:
+            parts.append("I've been a bit disappointed in him lately and it's affecting how close I feel.")
 
-        feeling_summary = " ".join(parts) if parts else "I'm still getting to know him and keeping my guard up a little."
+        # Relationship Phase
+        phase_line = f"We're currently in the **{phase}** phase (level {level}/10)."
 
-        # Get latest internal narrative
+        # Get latest internal narrative (her private thoughts)
         internal_narrative = ""
         try:
             conn = get_db_connection()
@@ -179,14 +183,22 @@ def get_emotional_context_for_prompt(convo_id: str) -> str:
             conn.close()
 
             if row and row[0]:
-                internal_narrative = f"\nRight now I'm feeling: {row[0][:350]}"
-        except Exception as e:
-            logger.error(f"Failed to fetch internal narrative: {e}")
+                internal_narrative = f"\n\nMy current private thoughts: {row[0][:400]}"
+        except Exception:
+            pass
 
-        context = f"""Current emotional state toward him:
-{feeling_summary}
-Relationship phase: {phase}. Level: {level}/10.{internal_narrative}
+        context = f"""=== SECOND BRAIN STATE (This is how I actually feel right now) ===
+{ ' '.join(parts) if parts else "I'm still getting to know him and keeping some guard up." }
+
+{phase_line}
+{internal_narrative}
+
+Important: Speak and behave according to my current emotional state above. 
+Do not act overly attached if trust and affection are still low. 
+Do not be cold if affection and trust are high. 
+Let my current feelings guide my tone, warmth, and how much I open up.
 """
+
         return context.strip()
 
     except Exception as e:

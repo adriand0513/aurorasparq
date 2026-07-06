@@ -269,8 +269,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     log_event("user_login", user_id=user["id"])
     return {"access_token": token, "token_type": "bearer", "user": user}
 
-<<<<<<< HEAD
-# ... (other routes remain the same) ...
+
 =======
 @app.get("/api/history")
 async def get_chat_history(user: dict = Depends(get_current_user)):

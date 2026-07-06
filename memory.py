@@ -40,7 +40,7 @@ def get_embedding(text: str) -> list:
 
 # ==================== INITIALIZATION ====================
 def init_db():
-    """Initialize core tables (chat_history + key_facts). Safe to run multiple times."""
+    """Initialize core tables (chat_history + key_facts)."""
     conn = get_db_connection()
     if conn is None:
         logger.warning("⚠️ Skipping init_db() — no database connection")
@@ -81,14 +81,13 @@ def init_db():
 
 
 def init_conversation_summaries():
-    """Initialize conversation_summaries table. Safe even if pgvector is not installed."""
+    """Initialize conversation_summaries table."""
     conn = get_db_connection()
     if conn is None:
         return
 
     cur = conn.cursor()
     try:
-        # Create table without vector first (safer)
         cur.execute('''
             CREATE TABLE IF NOT EXISTS conversation_summaries (
                 id SERIAL PRIMARY KEY,
@@ -101,7 +100,7 @@ def init_conversation_summaries():
             )
         ''')
 
-        # Try to add embedding column + index only if pgvector is available
+        # Try to add vector support (safe if pgvector is missing)
         try:
             cur.execute("""
                 ALTER TABLE conversation_summaries 
@@ -111,9 +110,8 @@ def init_conversation_summaries():
                 CREATE INDEX IF NOT EXISTS idx_summary_embedding 
                 ON conversation_summaries USING ivfflat (embedding vector_cosine_ops);
             """)
-            logger.info("✅ pgvector support enabled for conversation_summaries")
         except Exception:
-            logger.warning("⚠️ pgvector not available — skipping vector column for now")
+            pass
 
         cur.execute('CREATE INDEX IF NOT EXISTS idx_summary_convo ON conversation_summaries(convo_id)')
         conn.commit()
@@ -128,13 +126,18 @@ def init_conversation_summaries():
 
 # ==================== HISTORY & FACTS ====================
 def get_history(convo_id: str, limit: int = 50) -> List[Dict]:
+    """
+    Get chat history. 
+    IMPORTANT: We do NOT include 'timestamp' here to avoid 
+    JSON serialization errors when sending to xAI.
+    """
     conn = get_db_connection()
     if conn is None:
         return []
 
     cur = conn.cursor()
     cur.execute('''
-        SELECT role, content, timestamp
+        SELECT role, content
         FROM chat_history
         WHERE convo_id = %s
         ORDER BY timestamp ASC
@@ -143,7 +146,9 @@ def get_history(convo_id: str, limit: int = 50) -> List[Dict]:
     rows = cur.fetchall()
     cur.close()
     conn.close()
-    return [{"role": r[0], "content": r[1], "timestamp": r[2]} for r in rows]
+
+    # Only return role + content (no timestamp)
+    return [{"role": r[0], "content": r[1]} for r in rows]
 
 
 def save_message(convo_id: str, message: Dict, user_id: Optional[int] = None):
@@ -324,7 +329,6 @@ def store_conversation_summary(convo_id: str, summary: str, start_id: int = None
 
 # ==================== LEGACY COMPATIBILITY ====================
 def get_relationship_level(convo_id: str) -> int:
-    # This is now handled by the Second Brain. Keeping for compatibility.
     return 1
 
 
@@ -333,6 +337,5 @@ def get_pet_name(convo_id: str) -> str:
 
 
 # ==================== INITIALIZE ON IMPORT ====================
-# Only initialize what we actually need
 init_db()
 init_conversation_summaries()

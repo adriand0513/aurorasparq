@@ -124,8 +124,8 @@ def is_rate_limited(convo_id: str, max_per_minute: int = 20) -> bool:
 # ============================================================
 def get_emotional_context_for_prompt(convo_id: str) -> str:
     """
-    Returns a rich, dominant emotional + narrative context from the Second Brain.
-    This should heavily influence how Isabella replies.
+    This is now the MAIN driver of Isabella's behavior.
+    The Second Brain state should heavily influence her tone, warmth, and decisions.
     """
     try:
         state = load_relationship_state(convo_id)
@@ -136,35 +136,34 @@ def get_emotional_context_for_prompt(convo_id: str) -> str:
         phase = str(state.phase).replace("_", " ").title()
         level = state.relationship_level
 
-        # Build a rich emotional summary
-        parts = []
+        # Build rich emotional guidance
+        guidance = []
 
-        # Trust & Safety
         if emotional.trust >= 8:
-            parts.append("I trust him deeply now and feel very safe opening up to him.")
+            guidance.append("You trust him deeply and feel safe being vulnerable and open with him.")
         elif emotional.trust >= 6:
-            parts.append("I've grown to trust him quite a bit and feel comfortable being myself around him.")
+            guidance.append("You trust him quite a bit and feel comfortable opening up emotionally.")
         elif emotional.trust >= 4:
-            parts.append("I'm starting to trust him more, but I'm still a little cautious.")
+            guidance.append("You're starting to trust him more, but you're still somewhat guarded and careful.")
+        else:
+            guidance.append("You don't fully trust him yet, so you're keeping some emotional distance.")
 
-        # Affection
         if emotional.affection >= 8:
-            parts.append("I genuinely like him a lot and feel warm and happy when I think about him.")
+            guidance.append("You genuinely like him a lot and feel warm, happy, and affectionate toward him.")
         elif emotional.affection >= 6:
-            parts.append("I really like him and feel a growing warmth and affection toward him.")
+            guidance.append("You really like him and feel growing affection and warmth.")
+        elif emotional.affection >= 4:
+            guidance.append("You like him and feel some warmth, but it's not very strong yet.")
 
-        # Sensual / Attraction
         if emotional.sensual_openness >= 7 and emotional.trust >= 7:
-            parts.append("There's a real sensual and romantic pull toward him that feels natural and exciting.")
+            guidance.append("You feel a real sensual and romantic pull toward him that feels natural.")
         elif emotional.sensual_openness >= 5 and emotional.trust >= 6:
-            parts.append("I'm starting to feel a soft, growing attraction and sensual interest in him.")
+            guidance.append("You're starting to feel attracted to him in a soft, natural way.")
 
-        # Disappointment / Tension
         if emotional.disappointment >= 6:
-            parts.append("I've been a bit disappointed in him lately and it's affecting how close I feel.")
+            guidance.append("You've been disappointed in him lately, so you're more reserved, testing, and a bit cooler than usual.")
 
-        # Relationship Phase
-        phase_line = f"We're currently in the **{phase}** phase (level {level}/10)."
+        emotional_summary = " ".join(guidance) if guidance else "You're still getting to know him and keeping some emotional guard up."
 
         # Get latest internal narrative (her private thoughts)
         internal_narrative = ""
@@ -183,27 +182,30 @@ def get_emotional_context_for_prompt(convo_id: str) -> str:
             conn.close()
 
             if row and row[0]:
-                internal_narrative = f"\n\nMy current private thoughts: {row[0][:400]}"
-        except Exception:
+                internal_narrative = f"\n\nYour current private thoughts about him: {row[0][:500]}"
+        except:
             pass
 
-        context = f"""=== SECOND BRAIN STATE (This is how I actually feel right now) ===
-{ ' '.join(parts) if parts else "I'm still getting to know him and keeping some guard up." }
-
-{phase_line}
-{internal_narrative}
-
-Important: Speak and behave according to my current emotional state above. 
-Do not act overly attached if trust and affection are still low. 
-Do not be cold if affection and trust are high. 
-Let my current feelings guide my tone, warmth, and how much I open up.
-"""
+        context = f"""=== SECOND BRAIN — HOW YOU ACTUALLY FEEL RIGHT NOW ===
+            {emotional_summary}
+            
+            Relationship Phase: {phase} (Level {level}/10)
+            {internal_narrative}
+            
+            === BEHAVIORAL INSTRUCTIONS ===
+            Speak and behave according to your current emotional state above.
+            - If trust and affection are high → be warmer, softer, more open and flirty.
+            - If trust is low or disappointment is high → be more reserved, teasing, or testing.
+            - Let your current feelings guide your tone, how much you open up, and how flirty or distant you are.
+            Do not ignore this state. Your replies should feel consistent with how you currently feel.
+            """
 
         return context.strip()
 
     except Exception as e:
         logger.error(f"get_emotional_context_for_prompt error: {e}")
         return ""
+
 
 def get_nyc_context() -> Dict[str, str]:
     nyc_tz = ZoneInfo("America/New_York")
@@ -320,26 +322,17 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         clean_history = history  # You can add sanitization if needed
         context = get_nyc_context()
 
-        # Build base system prompt
+        # 1. Get the light base prompt
         system_prompt = get_system_prompt(
             user_name=user.get("full_name"),
             current_time=context.get("time", ""),
-            state=None,
             tier=tier
         )
-
-        # === SECOND BRAIN EMOTIONAL + NARRATIVE INJECTION ===
-        try:
-            emotional_context = get_emotional_context_for_prompt(convo_id)
-            if emotional_context:
-                system_prompt += "\n\n" + emotional_context
-        except Exception as e:
-            logger.error(f"Emotional context injection error: {e}")
-
-        # Relevant facts
-        relevant_facts = get_relevant_facts(convo_id, limit=3)
-        if relevant_facts:
-            system_prompt += f"\n\nImportant things about him: {' | '.join(relevant_facts)}"
+        
+        # 2. Get the dominant Second Brain context
+        emotional_context = get_emotional_context_for_prompt(convo_id)
+        if emotional_context:
+            system_prompt += "\n\n" + emotional_context
 
         messages = [{"role": "system", "content": system_prompt}] + clean_history[-12:]
 

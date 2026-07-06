@@ -380,35 +380,59 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             except Exception as e:
                 logger.error(f"Voice generation error: {e}")
 
-        # === SECOND BRAIN REFLECTION TRIGGER ===
+        # === IMPROVED SECOND BRAIN REFLECTION TRIGGER ===
         try:
-            message_count = len(get_history(convo_id, limit=300))
-
-            if message_count >= 7:
+            message_count = len(get_history(convo_id, limit=400))
+        
+            # Only start considering reflection after a minimum number of messages
+            if message_count >= 6:
+                
+                tier = user.get("subscription_tier", "free").lower()
+                
+                # Define consistent reflection windows
                 if tier == "premium":
-                    reflection_window = random.randint(7, 14)
+                    trigger_every = 8          # Every 8 messages on Premium
+                    max_since_last = 12        # Safety cap
                 else:
-                    reflection_window = random.randint(12, 19)
-
-                if message_count % reflection_window == 0:
-                    logger.info(f"🧠 [Reflection Engine] TRIGGERED | convo={convo_id} | tier={tier}")
-
+                    trigger_every = 12         # Every 12 messages on Free
+                    max_since_last = 18
+        
+                # Check if we should trigger
+                should_trigger = False
+        
+                # Regular interval trigger
+                if message_count % trigger_every == 0:
+                    should_trigger = True
+        
+                # Safety trigger: force reflection if too many messages passed without one
+                # (This prevents long gaps)
+                if message_count % max_since_last == 0:
+                    should_trigger = True
+        
+                if should_trigger:
+                    logger.info(f"🧠 [Reflection Engine] TRIGGERED | convo={convo_id} | tier={tier} | msg_count={message_count}")
+        
                     recent_context = "\n".join([
                         f"{msg['role']}: {msg['content']}"
-                        for msg in history[-20:]
+                        for msg in history[-25:]   # Use last 25 messages for better context
                     ])
-
+        
                     reflection_result = run_reflection(
                         convo_id=convo_id,
                         user_id=user.get("id"),
                         tier=tier,
                         recent_messages=recent_context,
-                        trigger_type="randomized_message_count"
+                        trigger_type="regular_interval"
                     )
-
-                    logger.info(f"✅ [Reflection Engine] COMPLETED | Emotional Changes: {reflection_result.get('emotional_changes')} | Level Change: {reflection_result.get('level_change')}")
+        
+                    logger.info(
+                        f"✅ [Reflection Engine] COMPLETED | "
+                        f"Emotional Changes: {reflection_result.get('emotional_changes')} | "
+                        f"Level Change: {reflection_result.get('level_change')}"
+                    )
+        
         except Exception as e:
-            logger.error(f"Reflection Engine error: {e}", exc_info=True)
+            logger.error(f"Reflection Engine trigger error: {e}", exc_info=True)
 
         # Response
         response = {"replies": bubbles}

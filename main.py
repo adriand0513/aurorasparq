@@ -36,6 +36,8 @@ sys.path.insert(0, str(BRAIN_DIR))
 from brain.reflection.graph import run_reflection
 from brain.relationship.state import load_relationship_state
 
+
+
 # ==================== PERMANENT GLOBAL FIX ====================
 class DateTimeJSONResponse(JSONResponse):
     def render(self, content: any) -> bytes:
@@ -91,6 +93,20 @@ try:
     ensure_users_table()
 except Exception as e:
     logger.warning(f"⚠️ Skipping ensure_users_table() — PostgreSQL not available: {e}")
+
+# ============================================================
+# === AUTO INITIALIZE SECOND BRAIN TABLES ON STARTUP ===
+# ============================================================
+from aurorasparq_brain.db.schema import init_brain_db
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("🧠 [Second Brain] Running startup initialization...")
+    try:
+        init_brain_db()
+        logger.info("✅ [Second Brain] Tables initialized successfully")
+    except Exception as e:
+        logger.error(f"❌ [Second Brain] Failed to initialize tables: {e}", exc_info=True)
 
 # ── Guards ─────────────────────────────────────
 last_reply_time = defaultdict(float)

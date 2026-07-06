@@ -1,9 +1,10 @@
 # aurorasparq_brain/db/schema.py
 """
-PostgreSQL schema for Isabella's Second Brain.
+PostgreSQL schema + helper functions for Isabella's Second Brain.
 """
 
 import psycopg2
+from psycopg2.extras import RealDictCursor
 import logging
 from config import DATABASE_URL
 
@@ -15,11 +16,10 @@ def get_db_connection():
 
 
 def init_brain_db():
-    """Initialize all Second Brain tables in PostgreSQL."""
+    """Initialize all Second Brain tables."""
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # RELATIONSHIP STATES
     cur.execute("""
         CREATE TABLE IF NOT EXISTS relationship_states (
             id SERIAL PRIMARY KEY,
@@ -38,7 +38,6 @@ def init_brain_db():
         )
     """)
 
-    # REFLECTION LOGS
     cur.execute("""
         CREATE TABLE IF NOT EXISTS reflection_logs (
             id SERIAL PRIMARY KEY,
@@ -57,7 +56,6 @@ def init_brain_db():
         )
     """)
 
-    # NARRATIVE MEMORIES
     cur.execute("""
         CREATE TABLE IF NOT EXISTS narrative_memories (
             id SERIAL PRIMARY KEY,
@@ -73,7 +71,58 @@ def init_brain_db():
     conn.commit()
     cur.close()
     conn.close()
-    logger.info("✅ Second Brain tables initialized in PostgreSQL")
+    logger.info("✅ Second Brain tables initialized")
+
+
+# ===================== HELPER FUNCTIONS USED BY state.py =====================
+
+def get_relationship_state(convo_id: str):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("SELECT * FROM relationship_states WHERE convo_id = %s", (convo_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return dict(row) if row else None
+
+
+def upsert_relationship_state(state: dict):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO relationship_states (
+            user_id, convo_id, phase, relationship_level,
+            emotional_state, user_model, last_interaction,
+            total_messages, key_milestones, notes, updated_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (convo_id) DO UPDATE SET
+            phase = EXCLUDED.phase,
+            relationship_level = EXCLUDED.relationship_level,
+            emotional_state = EXCLUDED.emotional_state,
+            user_model = EXCLUDED.user_model,
+            last_interaction = EXCLUDED.last_interaction,
+            total_messages = EXCLUDED.total_messages,
+            key_milestones = EXCLUDED.key_milestones,
+            notes = EXCLUDED.notes,
+            updated_at = CURRENT_TIMESTAMP
+    """, (
+        state["user_id"],
+        state["convo_id"],
+        state.get("phase", "early_flirt"),
+        state.get("relationship_level", 1),
+        state.get("emotional_state"),
+        state.get("user_model"),
+        state.get("last_interaction"),
+        state.get("total_messages", 0),
+        state.get("key_milestones"),
+        state.get("notes")
+    ))
+
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 if __name__ == "__main__":

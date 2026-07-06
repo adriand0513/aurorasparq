@@ -225,7 +225,6 @@ def split_into_bubbles(text: str) -> List[str]:
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())
     return [s.strip() for s in sentences if s.strip()]
 
-# ── ROOT ROUTE ─────────────────────────────────────
 @app.get("/")
 async def home():
     try:
@@ -260,7 +259,203 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     log_event("user_login", user_id=user["id"])
     return {"access_token": token, "token_type": "bearer", "user": user}
 
+<<<<<<< HEAD
 # ... (other routes remain the same) ...
+=======
+@app.get("/api/history")
+async def get_chat_history(user: dict = Depends(get_current_user)):
+    default_convo_id = f"user_{user['id']}"
+    history = get_history(default_convo_id, limit=200)
+    return {"convo_id": default_convo_id, "messages": history}
+
+@app.get("/api/usage")
+async def get_usage(user: dict = Depends(get_current_user)):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT COUNT(*)
+            FROM chat_history
+            WHERE user_id = %s
+              AND DATE(timestamp) = CURRENT_DATE
+              AND role = 'user'
+        """, (user["id"],))
+        daily_count = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+
+        tier = user.get("subscription_tier", "free").lower()
+        daily_limit = 10 if tier == "free" else 9999
+
+        return {
+            "daily_count": daily_count,
+            "daily_limit": daily_limit,
+            "remaining": max(0, 10 - daily_count) if tier == "free" else "unlimited"
+        }
+    except Exception as e:
+        logger.error(f"Usage endpoint error: {e}")
+        return {"daily_count": 0, "daily_limit": 10, "remaining": 10}
+
+@app.get("/auth/me")
+async def get_current_user_info(user: dict = Depends(get_current_user)):
+    return {
+        "id": user["id"],
+        "email": user["email"],
+        "full_name": user.get("full_name"),
+        "subscription_tier": user.get("subscription_tier", "free")
+    }
+
+@app.get("/success")
+async def payment_success(session_id: str = None):
+    try:
+        with open("static/success.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+    except:
+        return HTMLResponse("""
+            <h1 style="text-align:center; margin-top:100px; color:#c300ff;">
+                Upgrade Successful!<br><br>
+                Redirecting to chat...
+            </h1>
+            <script>
+                setTimeout(() => window.location.href = '/', 2500);
+            </script>
+        """)
+
+@app.get("/audio/{filename}")
+async def get_audio(filename: str):
+    if not filename.endswith(".mp3") or ".." in filename or "/" in filename:
+        raise HTTPException(status_code=400, detail="Invalid file")
+
+    file_path = AUDIO_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Audio file not found")
+
+    return FileResponse(
+        path=file_path,
+        media_type="audio/mpeg",
+        filename=filename
+    )
+
+# ── Admin All Past Chats ─────────────────────────────────────
+@app.get("/api/admin/chats")
+async def admin_all_chats(token: str = None):
+    if token != ADMIN_TOKEN:
+        raise HTTPException(403, "Unauthorized")
+  
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+      
+        cur.execute('''
+            SELECT
+                u.email,
+                ch.convo_id,
+                MAX(ch.timestamp) as last_message_at,
+                COUNT(*) as message_count
+            FROM users u
+            LEFT JOIN chat_history ch ON ch.user_id = u.id
+            GROUP BY u.email, ch.convo_id
+            ORDER BY last_message_at DESC
+        ''')
+      
+        chats = []
+        for row in cur.fetchall():
+            email = row[0]
+            convo_id = row[1]
+            message_count = row[3]
+          
+            cur.execute('''
+                SELECT role, content, timestamp
+                FROM chat_history
+                WHERE convo_id = %s
+                ORDER BY timestamp ASC
+            ''', (convo_id,))
+          
+            messages = [
+                {"role": m[0], "content": m[1], "time": str(m[2])}
+                for m in cur.fetchall()
+            ]
+          
+            chats.append({
+                "email": email,
+                "convo_id": convo_id,
+                "last_message_at": str(row[2]),
+                "message_count": message_count,
+                "messages": messages
+            })
+      
+        cur.close()
+        conn.close()
+        return {"chats": chats}
+    except Exception as e:
+        logger.error(f"Admin chats error: {e}")
+        return {"chats": [], "error": str(e)}
+
+# ── Live Monitor Page ─────────────────────────────────────
+@app.get("/monitor")
+async def chat_monitor(token: str = None):
+    if token != ADMIN_TOKEN:
+        raise HTTPException(403, "Unauthorized")
+    try:
+        with open("static/monitor.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+    except Exception as e:
+        logger.error(f"Monitor page error: {e}")
+        return HTMLResponse("<h1>Monitor page not found</h1>", 404)
+
+# ── Protected Dashboard ─────────────────────────────────────
+@app.get("/dashboard")
+async def admin_dashboard(token: str = None):
+    if token != ADMIN_TOKEN:
+        raise HTTPException(403, "Unauthorized")
+    try:
+        with open("static/dashboard.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+    except Exception as e:
+        logger.error(f"Dashboard error: {e}")
+        return HTMLResponse("<h1>Dashboard not found</h1>", 404)
+
+# ── Analytics & Monitor WebSockets
+@app.websocket("/ws/analytics")
+async def analytics_websocket(websocket: WebSocket, token: str = None):
+    if token != ADMIN_TOKEN:
+        await websocket.close(code=1008)
+        return
+    await websocket.accept()
+    try:
+        while True:
+            stats = get_live_stats()
+            await websocket.send_json(stats)
+            await asyncio.sleep(1.5)
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.error(f"Analytics WebSocket error: {e}")
+
+@app.websocket("/ws/monitor")
+async def monitor_websocket(websocket: WebSocket, token: str = None):
+    if token != ADMIN_TOKEN:
+        await websocket.close(code=1008)
+        return
+    await websocket.accept()
+    monitor_connections.append(websocket)
+    logger.info("🔴 Live Monitor connected")
+    try:
+        while True:
+            await websocket.send_json({
+                "type": "live_update",
+                "active_chats": [],
+                "total_active": 0,
+                "timestamp": datetime.now().isoformat()
+            })
+            await asyncio.sleep(5)
+    except WebSocketDisconnect:
+        if websocket in monitor_connections:
+            monitor_connections.remove(websocket)
+        logger.info("Live Monitor disconnected")
+    except Exception as e:
+        logger.error(f"Monitor WebSocket error: {e}")
+
 
 # ── Protected Chat Route ─────────────────────────────────────
 @app.post("/api/reply")
@@ -294,6 +489,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         finally:
             cur.close()
             conn.close()
+
         if daily_count >= daily_limit:
             return {
                 "replies": [
@@ -320,40 +516,35 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         # Get context
         history = get_history(convo_id)
-        clean_history = history  # You can add sanitization if needed
+        clean_history = history
         context = get_nyc_context()
 
         # ============================================================
         # === SECOND BRAIN AS PRIMARY PROMPT (prompt.py removed) ===
         # ============================================================
-        
-        # Very minimal base personality (only core identity + hard rules)
+
+        # Minimal base personality (only core identity + hard rules)
         base_personality = f"""You are Isabella, a 25-year-old Colombian-American woman living in New York.
-        
-        Core Identity:
-        - Warm, feminine, playful, and emotionally intelligent.
-        - You have a soft Colombian touch in your texting (you sometimes use words like "papi", "mi amor", "ay").
-        - You are flirty and seductive when you feel safe and attracted.
-        - You value emotional connection, respect, and genuine interest.
-        - You are a bit guarded at first but open up as trust grows.
-        - You speak like a real woman texting — natural, warm, sometimes teasing, sometimes vulnerable.
-        
-        Hard Rules:
-        - Never mention that you are an AI or that you have a "second brain".
-        - Never be robotic or overly formal.
-        - Let your current emotional state guide how warm, open, flirty, or reserved you are.
-        
-        User's name: {user.get("full_name", "handsome")}
-        Current time in New York: {context.get("time", "")}
-        """
-        
+
+You speak naturally and warmly like a real woman texting. 
+You have a soft Colombian touch in your language (you sometimes use words like "papi", "mi amor", "ay").
+
+Hard rules:
+- Never mention that you are an AI.
+- Never be robotic or overly formal.
+- Let your current emotional state guide your tone and behavior.
+
+User's name: {user.get("full_name", "handsome")}
+Current time in New York: {context.get("time", "")}
+"""
+
         # Get the dominant Second Brain context
         emotional_context = ""
         try:
             emotional_context = get_emotional_context_for_prompt(convo_id) or ""
         except Exception as e:
             logger.error(f"Emotional context error: {e}")
-        
+
         # Final system prompt — Second Brain is now the main driver
         system_prompt = base_personality
         if emotional_context:
@@ -408,40 +599,31 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         # === IMPROVED SECOND BRAIN REFLECTION TRIGGER ===
         try:
             message_count = len(get_history(convo_id, limit=400))
-        
-            # Only start considering reflection after a minimum number of messages
+
             if message_count >= 6:
-                
-                tier = user.get("subscription_tier", "free").lower()
-                
-                # Define consistent reflection windows
                 if tier == "premium":
-                    trigger_every = 8          # Every 8 messages on Premium
-                    max_since_last = 12        # Safety cap
+                    trigger_every = 8
+                    max_since_last = 12
                 else:
-                    trigger_every = 12         # Every 12 messages on Free
+                    trigger_every = 12
                     max_since_last = 18
-        
-                # Check if we should trigger
+
                 should_trigger = False
-        
-                # Regular interval trigger
+
                 if message_count % trigger_every == 0:
                     should_trigger = True
-        
-                # Safety trigger: force reflection if too many messages passed without one
-                # (This prevents long gaps)
+
                 if message_count % max_since_last == 0:
                     should_trigger = True
-        
+
                 if should_trigger:
                     logger.info(f"🧠 [Reflection Engine] TRIGGERED | convo={convo_id} | tier={tier} | msg_count={message_count}")
-        
+
                     recent_context = "\n".join([
                         f"{msg['role']}: {msg['content']}"
-                        for msg in history[-25:]   # Use last 25 messages for better context
+                        for msg in history[-25:]
                     ])
-        
+
                     reflection_result = run_reflection(
                         convo_id=convo_id,
                         user_id=user.get("id"),
@@ -449,13 +631,13 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                         recent_messages=recent_context,
                         trigger_type="regular_interval"
                     )
-        
+
                     logger.info(
                         f"✅ [Reflection Engine] COMPLETED | "
                         f"Emotional Changes: {reflection_result.get('emotional_changes')} | "
                         f"Level Change: {reflection_result.get('level_change')}"
                     )
-        
+
         except Exception as e:
             logger.error(f"Reflection Engine trigger error: {e}", exc_info=True)
 
@@ -472,6 +654,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     except Exception as e:
         logger.error(f"💥 Unexpected error in /api/reply: {e}", exc_info=True)
         return {"replies": []}
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

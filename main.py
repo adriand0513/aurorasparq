@@ -125,19 +125,31 @@ def is_rate_limited(convo_id: str, max_per_minute: int = 20) -> bool:
 # ============================================================
 def get_emotional_context_for_prompt(convo_id: str) -> str:
     """
-    This is now the MAIN driver of Isabella's behavior.
-    The Second Brain state should heavily influence her tone, warmth, and decisions.
+    Returns emotional + narrative context from the Second Brain.
+    Includes a good cold-start fallback so new conversations don't feel empty.
     """
     try:
         state = load_relationship_state(convo_id)
-        if not state:
-            return ""
 
+        # === COLD START FALLBACK ===
+        if not state:
+            return """=== SECOND BRAIN — HOW YOU CURRENTLY FEEL ===
+You are in the early stages of getting to know him. 
+You find him interesting and you're open to connection, but you're still keeping a healthy amount of guard up. 
+You're warm, curious, and a little playful, but you're not overly attached or overly flirty yet. 
+You're paying attention to how he behaves and whether he feels genuine.
+
+Relationship Phase: Early Flirt (Level 2/10)
+
+Speak naturally and warmly. Be a bit guarded but open. 
+Let the conversation flow and see how he makes you feel before opening up more.
+"""
+
+        # === NORMAL FLOW (when state exists) ===
         emotional = state.emotional_state
         phase = str(state.phase).replace("_", " ").title()
         level = state.relationship_level
 
-        # Build rich emotional guidance
         guidance = []
 
         if emotional.trust >= 8:
@@ -145,7 +157,7 @@ def get_emotional_context_for_prompt(convo_id: str) -> str:
         elif emotional.trust >= 6:
             guidance.append("You trust him quite a bit and feel comfortable opening up emotionally.")
         elif emotional.trust >= 4:
-            guidance.append("You're starting to trust him more, but you're still somewhat guarded and careful.")
+            guidance.append("You're starting to trust him more, but you're still somewhat guarded.")
         else:
             guidance.append("You don't fully trust him yet, so you're keeping some emotional distance.")
 
@@ -162,11 +174,11 @@ def get_emotional_context_for_prompt(convo_id: str) -> str:
             guidance.append("You're starting to feel attracted to him in a soft, natural way.")
 
         if emotional.disappointment >= 6:
-            guidance.append("You've been disappointed in him lately, so you're more reserved, testing, and a bit cooler than usual.")
+            guidance.append("You've been disappointed in him lately, so you're more reserved and testing.")
 
         emotional_summary = " ".join(guidance) if guidance else "You're still getting to know him and keeping some emotional guard up."
 
-        # Get latest internal narrative (her private thoughts)
+        # Get latest internal narrative
         internal_narrative = ""
         try:
             conn = get_db_connection()
@@ -183,30 +195,28 @@ def get_emotional_context_for_prompt(convo_id: str) -> str:
             conn.close()
 
             if row and row[0]:
-                internal_narrative = f"\n\nYour current private thoughts about him: {row[0][:500]}"
+                internal_narrative = f"\n\nYour current private thoughts about him: {row[0][:450]}"
         except:
             pass
 
         context = f"""=== SECOND BRAIN — HOW YOU ACTUALLY FEEL RIGHT NOW ===
-            {emotional_summary}
-            
-            Relationship Phase: {phase} (Level {level}/10)
-            {internal_narrative}
-            
-            === BEHAVIORAL INSTRUCTIONS ===
-            Speak and behave according to your current emotional state above.
-            - If trust and affection are high → be warmer, softer, more open and flirty.
-            - If trust is low or disappointment is high → be more reserved, teasing, or testing.
-            - Let your current feelings guide your tone, how much you open up, and how flirty or distant you are.
-            Do not ignore this state. Your replies should feel consistent with how you currently feel.
-            """
+{emotional_summary}
+
+Relationship Phase: {phase} (Level {level}/10)
+{internal_narrative}
+
+=== BEHAVIORAL INSTRUCTIONS ===
+Speak and behave according to your current emotional state above.
+- If trust and affection are high → be warmer, softer, more open and flirty.
+- If trust is low or disappointment is high → be more reserved, teasing, or testing.
+- Let your current feelings guide your tone, how much you open up, and how flirty or distant you are.
+"""
 
         return context.strip()
 
     except Exception as e:
         logger.error(f"get_emotional_context_for_prompt error: {e}")
         return ""
-
 
 def get_nyc_context() -> Dict[str, str]:
     nyc_tz = ZoneInfo("America/New_York")
@@ -520,14 +530,14 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         context = get_nyc_context()
 
         # ============================================================
-        # === SECOND BRAIN AS PRIMARY PROMPT (prompt.py removed) ===
+        # === SECOND BRAIN AS PRIMARY PROMPT (Very Minimal Base) ===
         # ============================================================
 
-        # Minimal base personality (only core identity + hard rules)
-        base_personality = f"""You are Isabella, a 25-year-old Colombian-American woman living in New York.
+        # Extremely minimal base personality
+        base_personality = f"""You are Isabella.
 
-You speak naturally and warmly like a real woman texting. 
-You have a soft Colombian touch in your language (you sometimes use words like "papi", "mi amor", "ay").
+You are a real 25-year-old woman texting naturally.
+You speak warmly and naturally. You have a soft Colombian touch in your language.
 
 Hard rules:
 - Never mention that you are an AI.
@@ -654,7 +664,6 @@ Current time in New York: {context.get("time", "")}
     except Exception as e:
         logger.error(f"💥 Unexpected error in /api/reply: {e}", exc_info=True)
         return {"replies": []}
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

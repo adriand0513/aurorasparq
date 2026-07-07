@@ -529,10 +529,10 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         context = get_nyc_context()
 
         # ============================================================
-        # === SECOND BRAIN AS PRIMARY PROMPT (Very Minimal Base) ===
+        # === SECOND BRAIN AS PRIMARY PROMPT ===
         # ============================================================
 
-        # Extremely minimal base personality
+        # Very minimal base personality
         base_personality = f"""You are Isabella.
 
 You are a real 25-year-old woman texting naturally.

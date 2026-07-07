@@ -17,29 +17,24 @@ logger = logging.getLogger(__name__)
 
 def load_relationship_state(convo_id: str) -> Optional[RelationshipState]:
     """
-    Load the full RelationshipState from PostgreSQL for a given conversation.
-    Returns None if no state exists yet.
+    Load the full RelationshipState from the database.
+    Fixed to handle both string and datetime for last_interaction.
     """
     row = get_relationship_state(convo_id)
     if not row:
         return None
 
     try:
-        # Handle both JSONB (returns dict) and legacy TEXT (returns string)
-        def parse_json_field(field):
-            if field is None:
-                return None
-            if isinstance(field, dict):
-                return field
-            if isinstance(field, str):
-                return json.loads(field)
-            return None
+        # Reconstruct Pydantic models from JSON stored in DB
+        emotional_state = EmotionalState(**json.loads(row["emotional_state"])) if row["emotional_state"] else EmotionalState()
+        user_model = UserModel(**json.loads(row["user_model"])) if row["user_model"] else UserModel(user_id=row["user_id"])
 
-        emotional_data = parse_json_field(row.get("emotional_state"))
-        user_model_data = parse_json_field(row.get("user_model"))
-
-        emotional_state = EmotionalState(**emotional_data) if emotional_data else EmotionalState()
-        user_model = UserModel(**user_model_data) if user_model_data else UserModel(user_id=row["user_id"])
+        # Handle last_interaction safely (can be str or datetime)
+        last_interaction = row["last_interaction"]
+        if isinstance(last_interaction, str):
+            last_interaction = datetime.fromisoformat(last_interaction)
+        elif last_interaction is None:
+            last_interaction = datetime.now(timezone.utc)
 
         return RelationshipState(
             user_id=row["user_id"],
@@ -48,10 +43,10 @@ def load_relationship_state(convo_id: str) -> Optional[RelationshipState]:
             relationship_level=row["relationship_level"],
             emotional_state=emotional_state,
             user_model=user_model,
-            last_interaction=datetime.fromisoformat(row["last_interaction"]) if row.get("last_interaction") else datetime.now(timezone.utc),
+            last_interaction=last_interaction,
             total_messages=row["total_messages"] or 0,
-            key_milestones=parse_json_field(row.get("key_milestones")) or [],
-            notes=row.get("notes")
+            key_milestones=json.loads(row["key_milestones"]) if row["key_milestones"] else [],
+            notes=row["notes"] or ""
         )
     except Exception as e:
         logger.error(f"Failed to load RelationshipState for {convo_id}: {e}")

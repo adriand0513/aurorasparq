@@ -4,6 +4,7 @@ PostgreSQL schema + helper functions for Isabella's Second Brain.
 """
 
 import psycopg2
+import json
 from psycopg2.extras import RealDictCursor
 import logging
 from config import DATABASE_URL
@@ -87,7 +88,7 @@ def get_relationship_state(convo_id: str):
 
 
 def upsert_relationship_state(state: dict):
-    """Insert or update relationship state (fixed for PostgreSQL JSONB)"""
+    """Insert or update relationship state (fixed for PostgreSQL + json import)"""
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -114,11 +115,11 @@ def upsert_relationship_state(state: dict):
             state["convo_id"],
             state.get("phase", "early_flirt"),
             state.get("relationship_level", 1),
-            json.dumps(state.get("emotional_state", {})),      # ← FIXED
-            json.dumps(state.get("user_model", {})),            # ← FIXED
+            json.dumps(state.get("emotional_state", {})),      # Now works
+            json.dumps(state.get("user_model", {})),            # Now works
             state.get("last_interaction"),
             state.get("total_messages", 0),
-            json.dumps(state.get("key_milestones", [])),        # ← FIXED
+            json.dumps(state.get("key_milestones", [])),        # Now works
             state.get("notes", "")
         ))
         
@@ -132,7 +133,6 @@ def upsert_relationship_state(state: dict):
     finally:
         cursor.close()
         conn.close()
-
 
 if __name__ == "__main__":
     print("Initializing Second Brain database...")

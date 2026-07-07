@@ -87,42 +87,51 @@ def get_relationship_state(convo_id: str):
 
 
 def upsert_relationship_state(state: dict):
+    """Insert or update relationship state (fixed for PostgreSQL JSONB)"""
     conn = get_db_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-        INSERT INTO relationship_states (
-            user_id, convo_id, phase, relationship_level,
-            emotional_state, user_model, last_interaction,
-            total_messages, key_milestones, notes, updated_at
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-        ON CONFLICT (convo_id) DO UPDATE SET
-            phase = EXCLUDED.phase,
-            relationship_level = EXCLUDED.relationship_level,
-            emotional_state = EXCLUDED.emotional_state,
-            user_model = EXCLUDED.user_model,
-            last_interaction = EXCLUDED.last_interaction,
-            total_messages = EXCLUDED.total_messages,
-            key_milestones = EXCLUDED.key_milestones,
-            notes = EXCLUDED.notes,
-            updated_at = CURRENT_TIMESTAMP
-    """, (
-        state["user_id"],
-        state["convo_id"],
-        state.get("phase", "early_flirt"),
-        state.get("relationship_level", 1),
-        state.get("emotional_state"),
-        state.get("user_model"),
-        state.get("last_interaction"),
-        state.get("total_messages", 0),
-        state.get("key_milestones"),
-        state.get("notes")
-    ))
-
-    conn.commit()
-    cur.close()
-    conn.close()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            INSERT INTO relationship_states (
+                user_id, convo_id, phase, relationship_level, 
+                emotional_state, user_model, last_interaction, 
+                total_messages, key_milestones, notes, updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT(convo_id) DO UPDATE SET
+                phase = excluded.phase,
+                relationship_level = excluded.relationship_level,
+                emotional_state = excluded.emotional_state,
+                user_model = excluded.user_model,
+                last_interaction = excluded.last_interaction,
+                total_messages = excluded.total_messages,
+                key_milestones = excluded.key_milestones,
+                notes = excluded.notes,
+                updated_at = CURRENT_TIMESTAMP
+        """, (
+            state["user_id"],
+            state["convo_id"],
+            state.get("phase", "early_flirt"),
+            state.get("relationship_level", 1),
+            json.dumps(state.get("emotional_state", {})),      # ← FIXED
+            json.dumps(state.get("user_model", {})),            # ← FIXED
+            state.get("last_interaction"),
+            state.get("total_messages", 0),
+            json.dumps(state.get("key_milestones", [])),        # ← FIXED
+            state.get("notes", "")
+        ))
+        
+        conn.commit()
+        logger.info(f"✅ RelationshipState saved for convo_id={state['convo_id']}")
+        
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"upsert_relationship_state error: {e}")
+        raise
+    finally:
+        cursor.close()
+        conn.close()
 
 
 if __name__ == "__main__":

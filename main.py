@@ -270,7 +270,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     return {"access_token": token, "token_type": "bearer", "user": user}
 
 
-=======
+
 @app.get("/api/history")
 async def get_chat_history(user: dict = Depends(get_current_user)):
     default_convo_id = f"user_{user['id']}"

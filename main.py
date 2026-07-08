@@ -81,6 +81,8 @@ from auth import (
 )
 from payment import router as payment_router
 from voice import generate_voice_note
+AUDIO_DIR = Path("static/audio_notes")
+AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 scheduler = BackgroundScheduler()
 
@@ -339,18 +341,11 @@ async def payment_success(session_id: str = None):
 
 @app.get("/audio/{filename}")
 async def get_audio(filename: str):
-    if not filename.endswith(".mp3") or ".." in filename or "/" in filename:
-        raise HTTPException(status_code=400, detail="Invalid file")
-
     file_path = AUDIO_DIR / filename
     if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Audio file not found")
+        raise HTTPException(status_code=404, detail="Audio not found")
+    return FileResponse(file_path, media_type="audio/mpeg")
 
-    return FileResponse(
-        path=file_path,
-        media_type="audio/mpeg",
-        filename=filename
-    )
 
 # ── Admin All Past Chats ─────────────────────────────────────
 @app.get("/api/admin/chats")

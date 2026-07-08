@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Use PostgreSQL if DATABASE_URL is set, otherwise fallback to SQLite
 DATABASE_URL = os.getenv("DATABASE_URL")
-DB_PATH = os.getenv("DB_PATH", "isabella_brain.db")  # Fallback SQLite path
+DB_PATH = os.getenv("DB_PATH", "isabella_brain.db")
 
 
 def get_db_connection():
@@ -80,7 +80,7 @@ def init_db():
             )
         """)
 
-        # === MISSING TABLE - ADD THIS ===
+        # === Reflection Logs Table ===
         cur.execute("""
             CREATE TABLE IF NOT EXISTS reflection_logs (
                 id SERIAL PRIMARY KEY,
@@ -122,7 +122,22 @@ def init_db():
             )
         """)
 
-        # === MISSING TABLE - ADD THIS (SQLite version) ===
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS relationship_states (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                convo_id TEXT UNIQUE NOT NULL,
+                phase TEXT DEFAULT 'early_flirt',
+                relationship_level INTEGER DEFAULT 1,
+                emotional_state TEXT,
+                user_model TEXT,
+                last_interaction DATETIME DEFAULT CURRENT_TIMESTAMP,
+                total_messages INTEGER DEFAULT 0,
+                key_milestones TEXT,
+                notes TEXT
+            )
+        """)
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS reflection_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -146,6 +161,7 @@ def init_db():
     conn.close()
     logger.info("✅ Database schema initialized successfully")
 
+
 # ==================== RELATIONSHIP STATE HELPERS ====================
 
 def get_relationship_state(convo_id: str):
@@ -157,18 +173,18 @@ def get_relationship_state(convo_id: str):
     try:
         if DATABASE_URL:  # PostgreSQL
             cur.execute("""
-                SELECT user_id, convo_id, phase, relationship_level, 
+                SELECT user_id, convo_id, phase, relationship_level,
                        emotional_state, user_model, last_interaction,
                        total_messages, key_milestones, notes
-                FROM relationship_states 
+                FROM relationship_states
                 WHERE convo_id = %s
             """, (convo_id,))
         else:  # SQLite
             cur.execute("""
-                SELECT user_id, convo_id, phase, relationship_level, 
+                SELECT user_id, convo_id, phase, relationship_level,
                        emotional_state, user_model, last_interaction,
                        total_messages, key_milestones, notes
-                FROM relationship_states 
+                FROM relationship_states
                 WHERE convo_id = ?
             """, (convo_id,))
 
@@ -201,11 +217,11 @@ def upsert_relationship_state(state: dict):
     try:
         if DATABASE_URL:  # PostgreSQL
             cur.execute("""
-                INSERT INTO relationship_states 
-                (user_id, convo_id, phase, relationship_level, emotional_state, 
+                INSERT INTO relationship_states
+                (user_id, convo_id, phase, relationship_level, emotional_state,
                  user_model, last_interaction, total_messages, key_milestones, notes)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (convo_id) 
+                ON CONFLICT (convo_id)
                 DO UPDATE SET
                     phase = EXCLUDED.phase,
                     relationship_level = EXCLUDED.relationship_level,
@@ -229,8 +245,8 @@ def upsert_relationship_state(state: dict):
             ))
         else:  # SQLite fallback
             cur.execute("""
-                INSERT OR REPLACE INTO relationship_states 
-                (user_id, convo_id, phase, relationship_level, emotional_state, 
+                INSERT OR REPLACE INTO relationship_states
+                (user_id, convo_id, phase, relationship_level, emotional_state,
                  user_model, last_interaction, total_messages, key_milestones, notes)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (

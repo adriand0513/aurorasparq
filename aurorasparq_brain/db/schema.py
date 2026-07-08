@@ -109,5 +109,115 @@ def init_db():
     logger.info("✅ Database schema initialized successfully")
 
 
+# ==================== RELATIONSHIP STATE HELPERS ====================
+
+def get_relationship_state(convo_id: str):
+    """Load relationship state from database."""
+    conn = get_db_connection()
+    if conn is None:
+        return None
+    cur = conn.cursor()
+    try:
+        if DATABASE_URL:  # PostgreSQL
+            cur.execute("""
+                SELECT user_id, convo_id, phase, relationship_level, 
+                       emotional_state, user_model, last_interaction,
+                       total_messages, key_milestones, notes
+                FROM relationship_states 
+                WHERE convo_id = %s
+            """, (convo_id,))
+        else:  # SQLite
+            cur.execute("""
+                SELECT user_id, convo_id, phase, relationship_level, 
+                       emotional_state, user_model, last_interaction,
+                       total_messages, key_milestones, notes
+                FROM relationship_states 
+                WHERE convo_id = ?
+            """, (convo_id,))
+
+        row = cur.fetchone()
+        if row:
+            return {
+                "user_id": row[0],
+                "convo_id": row[1],
+                "phase": row[2],
+                "relationship_level": row[3],
+                "emotional_state": row[4],
+                "user_model": row[5],
+                "last_interaction": row[6],
+                "total_messages": row[7],
+                "key_milestones": row[8],
+                "notes": row[9],
+            }
+        return None
+    finally:
+        cur.close()
+        conn.close()
+
+
+def upsert_relationship_state(state: dict):
+    """Insert or update relationship state."""
+    conn = get_db_connection()
+    if conn is None:
+        return False
+    cur = conn.cursor()
+    try:
+        if DATABASE_URL:  # PostgreSQL
+            cur.execute("""
+                INSERT INTO relationship_states 
+                (user_id, convo_id, phase, relationship_level, emotional_state, 
+                 user_model, last_interaction, total_messages, key_milestones, notes)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (convo_id) 
+                DO UPDATE SET
+                    phase = EXCLUDED.phase,
+                    relationship_level = EXCLUDED.relationship_level,
+                    emotional_state = EXCLUDED.emotional_state,
+                    user_model = EXCLUDED.user_model,
+                    last_interaction = EXCLUDED.last_interaction,
+                    total_messages = EXCLUDED.total_messages,
+                    key_milestones = EXCLUDED.key_milestones,
+                    notes = EXCLUDED.notes
+            """, (
+                state.get("user_id"),
+                state.get("convo_id"),
+                state.get("phase", "early_flirt"),
+                state.get("relationship_level", 1),
+                json.dumps(state.get("emotional_state")) if state.get("emotional_state") else None,
+                json.dumps(state.get("user_model")) if state.get("user_model") else None,
+                state.get("last_interaction"),
+                state.get("total_messages", 0),
+                json.dumps(state.get("key_milestones")) if state.get("key_milestones") else None,
+                state.get("notes")
+            ))
+        else:  # SQLite fallback
+            cur.execute("""
+                INSERT OR REPLACE INTO relationship_states 
+                (user_id, convo_id, phase, relationship_level, emotional_state, 
+                 user_model, last_interaction, total_messages, key_milestones, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                state.get("user_id"),
+                state.get("convo_id"),
+                state.get("phase", "early_flirt"),
+                state.get("relationship_level", 1),
+                json.dumps(state.get("emotional_state")) if state.get("emotional_state") else None,
+                json.dumps(state.get("user_model")) if state.get("user_model") else None,
+                state.get("last_interaction"),
+                state.get("total_messages", 0),
+                json.dumps(state.get("key_milestones")) if state.get("key_milestones") else None,
+                state.get("notes")
+            ))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"upsert_relationship_state error: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cur.close()
+        conn.close()
+
+
 # Initialize tables when this module is imported
 init_db()

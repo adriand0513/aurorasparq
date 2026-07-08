@@ -37,6 +37,7 @@ sys.path.insert(0, str(BRAIN_DIR))
 
 from brain.reflection.graph import run_reflection
 from brain.relationship.state import load_relationship_state
+from aurorasparq_brain.prompts.personality import get_system_prompt
 from brain.memory import (
     get_relevant_facts,
     extract_and_save_facts,
@@ -475,10 +476,10 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     convo_id = body.get("convo_id")
     user_message = body.get("message", "").strip()
     logger.info(f"📥 /api/reply | user={user.get('id')} | tier={user.get('subscription_tier')} | convo={convo_id}")
-    
+
     if not convo_id:
         raise HTTPException(400, "convo_id required")
-    
+
     tier = user.get("subscription_tier", "free").lower()
     is_premium = tier == "premium"
 
@@ -520,49 +521,38 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         # Save user message
         if user_message:
             save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
-            
+
             # Fact extraction (Premium only)
             if is_premium and random.random() < 0.35:
                 extract_and_save_facts(convo_id, user_message, tier)
 
-        # Get context
+        # Get history
         history = get_history(convo_id)
-        context = get_nyc_context()
 
         # ============================================================
-        # === SECOND BRAIN + MEMORY SYSTEM ===
+        # === NEW PROMPT SYSTEM (Second Brain) ===
         # ============================================================
-        base_personality = f"""You are Isabella.
-You are a real 25-year-old woman texting naturally.
-You speak warmly and naturally. You have a soft Colombian touch in your language.
-Hard rules:
-- Never mention that you are an AI.
-- Never be robotic or overly formal.
-- Let your current emotional state guide your tone and behavior.
-User's name: {user.get("full_name", "handsome")}
-Current time in New York: {context.get("time", "")}
-"""
-
-        # Get emotional context from Second Brain
         emotional_context = ""
+        memory_context = ""
+
         try:
             emotional_context = get_emotional_context_for_prompt(convo_id) or ""
         except Exception as e:
             logger.error(f"Emotional context error: {e}")
 
-        # Get memory context from the new memory system (facts + summaries)
-        memory_context = ""
         try:
             memory_context = get_memory_context_for_prompt(convo_id, user_message) or ""
         except Exception as e:
             logger.error(f"Memory context error: {e}")
 
-        # Final system prompt
-        system_prompt = base_personality
-        if emotional_context:
-            system_prompt += "\n\n" + emotional_context
-        if memory_context:
-            system_prompt += "\n\n" + memory_context
+        # Use the new prompt from the Second Brain
+        system_prompt = get_system_prompt(
+            user_name=user.get("full_name"),
+            current_time="",
+            tier=tier,
+            emotional_context=emotional_context,
+            memory_context=memory_context
+        )
 
         messages = [{"role": "system", "content": system_prompt}] + history[-15:]
 
@@ -615,7 +605,7 @@ Current time in New York: {context.get("time", "")}
             message_count = len(get_history(convo_id, limit=400))
 
             if message_count >= 6:
-                # --- Reflection Engine Trigger ---
+                # Reflection Engine Trigger
                 if is_premium:
                     reflection_every = 8
                     reflection_max = 12
@@ -647,11 +637,8 @@ Current time in New York: {context.get("time", "")}
                         f"Level Change: {reflection_result.get('level_change')}"
                     )
 
-                # --- Automatic Summarization Trigger ---
-                if is_premium:
-                    summary_every = 25
-                else:
-                    summary_every = 40
+                # Automatic Summarization Trigger
+                summary_every = 25 if is_premium else 40
 
                 if message_count % summary_every == 0 and message_count > 15:
                     logger.info(f"📝 [Memory] Generating summary | convo={convo_id} | msg_count={message_count}")
@@ -667,6 +654,7 @@ Current time in New York: {context.get("time", "")}
 
         duration_ms = int((time.time() - start_time) * 1000)
         log_event("response_generated", convo_id, user_id=user.get("id"), duration_ms=duration_ms)
+
         return response
 
     except Exception as e:

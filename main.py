@@ -37,7 +37,7 @@ sys.path.insert(0, str(BRAIN_DIR))
 
 from brain.reflection.graph import run_reflection
 from brain.relationship.state import load_relationship_state
-from brain.memory import get_memory_context_for_prompt
+from brain.memory import get_memory_context_for_prompt, generate_and_save_summary
 
 
 # ==================== PERMANENT GLOBAL FIX ====================
@@ -561,7 +561,7 @@ Current time in New York: {context.get("time", "")}
         except Exception as e:
             logger.error(f"Memory context error: {e}")
 
-        # Final system prompt — Emotional state + Memory
+        # Final system prompt
         system_prompt = base_personality
         if emotional_context:
             system_prompt += "\n\n" + emotional_context
@@ -614,20 +614,22 @@ Current time in New York: {context.get("time", "")}
             except Exception as e:
                 logger.error(f"Voice generation error: {e}")
 
-        # === SECOND BRAIN REFLECTION TRIGGER ===
+        # === SECOND BRAIN REFLECTION + AUTOMATIC SUMMARIZATION ===
         try:
             message_count = len(get_history(convo_id, limit=400))
+
             if message_count >= 6:
+                # --- Reflection Engine Trigger ---
                 if is_premium:
-                    trigger_every = 8
-                    max_since_last = 12
+                    reflection_every = 8
+                    reflection_max = 12
                 else:
-                    trigger_every = 12
-                    max_since_last = 18
+                    reflection_every = 12
+                    reflection_max = 18
 
-                should_trigger = (message_count % trigger_every == 0) or (message_count % max_since_last == 0)
+                should_reflect = (message_count % reflection_every == 0) or (message_count % reflection_max == 0)
 
-                if should_trigger:
+                if should_reflect:
                     logger.info(f"🧠 [Reflection Engine] TRIGGERED | convo={convo_id} | tier={tier} | msg_count={message_count}")
 
                     recent_context = "\n".join([
@@ -648,8 +650,19 @@ Current time in New York: {context.get("time", "")}
                         f"Emotional Changes: {reflection_result.get('emotional_changes')} | "
                         f"Level Change: {reflection_result.get('level_change')}"
                     )
+
+                # --- Automatic Summarization Trigger ---
+                if is_premium:
+                    summary_every = 25
+                else:
+                    summary_every = 40
+
+                if message_count % summary_every == 0 and message_count > 15:
+                    logger.info(f"📝 [Memory] Generating summary | convo={convo_id} | msg_count={message_count}")
+                    generate_and_save_summary(convo_id, tier)
+
         except Exception as e:
-            logger.error(f"Reflection Engine trigger error: {e}", exc_info=True)
+            logger.error(f"Reflection / Summarization trigger error: {e}", exc_info=True)
 
         # Response
         response = {"replies": bubbles}

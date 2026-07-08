@@ -99,13 +99,13 @@ except Exception as e:
 # ============================================================
 # === AUTO INITIALIZE SECOND BRAIN TABLES ON STARTUP ===
 # ============================================================
-from aurorasparq_brain.db.schema import init_brain_db
+from aurorasparq_brain.db.schema import init_db
 
 @app.on_event("startup")
 async def startup_event():
     logger.info("🧠 [Second Brain] Running startup initialization...")
     try:
-        init_brain_db()
+        init_db()
         logger.info("✅ [Second Brain] Tables initialized successfully")
     except Exception as e:
         logger.error(f"❌ [Second Brain] Failed to initialize tables: {e}", exc_info=True)

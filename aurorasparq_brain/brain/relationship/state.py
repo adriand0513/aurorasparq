@@ -17,19 +17,29 @@ logger = logging.getLogger(__name__)
 
 def load_relationship_state(convo_id: str) -> Optional[RelationshipState]:
     """
-    Load the full RelationshipState from the database.
-    Fixed to handle both string and datetime for last_interaction.
+    Load RelationshipState with safe handling for JSONB columns
+    (works whether psycopg2 returns str or already-parsed dict).
     """
     row = get_relationship_state(convo_id)
     if not row:
         return None
 
     try:
-        # Reconstruct Pydantic models from JSON stored in DB
-        emotional_state = EmotionalState(**json.loads(row["emotional_state"])) if row["emotional_state"] else EmotionalState()
-        user_model = UserModel(**json.loads(row["user_model"])) if row["user_model"] else UserModel(user_id=row["user_id"])
+        # Helper to safely parse JSON fields
+        def safe_json_load(value, default):
+            if value is None:
+                return default
+            if isinstance(value, (dict, list)):
+                return value  # Already parsed by psycopg2
+            if isinstance(value, str):
+                return json.loads(value)
+            return default
 
-        # Handle last_interaction safely (can be str or datetime)
+        emotional_state = EmotionalState(**safe_json_load(row["emotional_state"], {}))
+        user_model = UserModel(**safe_json_load(row["user_model"], {"user_id": row["user_id"]}))
+        key_milestones = safe_json_load(row["key_milestones"], [])
+
+        # Handle last_interaction (can be datetime or string)
         last_interaction = row["last_interaction"]
         if isinstance(last_interaction, str):
             last_interaction = datetime.fromisoformat(last_interaction)
@@ -45,9 +55,10 @@ def load_relationship_state(convo_id: str) -> Optional[RelationshipState]:
             user_model=user_model,
             last_interaction=last_interaction,
             total_messages=row["total_messages"] or 0,
-            key_milestones=json.loads(row["key_milestones"]) if row["key_milestones"] else [],
+            key_milestones=key_milestones,
             notes=row["notes"] or ""
         )
+
     except Exception as e:
         logger.error(f"Failed to load RelationshipState for {convo_id}: {e}")
         return None

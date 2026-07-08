@@ -526,19 +526,18 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         # Save user message
         if user_message:
             save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
-            if tier == "premium" and random.randint(1, 4) == 1:
+
+            # Fact extraction (Premium only, more consistent)
+            if is_premium and random.random() < 0.35:
                 extract_and_save_facts(convo_id, user_message, tier)
 
         # Get context
         history = get_history(convo_id)
-        clean_history = history
         context = get_nyc_context()
 
         # ============================================================
         # === SECOND BRAIN AS PRIMARY PROMPT ===
         # ============================================================
-
-        # Very minimal base personality
         base_personality = f"""You are Isabella.
 
 You are a real 25-year-old woman texting naturally.
@@ -553,19 +552,19 @@ User's name: {user.get("full_name", "handsome")}
 Current time in New York: {context.get("time", "")}
 """
 
-        # Get the dominant Second Brain context
+        # Get emotional context from Second Brain (now the main driver)
         emotional_context = ""
         try:
             emotional_context = get_emotional_context_for_prompt(convo_id) or ""
         except Exception as e:
             logger.error(f"Emotional context error: {e}")
 
-        # Final system prompt — Second Brain is now the main driver
+        # Final system prompt — Second Brain is dominant
         system_prompt = base_personality
         if emotional_context:
             system_prompt += "\n\n" + emotional_context
 
-        messages = [{"role": "system", "content": system_prompt}] + clean_history[-12:]
+        messages = [{"role": "system", "content": system_prompt}] + history[-15:]
 
         # Call xAI
         raw_reply = None
@@ -602,7 +601,7 @@ Current time in New York: {context.get("time", "")}
 
         # Voice generation (Premium)
         voice_url = None
-        if tier == "premium":
+        if is_premium:
             try:
                 final_text = " ".join(bubbles) if bubbles else ""
                 if len(final_text) > 15 and random.random() < 0.40:
@@ -611,25 +610,19 @@ Current time in New York: {context.get("time", "")}
             except Exception as e:
                 logger.error(f"Voice generation error: {e}")
 
-        # === IMPROVED SECOND BRAIN REFLECTION TRIGGER ===
+        # === SECOND BRAIN REFLECTION TRIGGER ===
         try:
             message_count = len(get_history(convo_id, limit=400))
 
             if message_count >= 6:
-                if tier == "premium":
+                if is_premium:
                     trigger_every = 8
                     max_since_last = 12
                 else:
                     trigger_every = 12
                     max_since_last = 18
 
-                should_trigger = False
-
-                if message_count % trigger_every == 0:
-                    should_trigger = True
-
-                if message_count % max_since_last == 0:
-                    should_trigger = True
+                should_trigger = (message_count % trigger_every == 0) or (message_count % max_since_last == 0)
 
                 if should_trigger:
                     logger.info(f"🧠 [Reflection Engine] TRIGGERED | convo={convo_id} | tier={tier} | msg_count={message_count}")

@@ -64,7 +64,6 @@ def init_db():
             )
         """)
 
-        # Relationship state tables (for future full migration)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS relationship_states (
                 id SERIAL PRIMARY KEY,
@@ -78,6 +77,25 @@ def init_db():
                 total_messages INTEGER DEFAULT 0,
                 key_milestones JSONB,
                 notes TEXT
+            )
+        """)
+
+        # === MISSING TABLE - ADD THIS ===
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS reflection_logs (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER,
+                convo_id TEXT NOT NULL,
+                tier TEXT,
+                before_emotional_state JSONB,
+                after_emotional_state JSONB,
+                reasoning TEXT,
+                emotional_changes JSONB,
+                new_milestones JSONB,
+                phase_change TEXT,
+                trigger_type TEXT,
+                internal_narrative TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
@@ -104,11 +122,29 @@ def init_db():
             )
         """)
 
+        # === MISSING TABLE - ADD THIS (SQLite version) ===
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS reflection_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                convo_id TEXT NOT NULL,
+                tier TEXT,
+                before_emotional_state TEXT,
+                after_emotional_state TEXT,
+                reasoning TEXT,
+                emotional_changes TEXT,
+                new_milestones TEXT,
+                phase_change TEXT,
+                trigger_type TEXT,
+                internal_narrative TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
     conn.commit()
     cur.close()
     conn.close()
     logger.info("✅ Database schema initialized successfully")
-
 
 # ==================== RELATIONSHIP STATE HELPERS ====================
 

@@ -1,18 +1,16 @@
 # brain/reflection/nodes.py
 """
 Core reasoning nodes for Isabella's Reflection Engine.
-Each node represents one step in her internal emotional processing.
-PostgreSQL version.
+PostgreSQL compatible version.
 """
-
 import os
 import json
 import logging
 import requests
 from typing import Dict, Any, Optional
 from datetime import datetime
-
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from aurorasparq_brain.models.relationship import EmotionalState
@@ -59,7 +57,7 @@ def call_llm(prompt: str, temperature: float = 0.4, max_tokens: int = 1200) -> s
 
 
 def parse_json_safely(text: str) -> Optional[Dict[str, Any]]:
-    """Robust JSON extractor with fallback"""
+    """Robust JSON extractor"""
     if not text:
         return None
     try:
@@ -70,8 +68,7 @@ def parse_json_safely(text: str) -> Optional[Dict[str, Any]]:
         start = text.find("{")
         end = text.rfind("}") + 1
         if start != -1 and end > start:
-            json_str = text[start:end]
-            json_str = json_str.replace("```json", "").replace("```", "").strip()
+            json_str = text[start:end].replace("```json", "").replace("```", "").strip()
             return json.loads(json_str)
     except Exception as e:
         logger.warning(f"Failed to parse JSON: {e}")
@@ -87,25 +84,20 @@ def analyze_user_node(
     conversation_summary: str,
     user_model: str
 ) -> Dict[str, Any]:
-    """Extract insights about the user's behavior and patterns"""
     prompt = ANALYZE_USER_PROMPT.format(
         tier=tier,
         conversation_summary=conversation_summary or "No recent summary available.",
         user_model=user_model or "Limited information so far."
     )
-    
     raw_output = call_llm(prompt, temperature=0.3, max_tokens=1000)
     parsed = parse_json_safely(raw_output)
-    
     if not parsed:
-        logger.warning(f"analyze_user_node returned invalid JSON for convo_id={convo_id}")
         return {"overall_impression": "Unable to form a clear impression at this time."}
-    
     return parsed
 
 
 # ============================================================
-# NODE 2: Update Emotions (Most Important Node)
+# NODE 2: Update Emotions
 # ============================================================
 def update_emotions_node(
     convo_id: str,
@@ -113,10 +105,6 @@ def update_emotions_node(
     current_emotional_state: EmotionalState,
     recent_observations: str
 ) -> Dict[str, Any]:
-    """
-    The core of the Reflection Engine.
-    Isabella honestly evaluates how her feelings are evolving.
-    """
     prompt = UPDATE_EMOTIONS_PROMPT.format(
         tier=tier,
         affection=current_emotional_state.affection,
@@ -128,23 +116,19 @@ def update_emotions_node(
         sensual_openness=current_emotional_state.sensual_openness,
         recent_observations=recent_observations or "No new observations."
     )
-    
     raw_output = call_llm(prompt, temperature=0.35, max_tokens=1600)
     parsed = parse_json_safely(raw_output)
-    
+
     if not parsed or "emotional_updates" not in parsed:
-        logger.warning(f"update_emotions_node failed to return valid updates for {convo_id}")
         return {
             "reasoning": "Reflection did not produce valid emotional updates.",
             "emotional_updates": {}
         }
-    
+
     updates = parsed.get("emotional_updates", {})
-    
-    # Tier restrictions for sensual_openness
     if tier == "free" and "sensual_openness" in updates:
         updates["sensual_openness"] = min(updates.get("sensual_openness", 3), 5)
-    
+
     return {
         "reasoning": parsed.get("reasoning", ""),
         "emotional_updates": updates,
@@ -162,29 +146,26 @@ def update_relationship_node(
     current_level: int,
     emotional_updates: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """Decide if the relationship phase or level should evolve"""
     prompt = UPDATE_RELATIONSHIP_PROMPT.format(
         current_phase=current_phase,
         current_level=current_level,
         tier=tier
     )
-    
     raw_output = call_llm(prompt, temperature=0.3, max_tokens=900)
     parsed = parse_json_safely(raw_output)
-    
+
     if not parsed:
         return {
             "recommended_phase": current_phase,
             "relationship_level_change": 0,
-            "reasoning": "Unable to determine phase evolution at this time.",
+            "reasoning": "Unable to determine phase evolution.",
             "new_milestones": []
         }
-    
     return parsed
 
 
 # ============================================================
-# NODE 4: Generate Internal State (Internal Narrative)
+# NODE 4: Generate Internal State
 # ============================================================
 def generate_internal_state_node(
     convo_id: str,
@@ -192,10 +173,6 @@ def generate_internal_state_node(
     tier: str,
     reasoning: str = ""
 ) -> str:
-    """
-    Generate Isabella's private internal narrative.
-    This should feel like her real thoughts — warm, feminine, and emotionally honest.
-    """
     context = f"""Current emotional state:
 - Affection: {emotional_state.affection}/10
 - Trust: {emotional_state.trust}/10
@@ -203,16 +180,15 @@ def generate_internal_state_node(
 - Emotional Safety: {emotional_state.emotional_safety}/10
 - Sensual Openness: {emotional_state.sensual_openness}/10
 
-Recent reflection reasoning: {reasoning[:400] if reasoning else "No specific reasoning recorded."}"""
+Recent reflection reasoning: {reasoning[:400] if reasoning else "No specific reasoning."}"""
 
     prompt = GENERATE_INTERNAL_STATE_PROMPT + "\n\n" + context
-
     internal_narrative = call_llm(prompt, temperature=0.65, max_tokens=700)
     return internal_narrative.strip() if internal_narrative else "I'm still processing how I feel about this."
 
 
 # ============================================================
-# NODE 5: Save Reflection Log (PostgreSQL version)
+# NODE 5: Save Reflection Log (PostgreSQL)
 # ============================================================
 def save_reflection_log(
     user_id: int,
@@ -227,15 +203,11 @@ def save_reflection_log(
     trigger_type: str = "message_count",
     internal_narrative: str = ""
 ):
-    """Log every reflection for future analysis, debugging, and improvement"""
     from db.schema import get_db_connection
-    import json as json_module
-
     conn = get_db_connection()
     cur = None
     try:
         cur = conn.cursor()
-
         cur.execute("""
             INSERT INTO reflection_logs (
                 user_id, convo_id, tier,
@@ -247,16 +219,15 @@ def save_reflection_log(
             user_id,
             convo_id,
             tier,
-            json_module.dumps(before_state.model_dump()),
-            json_module.dumps(after_state.model_dump()),
+            json.dumps(before_state.model_dump()),
+            json.dumps(after_state.model_dump()),
             reasoning,
-            json_module.dumps(emotional_changes),
-            json_module.dumps(new_milestones or []),
+            json.dumps(emotional_changes),
+            json.dumps(new_milestones or []),
             phase_change,
             trigger_type,
             internal_narrative
         ))
-
         conn.commit()
         logger.info(f"✅ Reflection logged for convo_id={convo_id}")
     except Exception as e:

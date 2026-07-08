@@ -37,7 +37,7 @@ sys.path.insert(0, str(BRAIN_DIR))
 
 from brain.reflection.graph import run_reflection
 from brain.relationship.state import load_relationship_state
-
+from brain.memory import get_memory_context_for_prompt
 
 
 # ==================== PERMANENT GLOBAL FIX ====================
@@ -478,12 +478,11 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     start_time = time.time()
     convo_id = body.get("convo_id")
     user_message = body.get("message", "").strip()
-
     logger.info(f"📥 /api/reply | user={user.get('id')} | tier={user.get('subscription_tier')} | convo={convo_id}")
-
+    
     if not convo_id:
         raise HTTPException(400, "convo_id required")
-
+    
     tier = user.get("subscription_tier", "free").lower()
     is_premium = tier == "premium"
 
@@ -504,7 +503,6 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         finally:
             cur.close()
             conn.close()
-
         if daily_count >= daily_limit:
             return {
                 "replies": [
@@ -526,8 +524,8 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         # Save user message
         if user_message:
             save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
-
-            # Fact extraction (Premium only, more consistent)
+            
+            # Fact extraction (Premium only)
             if is_premium and random.random() < 0.35:
                 extract_and_save_facts(convo_id, user_message, tier)
 
@@ -536,33 +534,39 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         context = get_nyc_context()
 
         # ============================================================
-        # === SECOND BRAIN AS PRIMARY PROMPT ===
+        # === SECOND BRAIN + MEMORY SYSTEM ===
         # ============================================================
         base_personality = f"""You are Isabella.
-
 You are a real 25-year-old woman texting naturally.
 You speak warmly and naturally. You have a soft Colombian touch in your language.
-
 Hard rules:
 - Never mention that you are an AI.
 - Never be robotic or overly formal.
 - Let your current emotional state guide your tone and behavior.
-
 User's name: {user.get("full_name", "handsome")}
 Current time in New York: {context.get("time", "")}
 """
 
-        # Get emotional context from Second Brain (now the main driver)
+        # Get emotional context from Second Brain
         emotional_context = ""
         try:
             emotional_context = get_emotional_context_for_prompt(convo_id) or ""
         except Exception as e:
             logger.error(f"Emotional context error: {e}")
 
-        # Final system prompt — Second Brain is dominant
+        # Get memory context from the new memory system (facts + summaries)
+        memory_context = ""
+        try:
+            memory_context = get_memory_context_for_prompt(convo_id, user_message) or ""
+        except Exception as e:
+            logger.error(f"Memory context error: {e}")
+
+        # Final system prompt — Emotional state + Memory
         system_prompt = base_personality
         if emotional_context:
             system_prompt += "\n\n" + emotional_context
+        if memory_context:
+            system_prompt += "\n\n" + memory_context
 
         messages = [{"role": "system", "content": system_prompt}] + history[-15:]
 
@@ -613,7 +617,6 @@ Current time in New York: {context.get("time", "")}
         # === SECOND BRAIN REFLECTION TRIGGER ===
         try:
             message_count = len(get_history(convo_id, limit=400))
-
             if message_count >= 6:
                 if is_premium:
                     trigger_every = 8
@@ -645,7 +648,6 @@ Current time in New York: {context.get("time", "")}
                         f"Emotional Changes: {reflection_result.get('emotional_changes')} | "
                         f"Level Change: {reflection_result.get('level_change')}"
                     )
-
         except Exception as e:
             logger.error(f"Reflection Engine trigger error: {e}", exc_info=True)
 
@@ -656,13 +658,12 @@ Current time in New York: {context.get("time", "")}
 
         duration_ms = int((time.time() - start_time) * 1000)
         log_event("response_generated", convo_id, user_id=user.get("id"), duration_ms=duration_ms)
-
         return response
 
     except Exception as e:
         logger.error(f"💥 Unexpected error in /api/reply: {e}", exc_info=True)
         return {"replies": []}
-
+        
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

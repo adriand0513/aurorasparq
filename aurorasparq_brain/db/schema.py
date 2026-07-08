@@ -56,6 +56,11 @@ def init_db():
         """)
 
         cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_key_facts_convo 
+            ON key_facts(convo_id);
+        """)
+
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS conversation_summaries (
                 id SERIAL PRIMARY KEY,
                 convo_id TEXT NOT NULL,
@@ -80,7 +85,6 @@ def init_db():
             )
         """)
 
-        # === Reflection Logs Table ===
         cur.execute("""
             CREATE TABLE IF NOT EXISTS reflection_logs (
                 id SERIAL PRIMARY KEY,

@@ -37,7 +37,12 @@ sys.path.insert(0, str(BRAIN_DIR))
 
 from brain.reflection.graph import run_reflection
 from brain.relationship.state import load_relationship_state
-from brain.memory import get_memory_context_for_prompt, generate_and_save_summary
+from brain.memory import (
+    get_relevant_facts,
+    extract_and_save_facts,
+    get_memory_context_for_prompt,
+    generate_and_save_summary,
+)
 
 
 # ==================== PERMANENT GLOBAL FIX ====================
@@ -66,11 +71,7 @@ from config import (
 from postprocess import clean_reply
 from memory import (
     get_history,
-    save_message,
-    get_relevant_facts,
-    extract_and_save_facts,
-    summarize_conversation,
-    store_conversation_summary
+    save_message
 )
 from analytics import log_event
 from auth import (

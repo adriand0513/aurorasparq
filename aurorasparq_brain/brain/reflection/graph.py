@@ -1,7 +1,8 @@
 # brain/reflection/graph.py
 """
 Reflection Engine Graph for Isabella.
-PostgreSQL compatible version.
+This file orchestrates the full reflection process.
+PostgreSQL compatible + improved robustness.
 """
 import logging
 from datetime import datetime, timezone
@@ -32,21 +33,26 @@ def run_reflection(
     trigger_type: str = "message_count",
     messages_since_last: int = 0
 ) -> Dict[str, Any]:
+    """
+    Main entry point for Isabella's Reflection Engine.
+    Runs the full emotional + relationship reflection cycle.
+    """
     logger.info(f"🧠 Starting reflection | convo_id={convo_id} | tier={tier}")
 
-    # 1. Load or create state
+    # 1. Load or create relationship state
     state = load_relationship_state(convo_id)
     if not state:
+        logger.info("No existing state found. Creating new relationship state.")
         state = create_new_relationship_state(user_id=user_id, convo_id=convo_id)
 
     before_state = state.emotional_state.model_copy(deep=True)
 
-    # 2. Analyze user
+    # 2. Analyze the user
     user_analysis = analyze_user_node(
         convo_id=convo_id,
         tier=tier,
         conversation_summary=recent_messages[:2000] if recent_messages else "",
-        user_model=str(state.user_model.model_dump())
+        user_model=str(state.user_model.model_dump()) if state.user_model else ""
     )
 
     # 3. Update emotions
@@ -73,42 +79,45 @@ def run_reflection(
         reasoning=emotion_result.get("reasoning", "")
     )
 
-    # 5. Update relationship phase/level
+    # 5. Update relationship phase and level
+    current_phase_str = str(state.phase.value) if hasattr(state.phase, "value") else str(state.phase)
+
     relationship_result = update_relationship_node(
         convo_id=convo_id,
         tier=tier,
-        current_phase=str(state.phase.value) if hasattr(state.phase, "value") else str(state.phase),
+        current_phase=current_phase_str,
         current_level=state.relationship_level,
         emotional_updates=updates
     )
 
+    # Apply recommended phase if valid
     if relationship_result.get("recommended_phase"):
         try:
             state.phase = RelationshipPhase(relationship_result["recommended_phase"])
-        except:
-            pass
+        except ValueError:
+            logger.warning(f"Invalid phase returned: {relationship_result.get('recommended_phase')}")
 
     level_change = relationship_result.get("relationship_level_change", 0)
 
-    # Auto-decrease logic
+    # === Automatic Level Decrease Logic ===
     current_emotional = state.emotional_state
     if level_change == 0:
-        if (current_emotional.disappointment >= 6 and 
-            current_emotional.trust <= 4 and 
+        if (current_emotional.disappointment >= 6 and
+            current_emotional.trust <= 4 and
             current_emotional.emotional_safety <= 4):
             level_change = -1
-            logger.info("⬇️ Auto-decreasing relationship level")
+            logger.info("⬇️ Auto-decreasing relationship level due to high disappointment")
 
     if level_change != 0:
         state.relationship_level = max(1, min(10, state.relationship_level + level_change))
 
-    # 6. Save state
+    # 6. Save final state
     state.last_interaction = datetime.now(timezone.utc)
     save_relationship_state(state)
 
     after_state = state.emotional_state.model_copy(deep=True)
 
-    # 7. Log reflection
+    # 7. Log the reflection
     save_reflection_log(
         user_id=user_id,
         convo_id=convo_id,
@@ -138,5 +147,6 @@ def run_reflection(
 
 
 def should_reflect(message_count: int, last_reflection_count: int, tier: str) -> bool:
+    """Decide whether to trigger reflection based on message count."""
     diff = message_count - last_reflection_count
     return diff >= 8 if tier == "premium" else diff >= 12

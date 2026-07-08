@@ -1,13 +1,13 @@
 # brain/memory/retrieval.py
 """
 Smart memory retrieval module.
-Retrieves relevant facts, summaries, and memories to inject into Isabella's context.
+Retrieves relevant facts + summaries to give Isabella better long-term memory.
 """
 
 import logging
 from typing import List, Dict, Optional
 from brain.memory.facts import get_relevant_facts
-# from brain.memory.summaries import get_recent_summaries   # We'll add this later
+from brain.memory.summaries import get_recent_summaries
 
 logger = logging.getLogger(__name__)
 
@@ -15,11 +15,12 @@ logger = logging.getLogger(__name__)
 def get_relevant_memories(
     convo_id: str, 
     current_message: str = "", 
-    max_facts: int = 6
+    max_facts: int = 6,
+    max_summaries: int = 2
 ) -> str:
     """
-    Main function to retrieve relevant memory context for the current conversation.
-    Returns a formatted string ready to be injected into the system prompt.
+    Main function to retrieve relevant memory context.
+    Now includes both important facts and recent conversation summaries.
     """
     memory_parts = []
 
@@ -32,15 +33,14 @@ def get_relevant_memories(
     except Exception as e:
         logger.error(f"Error retrieving facts: {e}")
 
-    # === 2. Get Recent Conversation Summaries (Future) ===
-    # We'll enable this once summaries.py is ready
-    # try:
-    #     summaries = get_recent_summaries(convo_id, limit=2)
-    #     if summaries:
-    #         summaries_text = "\n\n".join(summaries)
-    #         memory_parts.append(f"**Recent conversation context:**\n{summaries_text}")
-    # except Exception as e:
-    #     logger.error(f"Error retrieving summaries: {e}")
+    # === 2. Get Recent Conversation Summaries ===
+    try:
+        summaries = get_recent_summaries(convo_id, limit=max_summaries)
+        if summaries:
+            summaries_text = "\n\n".join([f"- {s}" for s in summaries])
+            memory_parts.append(f"**Recent conversation context:**\n{summaries_text}")
+    except Exception as e:
+        logger.error(f"Error retrieving summaries: {e}")
 
     if not memory_parts:
         return ""
@@ -55,7 +55,7 @@ def get_relevant_memories(
 
 def get_memory_context_for_prompt(convo_id: str, current_message: str = "") -> str:
     """
-    Clean wrapper function that main.py / api/reply can call.
+    Clean wrapper function used by main.py.
     Returns memory context formatted for prompt injection.
     """
     try:

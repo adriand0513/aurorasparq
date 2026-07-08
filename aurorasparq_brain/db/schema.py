@@ -7,6 +7,7 @@ Supports both PostgreSQL (production) and SQLite (local testing).
 import os
 import logging
 import psycopg2
+import json
 import sqlite3
 from dotenv import load_dotenv
 

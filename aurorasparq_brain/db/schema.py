@@ -15,7 +15,6 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# Use PostgreSQL if DATABASE_URL is set, otherwise fallback to SQLite
 DATABASE_URL = os.getenv("DATABASE_URL")
 DB_PATH = os.getenv("DB_PATH", "isabella_brain.db")
 
@@ -30,7 +29,6 @@ def get_db_connection():
             logger.error(f"PostgreSQL connection failed: {e}")
             raise
     else:
-        # Fallback to SQLite for local development
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         return conn
@@ -173,6 +171,7 @@ def get_relationship_state(convo_id: str):
     conn = get_db_connection()
     if conn is None:
         return None
+
     cur = conn.cursor()
     try:
         if DATABASE_URL:  # PostgreSQL
@@ -217,6 +216,7 @@ def upsert_relationship_state(state: dict):
     conn = get_db_connection()
     if conn is None:
         return False
+
     cur = conn.cursor()
     try:
         if DATABASE_URL:  # PostgreSQL

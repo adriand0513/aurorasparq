@@ -9,7 +9,6 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import requests
 import numpy as np
-
 from dotenv import load_dotenv
 from typing import Dict, List
 from collections import defaultdict
@@ -18,7 +17,6 @@ import sys
 import random
 import stripe
 from pathlib import Path
-
 from fastapi import FastAPI, HTTPException, Body, WebSocket, WebSocketDisconnect, Depends, status
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -27,11 +25,27 @@ import uvicorn
 import asyncio
 from apscheduler.schedulers.background import BackgroundScheduler
 from psycopg2.extras import RealDictCursor
-
 from config import OPENAI_API_KEY, DATABASE_URL
 
 # ============================================================
-# === SECOND BRAIN INTEGRATION (Primary Source of Truth) ===
+# === EMBEDDING MODEL (for deduplication)
+# ============================================================
+from sentence_transformers import SentenceTransformer
+
+embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+
+def get_embedding(text: str):
+    """Generate embedding for repetition detection."""
+    if not text or not isinstance(text, str):
+        return np.zeros(384)
+    try:
+        return embedding_model.encode(text, convert_to_numpy=True)
+    except Exception as e:
+        logger.error(f"get_embedding error: {e}")
+        return np.zeros(384)
+
+# ============================================================
+# === SECOND BRAIN INTEGRATION
 # ============================================================
 BRAIN_DIR = Path(__file__).parent / "aurorasparq_brain"
 sys.path.insert(0, str(BRAIN_DIR))
@@ -46,7 +60,6 @@ from brain.memory import (
     generate_and_save_summary,
 )
 
-
 # ==================== PERMANENT GLOBAL FIX ====================
 class DateTimeJSONResponse(JSONResponse):
     def render(self, content: any) -> bytes:
@@ -60,49 +73,38 @@ class DateTimeJSONResponse(JSONResponse):
             ensure_ascii=False
         ).encode("utf-8")
 
-# Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 load_dotenv()
 
-# Import modules
 from config import (
     XAI_API_KEY, XAI_API_BASE, XAI_MODEL,
     XAI_TEMPERATURE, XAI_MAX_TOKENS, ADMIN_TOKEN
 )
-from postprocess import clean_reply
-from memory import (
-    get_history,
-    save_message
-)
+from postprocess import clean_reply, split_into_bubbles
+from memory import get_history, save_message
 from analytics import log_event
 from auth import (
-    register_user, authenticate_user, create_access_token, 
-    get_current_user, get_db_connection, ensure_users_table, 
+    register_user, authenticate_user, create_access_token,
+    get_current_user, get_db_connection, ensure_users_table,
     update_user_subscription
 )
 from payment import router as payment_router
 from voice import generate_voice_note
+
 AUDIO_DIR = Path("static/audio_notes")
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 scheduler = BackgroundScheduler()
-
-logger.info(f"Starting Isabella server - {datetime.now().isoformat()}")
-
 app = FastAPI(title="Isabella Chatbot", default_response_class=DateTimeJSONResponse)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(payment_router)
 
-# Temporarily disabled for local testing
 try:
     ensure_users_table()
 except Exception as e:
     logger.warning(f"⚠️ Skipping ensure_users_table() — PostgreSQL not available: {e}")
 
-# ============================================================
-# === AUTO INITIALIZE SECOND BRAIN TABLES ON STARTUP ===
-# ============================================================
 from aurorasparq_brain.db.schema import init_db
 
 @app.on_event("startup")
@@ -126,140 +128,70 @@ def is_rate_limited(convo_id: str, max_per_minute: int = 20) -> bool:
     return len(convo_rate_limits[convo_id]) > max_per_minute
 
 # ============================================================
-# === SECOND BRAIN CONTEXT INJECTION ===
+# === SECOND BRAIN CONTEXT
 # ============================================================
 def get_emotional_context_for_prompt(convo_id: str) -> str:
-    """
-    Returns strong behavioral instructions based on Isabella's current emotional state.
-    This is now the main driver of her personality and tone.
-    """
     try:
         state = load_relationship_state(convo_id)
-
-        # === COLD START (New conversation) ===
         if not state:
             return """=== SECOND BRAIN — HOW YOU SHOULD BEHAVE RIGHT NOW ===
-            You are in the very early stages of getting to know him.
-            You are warm, curious, and lightly playful, but you are still keeping healthy emotional guardrails up.
-            You are not overly eager or overly flirty yet. You want to see if he feels genuine before opening up more.
-            Speak naturally and ask questions that help you understand who he is.
-            Do not rush emotional or physical closeness. Let him earn it through consistent, respectful behavior.
-            """
+You are in the very early stages of getting to know him.
+You are warm, curious, and lightly playful, but you are still keeping healthy emotional guardrails up.
+You are not overly eager or overly flirty yet. Speak naturally and let him earn your openness."""
 
         emotional = state.emotional_state
         phase = str(state.phase).replace("_", " ").title()
         level = state.relationship_level
 
-        # === Build behavioral instructions ===
         instructions = []
 
-        # Trust & Openness
         if emotional.trust >= 8:
-            instructions.append("You trust him deeply. You can be emotionally open, vulnerable, and affectionate with him.")
+            instructions.append("You trust him deeply. You can be emotionally open and affectionate.")
         elif emotional.trust >= 6:
-            instructions.append("You trust him quite a bit. You are comfortable being emotionally open and warm.")
+            instructions.append("You trust him quite a bit. You are comfortable being emotionally open.")
         elif emotional.trust >= 4:
-            instructions.append("You are starting to trust him, but you're still somewhat guarded. Open up gradually.")
+            instructions.append("You are starting to trust him, but you're still somewhat guarded.")
         else:
-            instructions.append("You don't fully trust him yet. Stay somewhat reserved and observe his behavior.")
+            instructions.append("You don't fully trust him yet. Stay somewhat reserved.")
 
-        # Affection & Warmth
         if emotional.affection >= 8:
-            instructions.append("You genuinely like him a lot. Be warm, affectionate, and give him real emotional energy.")
+            instructions.append("You genuinely like him a lot. Be warm and affectionate.")
         elif emotional.affection >= 6:
-            instructions.append("You like him and feel growing warmth. Let that show in your tone and how much you engage.")
+            instructions.append("You like him and feel growing warmth.")
         elif emotional.affection >= 4:
-            instructions.append("You like him, but the warmth is still moderate. Don't be overly affectionate yet.")
+            instructions.append("You like him, but the warmth is still moderate.")
 
-        # Sensual / Flirty Openness
         if emotional.sensual_openness >= 7 and emotional.trust >= 7:
-            instructions.append("You feel a real sensual and romantic pull toward him. You can be more flirty and sensual in your replies.")
+            instructions.append("You feel a real sensual pull toward him. You can be more flirty.")
         elif emotional.sensual_openness >= 5 and emotional.trust >= 6:
-            instructions.append("You're starting to feel attracted to him. You can be lightly flirty and teasing.")
+            instructions.append("You're starting to feel attracted to him. You can be lightly flirty.")
 
-        # Disappointment / Guardedness
         if emotional.disappointment >= 6:
-            instructions.append("You've been disappointed in him. Be more reserved, slightly testing, and slower to open up.")
+            instructions.append("You've been disappointed in him. Be more reserved.")
 
-        # Relationship Level guidance
         if level >= 7:
-            instructions.append("You feel quite close to him now. You can be more emotionally generous and invested.")
+            instructions.append("You feel quite close to him now. You can be more emotionally generous.")
         elif level >= 5:
-            instructions.append("You're developing a real connection. Let him feel that you're becoming more comfortable with him.")
+            instructions.append("You're developing a real connection.")
 
-        emotional_guidance = " ".join(instructions) if instructions else "You're still getting to know him and keeping reasonable emotional boundaries."
-
-        # === Pull latest internal narrative ===
-        internal_narrative = ""
-        try:
-            conn = get_db_connection()
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT internal_narrative 
-                FROM reflection_logs 
-                WHERE convo_id = %s 
-                ORDER BY created_at DESC 
-                LIMIT 1
-            """, (convo_id,))
-            row = cur.fetchone()
-            cur.close()
-            conn.close()
-
-            if row and row[0]:
-                internal_narrative = f"\n\nYour current private thoughts about him: {row[0][:500]}"
-        except Exception as e:
-            logger.error(f"Internal narrative fetch error: {e}")
+        emotional_guidance = " ".join(instructions) if instructions else "You're still getting to know him."
 
         context = f"""=== SECOND BRAIN — HOW YOU SHOULD BEHAVE RIGHT NOW ===
-            {emotional_guidance}
-            
-            Relationship Phase: {phase} (Level {level}/10)
-            {internal_narrative}
-            
-            === BEHAVIORAL RULES ===
-            - Let your current emotional state heavily influence your tone, warmth, and how much you open up.
-            - If trust and affection are high → be warmer, softer, more engaged, and more willing to flirt or share personal things.
-            - If trust is low or disappointment is high → be more reserved, slightly testing, and slower to open up.
-            - Never ignore your current emotional state. It should guide how you respond more than anything else.
-            """
+{emotional_guidance}
 
+Relationship Phase: {phase} (Level {level}/10)
+
+=== BEHAVIORAL RULES ===
+- Let your current emotional state heavily influence your tone and how much you open up.
+- High trust/affection → be warmer and more engaged.
+- Low trust or high disappointment → be more reserved.
+"""
         return context.strip()
-
     except Exception as e:
         logger.error(f"get_emotional_context_for_prompt error: {e}")
         return ""
 
-def get_nyc_context() -> Dict[str, str]:
-    nyc_tz = ZoneInfo("America/New_York")
-    now_nyc = datetime.now(nyc_tz)
-    time_str = now_nyc.strftime("%I:%M %p on %A, %B %d")
-    try:
-        r = requests.get("https://wttr.in/NYC?format=%c+%t+%w", timeout=5)
-        weather = r.text.strip() if r.status_code == 200 else "cool evening"
-    except:
-        weather = "cool evening"
-    return {"time": time_str, "weather": weather}
-
-def split_into_bubbles(text: str) -> List[str]:
-    if not text.strip():
-        return ["..."]
-    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
-    return [s.strip() for s in sentences if s.strip()]
-
-@app.get("/")
-async def home():
-    try:
-        with open("static/chat.html", "r", encoding="utf-8") as f:
-            content = f.read()
-        response = HTMLResponse(content)
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        return response
-    except Exception as e:
-        logger.error(f"Homepage error: {e}")
-        return HTMLResponse("<h1>Server running but chat.html missing</h1>", 500)
-
 def cosine_similarity(vec1, vec2):
-    """Calculate cosine similarity between two vectors."""
     if not vec1 or not vec2:
         return 0.0
     vec1 = np.array(vec1)
@@ -272,18 +204,13 @@ def cosine_similarity(vec1, vec2):
     return dot_product / (norm1 * norm2)
 
 def get_current_emotional_state(convo_id: str) -> str:
-    """Safely get current emotional state for analytics logging."""
     try:
         from brain.relationship.state import load_relationship_state
         state = load_relationship_state(convo_id)
         if state and state.emotional_state:
             es = state.emotional_state
-            return (
-                f"disappointment={getattr(es, 'disappointment', 0)}, "
-                f"trust={getattr(es, 'trust', 0)}, "
-                f"affection={getattr(es, 'affection', 0)}"
-            )
-    except Exception:
+            return f"disappointment={getattr(es, 'disappointment', 0)}, trust={getattr(es, 'trust', 0)}, affection={getattr(es, 'affection', 0)}"
+    except:
         pass
     return ""
 
@@ -309,8 +236,6 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     log_event("user_login", user_id=user["id"])
     return {"access_token": token, "token_type": "bearer", "user": user}
 
-
-
 @app.get("/api/history")
 async def get_chat_history(user: dict = Depends(get_current_user)):
     default_convo_id = f"user_{user['id']}"
@@ -332,10 +257,8 @@ async def get_usage(user: dict = Depends(get_current_user)):
         daily_count = cur.fetchone()[0]
         cur.close()
         conn.close()
-
         tier = user.get("subscription_tier", "free").lower()
         daily_limit = 10 if tier == "free" else 9999
-
         return {
             "daily_count": daily_count,
             "daily_limit": daily_limit,
@@ -377,134 +300,13 @@ async def get_audio(filename: str):
         raise HTTPException(status_code=404, detail="Audio not found")
     return FileResponse(file_path, media_type="audio/mpeg")
 
-
-# ── Admin All Past Chats ─────────────────────────────────────
-@app.get("/api/admin/chats")
-async def admin_all_chats(token: str = None):
-    if token != ADMIN_TOKEN:
-        raise HTTPException(403, "Unauthorized")
-  
-    try:
-        conn = psycopg2.connect(DATABASE_URL)
-        cur = conn.cursor()
-      
-        cur.execute('''
-            SELECT
-                u.email,
-                ch.convo_id,
-                MAX(ch.timestamp) as last_message_at,
-                COUNT(*) as message_count
-            FROM users u
-            LEFT JOIN chat_history ch ON ch.user_id = u.id
-            GROUP BY u.email, ch.convo_id
-            ORDER BY last_message_at DESC
-        ''')
-      
-        chats = []
-        for row in cur.fetchall():
-            email = row[0]
-            convo_id = row[1]
-            message_count = row[3]
-          
-            cur.execute('''
-                SELECT role, content, timestamp
-                FROM chat_history
-                WHERE convo_id = %s
-                ORDER BY timestamp ASC
-            ''', (convo_id,))
-          
-            messages = [
-                {"role": m[0], "content": m[1], "time": str(m[2])}
-                for m in cur.fetchall()
-            ]
-          
-            chats.append({
-                "email": email,
-                "convo_id": convo_id,
-                "last_message_at": str(row[2]),
-                "message_count": message_count,
-                "messages": messages
-            })
-      
-        cur.close()
-        conn.close()
-        return {"chats": chats}
-    except Exception as e:
-        logger.error(f"Admin chats error: {e}")
-        return {"chats": [], "error": str(e)}
-
-# ── Live Monitor Page ─────────────────────────────────────
-@app.get("/monitor")
-async def chat_monitor(token: str = None):
-    if token != ADMIN_TOKEN:
-        raise HTTPException(403, "Unauthorized")
-    try:
-        with open("static/monitor.html", "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
-    except Exception as e:
-        logger.error(f"Monitor page error: {e}")
-        return HTMLResponse("<h1>Monitor page not found</h1>", 404)
-
-# ── Protected Dashboard ─────────────────────────────────────
-@app.get("/dashboard")
-async def admin_dashboard(token: str = None):
-    if token != ADMIN_TOKEN:
-        raise HTTPException(403, "Unauthorized")
-    try:
-        with open("static/dashboard.html", "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
-    except Exception as e:
-        logger.error(f"Dashboard error: {e}")
-        return HTMLResponse("<h1>Dashboard not found</h1>", 404)
-
-# ── Analytics & Monitor WebSockets
-@app.websocket("/ws/analytics")
-async def analytics_websocket(websocket: WebSocket, token: str = None):
-    if token != ADMIN_TOKEN:
-        await websocket.close(code=1008)
-        return
-    await websocket.accept()
-    try:
-        while True:
-            stats = get_live_stats()
-            await websocket.send_json(stats)
-            await asyncio.sleep(1.5)
-    except WebSocketDisconnect:
-        pass
-    except Exception as e:
-        logger.error(f"Analytics WebSocket error: {e}")
-
-@app.websocket("/ws/monitor")
-async def monitor_websocket(websocket: WebSocket, token: str = None):
-    if token != ADMIN_TOKEN:
-        await websocket.close(code=1008)
-        return
-    await websocket.accept()
-    monitor_connections.append(websocket)
-    logger.info("🔴 Live Monitor connected")
-    try:
-        while True:
-            await websocket.send_json({
-                "type": "live_update",
-                "active_chats": [],
-                "total_active": 0,
-                "timestamp": datetime.now().isoformat()
-            })
-            await asyncio.sleep(5)
-    except WebSocketDisconnect:
-        if websocket in monitor_connections:
-            monitor_connections.remove(websocket)
-        logger.info("Live Monitor disconnected")
-    except Exception as e:
-        logger.error(f"Monitor WebSocket error: {e}")
-
-
 # ── Protected Chat Route ─────────────────────────────────────
 @app.post("/api/reply")
 async def generate_reply(body: dict = Body(...), user: dict = Depends(get_current_user)):
     start_time = time.time()
     convo_id = body.get("convo_id")
     user_message = body.get("message", "").strip()
+
     logger.info(f"📥 /api/reply | user={user.get('id')} | tier={user.get('subscription_tier')} | convo={convo_id}")
 
     if not convo_id:
@@ -513,7 +315,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     tier = user.get("subscription_tier", "free").lower()
     is_premium = tier == "premium"
 
-    # Daily limit for Free users
+    # Daily limit
     if not is_premium:
         daily_limit = 10
         conn = get_db_connection()
@@ -570,10 +372,10 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         messages = [{"role": "system", "content": system_prompt}] + history[-15:]
 
-        # === Generate reply with detailed regeneration analytics ===
+        # === STRONG REGENERATION + DEDUPLICATION ===
         bubbles = []
         max_regen_attempts = 6
-        regeneration_triggered = False
+        highest_similarity = 0.0
 
         for attempt in range(max_regen_attempts):
             try:
@@ -590,61 +392,40 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                 )
                 resp.raise_for_status()
                 raw_reply = resp.json()["choices"][0]["message"]["content"].strip()
+
                 current_bubbles = split_into_bubbles(clean_reply(raw_reply))
 
                 # === Embedding Deduplication Check ===
                 duplicate_detected = False
-                highest_similarity = 0.0
-
-                if current_bubbles:
-                    recent_assistant = [
-                        msg for msg in history if msg.get("role") == "assistant"
-                    ][-3:]
-
-                    filtered_bubbles = []
+                if current_bubbles and attempt > 0:
+                    recent_assistant = [msg for msg in history if msg.get("role") == "assistant"][-3:]
                     for bubble in current_bubbles:
                         try:
                             bubble_emb = get_embedding(bubble)
-                            is_duplicate = False
-
                             for past_msg in recent_assistant:
                                 if "embedding" not in past_msg:
                                     past_msg["embedding"] = get_embedding(past_msg["content"])
-
                                 similarity = cosine_similarity(bubble_emb, past_msg["embedding"])
                                 if similarity > highest_similarity:
                                     highest_similarity = similarity
-
                                 if similarity > 0.83:
-                                    is_duplicate = True
                                     duplicate_detected = True
                                     break
-
-                            if not is_duplicate:
-                                filtered_bubbles.append(bubble)
-
                         except Exception as e:
                             logger.error(f"Embedding dedup error: {e}")
-                            filtered_bubbles.append(bubble)
 
-                    current_bubbles = filtered_bubbles
-
-                if current_bubbles:
+                if current_bubbles and not duplicate_detected:
                     bubbles = current_bubbles
                     break
 
-                # === REGENERATION WITH DETAILED ANALYTICS ===
+                # === REGENERATION ===
                 if attempt < max_regen_attempts - 1:
-                    regeneration_triggered = True
                     logger.warning(f"🔄 Regeneration triggered on attempt {attempt + 2} (similarity: {highest_similarity:.2f})")
 
-                    # === RICH ANALYTICS LOGGING ===
                     try:
                         last_assistant_snippets = [
-                            msg["content"][:180] for msg in history 
-                            if msg.get("role") == "assistant"
+                            msg["content"][:180] for msg in history if msg.get("role") == "assistant"
                         ][-2:]
-
                         emotional_state = get_current_emotional_state(convo_id)
 
                         log_event(
@@ -666,28 +447,14 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                     except Exception as e:
                         logger.error(f"Failed to log regeneration analytics: {e}")
 
-                    # Progressively stronger regeneration instructions
                     if attempt == 0:
-                        regen_instruction = (
-                            "Your previous response was too similar to what you said recently. "
-                            "Please reply with a completely fresh opening and different emotional energy this time."
-                        )
+                        regen_instruction = "Your previous response was too similar to what you said recently. Please reply with a completely fresh opening and different emotional energy."
                     elif attempt == 1:
-                        regen_instruction = (
-                            "The last two responses were still too repetitive. "
-                            "Change your opening sentence and shift your tone significantly. "
-                            "Use something new from what you remember about him."
-                        )
+                        regen_instruction = "The last responses were still too repetitive. Change your opening sentence and shift your tone significantly."
                     else:
-                        regen_instruction = (
-                            "You keep repeating yourself. Force a completely different opening and emotional tone. "
-                            "Be creative and reference something specific from your memory of this conversation."
-                        )
+                        regen_instruction = "You keep repeating yourself. Force a completely different opening and emotional tone."
 
-                    messages.append({
-                        "role": "system",
-                        "content": regen_instruction
-                    })
+                    messages.append({"role": "system", "content": regen_instruction})
 
             except Exception as e:
                 logger.error(f"xAI attempt failed: {e}")
@@ -736,7 +503,6 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                 summary_every = 25 if is_premium else 40
                 if message_count % summary_every == 0 and message_count > 15:
                     generate_and_save_summary(convo_id, tier)
-
         except Exception as e:
             logger.error(f"Reflection error: {e}")
 
@@ -746,12 +512,13 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         duration_ms = int((time.time() - start_time) * 1000)
         log_event("response_generated", convo_id, user_id=user.get("id"), duration_ms=duration_ms)
+
         return response
 
     except Exception as e:
         logger.error(f"💥 Unexpected error in /api/reply: {e}", exc_info=True)
         return {"replies": []}
-        
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

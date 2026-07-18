@@ -500,6 +500,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         finally:
             cur.close()
             conn.close()
+
         if daily_count >= daily_limit:
             return {
                 "replies": [
@@ -521,20 +522,15 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         # Save user message
         if user_message:
             save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
-
-            # Fact extraction (Premium only)
             if is_premium and random.random() < 0.35:
                 extract_and_save_facts(convo_id, user_message, tier)
 
         # Get history
         history = get_history(convo_id)
 
-        # ============================================================
-        # === NEW PROMPT SYSTEM (Second Brain) ===
-        # ============================================================
+        # === SECOND BRAIN CONTEXT ===
         emotional_context = ""
         memory_context = ""
-
         try:
             emotional_context = get_emotional_context_for_prompt(convo_id) or ""
         except Exception as e:
@@ -545,7 +541,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         except Exception as e:
             logger.error(f"Memory context error: {e}")
 
-        # Use the new prompt from the Second Brain
+        # Build system prompt
         system_prompt = get_system_prompt(
             user_name=user.get("full_name"),
             current_time="",
@@ -585,6 +581,45 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         bubbles = split_into_bubbles(clean_reply(raw_reply))
 
+        # ============================================================
+        # === STRONG APP-LAYER DEDUPLICATION (Embedding-based) ===
+        # ============================================================
+        if bubbles:
+            recent_assistant = [
+                msg for msg in history if msg.get("role") == "assistant"
+            ][-3:]
+
+            filtered_bubbles = []
+            for bubble in bubbles:
+                try:
+                    bubble_embedding = get_embedding(bubble)
+                    is_duplicate = False
+
+                    for past_msg in recent_assistant:
+                        if "embedding" not in past_msg:
+                            # Compute embedding if not cached
+                            past_msg["embedding"] = get_embedding(past_msg["content"])
+
+                        similarity = cosine_similarity(bubble_embedding, past_msg["embedding"])
+                        if similarity > 0.83:  # Threshold for "too similar"
+                            is_duplicate = True
+                            logger.warning(
+                                f"🔁 High similarity detected ({similarity:.2f}) → filtered bubble: {bubble[:70]}..."
+                            )
+                            break
+
+                    if not is_duplicate:
+                        filtered_bubbles.append(bubble)
+
+                except Exception as e:
+                    logger.error(f"Embedding dedup error: {e}")
+                    filtered_bubbles.append(bubble)  # Fail open
+
+            bubbles = filtered_bubbles
+
+        if not bubbles:
+            bubbles = ["Hmm... give me a second to think about that."]
+
         # Save assistant replies
         for bubble in bubbles:
             save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user.get("id"))
@@ -600,12 +635,10 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             except Exception as e:
                 logger.error(f"Voice generation error: {e}")
 
-        # === SECOND BRAIN REFLECTION + AUTOMATIC SUMMARIZATION ===
+        # === SECOND BRAIN REFLECTION + SUMMARIZATION ===
         try:
             message_count = len(get_history(convo_id, limit=400))
-
             if message_count >= 6:
-                # Reflection Engine Trigger
                 if is_premium:
                     reflection_every = 8
                     reflection_max = 12
@@ -614,15 +647,11 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                     reflection_max = 18
 
                 should_reflect = (message_count % reflection_every == 0) or (message_count % reflection_max == 0)
-
                 if should_reflect:
-                    logger.info(f"🧠 [Reflection Engine] TRIGGERED | convo={convo_id} | tier={tier} | msg_count={message_count}")
-
+                    logger.info(f"🧠 [Reflection Engine] TRIGGERED | convo={convo_id} | tier={tier}")
                     recent_context = "\n".join([
-                        f"{msg['role']}: {msg['content']}"
-                        for msg in history[-25:]
+                        f"{msg['role']}: {msg['content']}" for msg in history[-25:]
                     ])
-
                     reflection_result = run_reflection(
                         convo_id=convo_id,
                         user_id=user.get("id"),
@@ -630,31 +659,27 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                         recent_messages=recent_context,
                         trigger_type="regular_interval"
                     )
-
                     logger.info(
                         f"✅ [Reflection Engine] COMPLETED | "
                         f"Emotional Changes: {reflection_result.get('emotional_changes')} | "
                         f"Level Change: {reflection_result.get('level_change')}"
                     )
 
-                # Automatic Summarization Trigger
                 summary_every = 25 if is_premium else 40
-
                 if message_count % summary_every == 0 and message_count > 15:
-                    logger.info(f"📝 [Memory] Generating summary | convo={convo_id} | msg_count={message_count}")
+                    logger.info(f"📝 [Memory] Generating summary | convo={convo_id}")
                     generate_and_save_summary(convo_id, tier)
 
         except Exception as e:
-            logger.error(f"Reflection / Summarization trigger error: {e}", exc_info=True)
+            logger.error(f"Reflection / Summarization error: {e}", exc_info=True)
 
-        # Response
+        # Final response
         response = {"replies": bubbles}
         if voice_url:
             response["voice_message"] = {"voice_url": voice_url}
 
         duration_ms = int((time.time() - start_time) * 1000)
         log_event("response_generated", convo_id, user_id=user.get("id"), duration_ms=duration_ms)
-
         return response
 
     except Exception as e:

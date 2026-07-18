@@ -13,7 +13,7 @@ from config import XAI_API_KEY, XAI_API_BASE, XAI_MODEL
 def clean_reply(text: str) -> str:
     """
     Main cleaning and repetition reduction function.
-    Runs before splitting into bubbles.
+    This runs before splitting into bubbles.
     """
     if not text:
         return "Hey..."
@@ -78,9 +78,9 @@ def remove_weak_cautious_phrases(text: str) -> str:
     that often appears when Isabella is in a guarded emotional state.
     """
     weak_patterns = [
-        r"I('m| am) still (guarded|processing|careful|unsure|trying to figure this out).*?[.!?]",
+        r"I('m| am) still (guarded|processing|careful|unsure).*?[.!?]",
         r"That('s| is) a lot.*?[.!?]",
-        r"I need (a second|some time|to think) to (process|catch up|figure this out).*?[.!?]",
+        r"I need (a second|some time) to (process|catch up).*?[.!?]",
         r"I('m| am) not (gonna|going to) lie.*?",
         r"This is (a lot|moving kind of fast).*?[.!?]",
     ]

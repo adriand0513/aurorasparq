@@ -8,6 +8,7 @@ import psycopg2
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import requests
+import numpy as np
 
 from dotenv import load_dotenv
 from typing import Dict, List
@@ -256,6 +257,19 @@ async def home():
     except Exception as e:
         logger.error(f"Homepage error: {e}")
         return HTMLResponse("<h1>Server running but chat.html missing</h1>", 500)
+
+def cosine_similarity(vec1, vec2):
+    """Calculate cosine similarity between two vectors."""
+    if not vec1 or not vec2:
+        return 0.0
+    vec1 = np.array(vec1)
+    vec2 = np.array(vec2)
+    dot_product = np.dot(vec1, vec2)
+    norm1 = np.linalg.norm(vec1)
+    norm2 = np.linalg.norm(vec2)
+    if norm1 == 0 or norm2 == 0:
+        return 0.0
+    return dot_product / (norm1 * norm2)
 
 # ── Auth Routes ─────────────────────────────────────
 @app.post("/auth/register")
@@ -597,14 +611,13 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
                     for past_msg in recent_assistant:
                         if "embedding" not in past_msg:
-                            # Compute embedding if not cached
                             past_msg["embedding"] = get_embedding(past_msg["content"])
 
                         similarity = cosine_similarity(bubble_embedding, past_msg["embedding"])
-                        if similarity > 0.83:  # Threshold for "too similar"
+                        if similarity > 0.83:
                             is_duplicate = True
                             logger.warning(
-                                f"🔁 High similarity detected ({similarity:.2f}) → filtered bubble: {bubble[:70]}..."
+                                f"🔁 High similarity detected ({similarity:.2f}) → filtered: {bubble[:70]}..."
                             )
                             break
 
@@ -613,7 +626,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
                 except Exception as e:
                     logger.error(f"Embedding dedup error: {e}")
-                    filtered_bubbles.append(bubble)  # Fail open
+                    filtered_bubbles.append(bubble)
 
             bubbles = filtered_bubbles
 

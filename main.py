@@ -271,6 +271,22 @@ def cosine_similarity(vec1, vec2):
         return 0.0
     return dot_product / (norm1 * norm2)
 
+def get_current_emotional_state(convo_id: str) -> str:
+    """Safely get current emotional state for analytics logging."""
+    try:
+        from brain.relationship.state import load_relationship_state
+        state = load_relationship_state(convo_id)
+        if state and state.emotional_state:
+            es = state.emotional_state
+            return (
+                f"disappointment={getattr(es, 'disappointment', 0)}, "
+                f"trust={getattr(es, 'trust', 0)}, "
+                f"affection={getattr(es, 'affection', 0)}"
+            )
+    except Exception:
+        pass
+    return ""
+
 # ── Auth Routes ─────────────────────────────────────
 @app.post("/auth/register")
 async def register(body: dict = Body(...)):
@@ -533,29 +549,17 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         return {"replies": []}
 
     try:
-        # Save user message
         if user_message:
             save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
             if is_premium and random.random() < 0.35:
                 extract_and_save_facts(convo_id, user_message, tier)
 
-        # Get history
         history = get_history(convo_id)
 
         # === SECOND BRAIN CONTEXT ===
-        emotional_context = ""
-        memory_context = ""
-        try:
-            emotional_context = get_emotional_context_for_prompt(convo_id) or ""
-        except Exception as e:
-            logger.error(f"Emotional context error: {e}")
+        emotional_context = get_emotional_context_for_prompt(convo_id) or ""
+        memory_context = get_memory_context_for_prompt(convo_id, user_message) or ""
 
-        try:
-            memory_context = get_memory_context_for_prompt(convo_id, user_message) or ""
-        except Exception as e:
-            logger.error(f"Memory context error: {e}")
-
-        # Build system prompt
         system_prompt = get_system_prompt(
             user_name=user.get("full_name"),
             current_time="",
@@ -566,9 +570,12 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         messages = [{"role": "system", "content": system_prompt}] + history[-15:]
 
-        # Call xAI
-        raw_reply = None
-        for attempt in range(2):
+        # === Generate reply with detailed regeneration analytics ===
+        bubbles = []
+        max_regen_attempts = 6
+        regeneration_triggered = False
+
+        for attempt in range(max_regen_attempts):
             try:
                 resp = requests.post(
                     XAI_API_BASE,
@@ -583,52 +590,112 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                 )
                 resp.raise_for_status()
                 raw_reply = resp.json()["choices"][0]["message"]["content"].strip()
-                break
+                current_bubbles = split_into_bubbles(clean_reply(raw_reply))
+
+                # === Embedding Deduplication Check ===
+                duplicate_detected = False
+                highest_similarity = 0.0
+
+                if current_bubbles:
+                    recent_assistant = [
+                        msg for msg in history if msg.get("role") == "assistant"
+                    ][-3:]
+
+                    filtered_bubbles = []
+                    for bubble in current_bubbles:
+                        try:
+                            bubble_emb = get_embedding(bubble)
+                            is_duplicate = False
+
+                            for past_msg in recent_assistant:
+                                if "embedding" not in past_msg:
+                                    past_msg["embedding"] = get_embedding(past_msg["content"])
+
+                                similarity = cosine_similarity(bubble_emb, past_msg["embedding"])
+                                if similarity > highest_similarity:
+                                    highest_similarity = similarity
+
+                                if similarity > 0.83:
+                                    is_duplicate = True
+                                    duplicate_detected = True
+                                    break
+
+                            if not is_duplicate:
+                                filtered_bubbles.append(bubble)
+
+                        except Exception as e:
+                            logger.error(f"Embedding dedup error: {e}")
+                            filtered_bubbles.append(bubble)
+
+                    current_bubbles = filtered_bubbles
+
+                if current_bubbles:
+                    bubbles = current_bubbles
+                    break
+
+                # === REGENERATION WITH DETAILED ANALYTICS ===
+                if attempt < max_regen_attempts - 1:
+                    regeneration_triggered = True
+                    logger.warning(f"🔄 Regeneration triggered on attempt {attempt + 2} (similarity: {highest_similarity:.2f})")
+
+                    # === RICH ANALYTICS LOGGING ===
+                    try:
+                        last_assistant_snippets = [
+                            msg["content"][:180] for msg in history 
+                            if msg.get("role") == "assistant"
+                        ][-2:]
+
+                        emotional_state = get_current_emotional_state(convo_id)
+
+                        log_event(
+                            "regeneration_triggered",
+                            convo_id,
+                            user_id=user.get("id"),
+                            metadata={
+                                "attempt": attempt + 2,
+                                "similarity_score": round(highest_similarity, 3),
+                                "tier": tier,
+                                "hour_of_day": datetime.now().hour,
+                                "message_count": len(history),
+                                "user_message": user_message[:220] if user_message else "",
+                                "last_assistant_snippets": last_assistant_snippets,
+                                "emotional_state": emotional_state,
+                                "convo_length": len(history)
+                            }
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to log regeneration analytics: {e}")
+
+                    # Progressively stronger regeneration instructions
+                    if attempt == 0:
+                        regen_instruction = (
+                            "Your previous response was too similar to what you said recently. "
+                            "Please reply with a completely fresh opening and different emotional energy this time."
+                        )
+                    elif attempt == 1:
+                        regen_instruction = (
+                            "The last two responses were still too repetitive. "
+                            "Change your opening sentence and shift your tone significantly. "
+                            "Use something new from what you remember about him."
+                        )
+                    else:
+                        regen_instruction = (
+                            "You keep repeating yourself. Force a completely different opening and emotional tone. "
+                            "Be creative and reference something specific from your memory of this conversation."
+                        )
+
+                    messages.append({
+                        "role": "system",
+                        "content": regen_instruction
+                    })
+
             except Exception as e:
-                if attempt == 0:
-                    logger.warning("xAI API failed, retrying...")
-                    await asyncio.sleep(2.5)
+                logger.error(f"xAI attempt failed: {e}")
+                if attempt < max_regen_attempts - 1:
+                    await asyncio.sleep(1.5)
                     continue
                 else:
-                    logger.error(f"xAI API failed: {e}")
                     return {"replies": []}
-
-        bubbles = split_into_bubbles(clean_reply(raw_reply))
-
-        # ============================================================
-        # === STRONG APP-LAYER DEDUPLICATION (Embedding-based) ===
-        # ============================================================
-        if bubbles:
-            recent_assistant = [
-                msg for msg in history if msg.get("role") == "assistant"
-            ][-3:]
-
-            filtered_bubbles = []
-            for bubble in bubbles:
-                try:
-                    bubble_embedding = get_embedding(bubble)
-                    is_duplicate = False
-
-                    for past_msg in recent_assistant:
-                        if "embedding" not in past_msg:
-                            past_msg["embedding"] = get_embedding(past_msg["content"])
-
-                        similarity = cosine_similarity(bubble_embedding, past_msg["embedding"])
-                        if similarity > 0.83:
-                            is_duplicate = True
-                            logger.warning(
-                                f"🔁 High similarity detected ({similarity:.2f}) → filtered: {bubble[:70]}..."
-                            )
-                            break
-
-                    if not is_duplicate:
-                        filtered_bubbles.append(bubble)
-
-                except Exception as e:
-                    logger.error(f"Embedding dedup error: {e}")
-                    filtered_bubbles.append(bubble)
-
-            bubbles = filtered_bubbles
 
         if not bubbles:
             bubbles = ["Hmm... give me a second to think about that."]
@@ -652,16 +719,8 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         try:
             message_count = len(get_history(convo_id, limit=400))
             if message_count >= 6:
-                if is_premium:
-                    reflection_every = 8
-                    reflection_max = 12
-                else:
-                    reflection_every = 12
-                    reflection_max = 18
-
-                should_reflect = (message_count % reflection_every == 0) or (message_count % reflection_max == 0)
-                if should_reflect:
-                    logger.info(f"🧠 [Reflection Engine] TRIGGERED | convo={convo_id} | tier={tier}")
+                reflection_every = 8 if is_premium else 12
+                if message_count % reflection_every == 0:
                     recent_context = "\n".join([
                         f"{msg['role']}: {msg['content']}" for msg in history[-25:]
                     ])
@@ -672,21 +731,15 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                         recent_messages=recent_context,
                         trigger_type="regular_interval"
                     )
-                    logger.info(
-                        f"✅ [Reflection Engine] COMPLETED | "
-                        f"Emotional Changes: {reflection_result.get('emotional_changes')} | "
-                        f"Level Change: {reflection_result.get('level_change')}"
-                    )
+                    logger.info(f"✅ Reflection completed")
 
                 summary_every = 25 if is_premium else 40
                 if message_count % summary_every == 0 and message_count > 15:
-                    logger.info(f"📝 [Memory] Generating summary | convo={convo_id}")
                     generate_and_save_summary(convo_id, tier)
 
         except Exception as e:
-            logger.error(f"Reflection / Summarization error: {e}", exc_info=True)
+            logger.error(f"Reflection error: {e}")
 
-        # Final response
         response = {"replies": bubbles}
         if voice_url:
             response["voice_message"] = {"voice_url": voice_url}

@@ -1,4 +1,4 @@
-# postprocess.py - Improved Repetition Reduction + Natural Flow
+# postprocess.py
 import re
 import random
 import requests
@@ -10,7 +10,7 @@ def clean_reply(text: str) -> str:
 
     text = text.strip()
 
-    # === BASIC CLEANING ===
+    # === Basic Cleaning ===
     text = re.sub(r'[-—–]', ' ', text)
     text = re.sub(r'\s{2,}', ' ', text)
     text = re.sub(r"<\|[^>]*\|>", "", text)
@@ -19,136 +19,73 @@ def clean_reply(text: str) -> str:
     text = re.sub(r'\*.*?\*', '', text)
 
     # Remove common weak AI starters
-    text = re.sub(r"^(Mmm|Hmm|Ahh|Ohh|Well|So|Hey there|Yeah|Like)\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^(Mmm|Hmm|Ahh|Ohh|Well|So|Hey there|I mean)\s*", "", text, flags=re.IGNORECASE)
 
-    # === STRONG REPETITION REDUCTION ===
-    text = reduce_repetition(text)
+    # === Intra-Reply Repetition Reduction ===
+    text = reduce_intra_reply_repetition(text)
 
-    # === AGGRESSIVE PATTERN REDUCTION (New) ===
-    text = reduce_repetitive_patterns(text)
+    # === Remove Weak / Repetitive Cautious Phrases ===
+    text = remove_weak_cautious_phrases(text)
 
-    # === LLM REWRITE IF STILL REPETITIVE ===
-    if detect_high_repetition(text) and random.random() < 0.30:
-        text = rewrite_for_variety(text)
-
-    # === LIGHT HUMANIZING ===
-    if len(text) > 100 and random.random() < 0.15:
-        text = humanize_text(text)
+    # === Optional Light Humanizing ===
+    if len(text) > 90 and random.random() < 0.15:
+        text = lightly_humanize(text)
 
     return text.strip()
 
 
-def reduce_repetition(text: str, max_overlap: float = 0.55) -> str:
+def reduce_intra_reply_repetition(text: str) -> str:
     """
-    Removes sentences that are too semantically or lexically similar to previous ones.
+    Removes or merges sentences that are too semantically similar within the same reply.
     """
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())
     if len(sentences) <= 2:
         return text
 
     cleaned = []
-    seen_word_sets = []
+    seen_phrases = set()
 
     for sentence in sentences:
-        words = set(re.findall(r'\b\w+\b', sentence.lower()))
-        if not words:
+        sentence = sentence.strip()
+        if not sentence:
             continue
 
-        is_repetitive = False
-        for prev_words in seen_word_sets:
-            overlap = len(words & prev_words) / max(len(words), 1)
-            if overlap > max_overlap:
-                is_repetitive = True
-                break
+        # Simple phrase-level dedup
+        key = sentence.lower()[:60]
+        if key in seen_phrases:
+            continue
 
-        if not is_repetitive:
-            cleaned.append(sentence)
-            seen_word_sets.append(words)
+        seen_phrases.add(key)
+        cleaned.append(sentence)
 
     return " ".join(cleaned)
 
 
-def reduce_repetitive_patterns(text: str) -> str:
+def remove_weak_cautious_phrases(text: str) -> str:
     """
-    Reduces common repetitive structures (especially cautious/boundary phrases).
+    Removes or softens repetitive cautious/disclaimer phrases that appear too often.
     """
-    # Common repetitive cautious patterns
-    patterns = [
-        r"let'?s (just )?talk first",
-        r"we('re| are) (still )?(basically )?strangers",
-        r"i (barely|don'?t really) know you",
-        r"slow down( a bit)?",
-        r"we('ve| have) (barely|only) (said|been talking for)",
-        r"let'?s (just )?see what happens( naturally)?",
+    weak_patterns = [
+        r"I('m| am) still (guarded|processing|careful|unsure).*?[.!?]",
+        r"That('s| is) a lot.*?[.!?]",
+        r"I need (a second|some time) to (process|catch up).*?[.!?]",
+        r"I('m| am) not (gonna|going to) lie.*?",
     ]
 
-    for pattern in patterns:
-        # Only keep the first occurrence of these patterns
-        matches = list(re.finditer(pattern, text, flags=re.IGNORECASE))
-        if len(matches) > 1:
-            for match in matches[1:]:
-                text = text[:match.start()] + text[match.end():]
+    for pattern in weak_patterns:
+        text = re.sub(pattern, "", text, flags=re.IGNORECASE)
 
+    # Clean up extra spaces after removals
+    text = re.sub(r'\s{2,}', ' ', text).strip()
     return text
 
 
-def detect_high_repetition(text: str) -> bool:
-    """Detect if the text still has significant repetition."""
-    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
-    if len(sentences) < 3:
-        return False
-
-    word_sets = [set(re.findall(r'\b\w+\b', s.lower())) for s in sentences]
-    overlaps = 0
-    for i in range(len(word_sets)):
-        for j in range(i + 1, len(word_sets)):
-            if word_sets[i] and word_sets[j]:
-                overlap = len(word_sets[i] & word_sets[j]) / max(len(word_sets[i]), 1)
-                if overlap > 0.45:
-                    overlaps += 1
-
-    return overlaps >= 2
-
-
-def rewrite_for_variety(text: str) -> str:
-    """Use LLM to rewrite repetitive text with more natural variety."""
+def lightly_humanize(text: str) -> str:
+    """Light rewriting to sound more natural (only when needed)."""
     try:
-        rewrite_prompt = f"""Rewrite this reply to sound like a real 25-year-old woman texting.
-Make it warm, natural, and varied. Avoid repeating similar sentence structures or cautious phrases.
-Keep the same meaning and emotional tone.
-
+        prompt = f"""Rewrite this reply to sound more like a real 25-year-old woman texting naturally.
+Keep it warm and feminine. Remove any repetitive or overly cautious phrasing.
 Original: {text}
-
-Natural version:"""
-
-        resp = requests.post(
-            XAI_API_BASE,
-            headers={"Authorization": f"Bearer {XAI_API_KEY}", "Content-Type": "application/json"},
-            json={
-                "model": XAI_MODEL,
-                "messages": [{"role": "user", "content": rewrite_prompt}],
-                "temperature": 0.85,
-                "max_tokens": 400
-            },
-            timeout=12
-        )
-        if resp.status_code == 200:
-            rewritten = resp.json()["choices"][0]["message"]["content"].strip()
-            if 30 < len(rewritten) < len(text) * 1.6:
-                return rewritten
-    except Exception:
-        pass
-    return text
-
-
-def humanize_text(text: str) -> str:
-    """Light humanizing for longer replies."""
-    try:
-        prompt = f"""Rewrite this reply to sound like a real 25-year-old Colombian woman texting naturally.
-Keep it warm, feminine, and conversational. Avoid robotic phrasing.
-
-Original: {text}
-
 Natural version:"""
 
         resp = requests.post(
@@ -157,14 +94,14 @@ Natural version:"""
             json={
                 "model": XAI_MODEL,
                 "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.78,
-                "max_tokens": 350
+                "temperature": 0.7,
+                "max_tokens": 300
             },
-            timeout=10
+            timeout=8
         )
         if resp.status_code == 200:
             rewritten = resp.json()["choices"][0]["message"]["content"].strip()
-            if 35 < len(rewritten) < len(text) * 1.5:
+            if 30 < len(rewritten) < len(text) * 1.4:
                 return rewritten
     except:
         pass

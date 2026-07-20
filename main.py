@@ -32,14 +32,25 @@ from config import OPENAI_API_KEY, DATABASE_URL
 # ============================================================
 from sentence_transformers import SentenceTransformer
 
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+# Lazy-loaded embedding model (prevents Render startup timeout)
+_embedding_model = None
+
+def get_embedding_model():
+    global _embedding_model
+    if _embedding_model is None:
+        from sentence_transformers import SentenceTransformer
+        logger.info("Loading SentenceTransformer model...")
+        _embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        logger.info("✅ SentenceTransformer model loaded")
+    return _embedding_model
 
 def get_embedding(text: str):
     """Generate embedding for repetition detection."""
     if not text or not isinstance(text, str):
         return np.zeros(384)
     try:
-        return embedding_model.encode(text, convert_to_numpy=True)
+        model = get_embedding_model()
+        return model.encode(text, convert_to_numpy=True)
     except Exception as e:
         logger.error(f"get_embedding error: {e}")
         return np.zeros(384)

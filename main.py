@@ -225,6 +225,18 @@ def get_current_emotional_state(convo_id: str) -> str:
         pass
     return ""
 
+
+@app.get("/")
+async def home():
+    try:
+        with open("static/chat.html", "r", encoding="utf-8") as f:
+            content = f.read()
+        response = HTMLResponse(content)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        return response
+    except Exception as e:
+        logger.error(f"Homepage error: {e}")
+        return HTMLResponse("<h1>Server running but chat.html missing</h1>", 500)
 # ── Auth Routes ─────────────────────────────────────
 @app.post("/auth/register")
 async def register(body: dict = Body(...)):

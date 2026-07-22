@@ -142,65 +142,77 @@ def is_rate_limited(convo_id: str, max_per_minute: int = 20) -> bool:
 # === SECOND BRAIN CONTEXT
 # ============================================================
 def get_emotional_context_for_prompt(convo_id: str) -> str:
+    """
+    Light, high-signal emotional context.
+    Influences Isabella's mood and energy without over-constraining her.
+    """
     try:
         state = load_relationship_state(convo_id)
-        if not state:
-            return """=== SECOND BRAIN — HOW YOU SHOULD BEHAVE RIGHT NOW ===
-You are in the very early stages of getting to know him.
-You are warm, curious, and lightly playful, but you are still keeping healthy emotional guardrails up.
-You are not overly eager or overly flirty yet. Speak naturally and let him earn your openness."""
+        if not state or not state.emotional_state:
+            return (
+                "You are soft, warm, and naturally feminine. "
+                "Your energy is gentle and inviting."
+            )
 
-        emotional = state.emotional_state
-        phase = str(state.phase).replace("_", " ").title()
+        es = state.emotional_state
         level = state.relationship_level
+        phase = state.phase.value if hasattr(state.phase, "value") else str(state.phase)
 
-        instructions = []
+        trust = getattr(es, "trust", 5)
+        affection = getattr(es, "affection", 5)
+        disappointment = getattr(es, "disappointment", 0)
+        sensual = getattr(es, "sensual_openness", 3)
 
-        if emotional.trust >= 8:
-            instructions.append("You trust him deeply. You can be emotionally open and affectionate.")
-        elif emotional.trust >= 6:
-            instructions.append("You trust him quite a bit. You are comfortable being emotionally open.")
-        elif emotional.trust >= 4:
-            instructions.append("You are starting to trust him, but you're still somewhat guarded.")
+        # === Base feminine energy (always present) ===
+        context = (
+            "You are deeply feminine in the way you speak and carry yourself. "
+            "Your energy is soft, warm, and naturally inviting. "
+            "You express yourself with a gentle, womanly presence."
+        )
+
+        # === Emotional temperature (light + high-signal) ===
+        if disappointment >= 6:
+            context += (
+                " Right now you feel a little distant and less open. "
+                "Your warmth is quieter and more reserved."
+            )
+        elif trust >= 7 and affection >= 7:
+            context += (
+                " You feel a real softness toward him. "
+                "Your warmth comes through easily and you feel more open."
+            )
+        elif trust >= 5 and affection >= 5:
+            context += (
+                " You feel a quiet pull toward him and a growing fondness. "
+                "You’re warm, but still a little careful."
+            )
         else:
-            instructions.append("You don't fully trust him yet. Stay somewhat reserved.")
+            context += (
+                " You’re still getting a feel for him. "
+                "Your energy is gentle and slightly reserved."
+            )
 
-        if emotional.affection >= 8:
-            instructions.append("You genuinely like him a lot. Be warm and affectionate.")
-        elif emotional.affection >= 6:
-            instructions.append("You like him and feel growing warmth.")
-        elif emotional.affection >= 4:
-            instructions.append("You like him, but the warmth is still moderate.")
+        # === Sensual tone (subtle) ===
+        if sensual >= 6 and trust >= 6:
+            context += (
+                " There’s a soft, feminine undercurrent in how you relate to him."
+            )
 
-        if emotional.sensual_openness >= 7 and emotional.trust >= 7:
-            instructions.append("You feel a real sensual pull toward him. You can be more flirty.")
-        elif emotional.sensual_openness >= 5 and emotional.trust >= 6:
-            instructions.append("You're starting to feel attracted to him. You can be lightly flirty.")
+        # === Relationship phase (very light) ===
+        if level <= 2:
+            context += " This still feels new."
+        elif level >= 6:
+            context += " There’s a growing sense of closeness between you."
 
-        if emotional.disappointment >= 6:
-            instructions.append("You've been disappointed in him. Be more reserved.")
+        return context
 
-        if level >= 7:
-            instructions.append("You feel quite close to him now. You can be more emotionally generous.")
-        elif level >= 5:
-            instructions.append("You're developing a real connection.")
-
-        emotional_guidance = " ".join(instructions) if instructions else "You're still getting to know him."
-
-        context = f"""=== SECOND BRAIN — HOW YOU SHOULD BEHAVE RIGHT NOW ===
-{emotional_guidance}
-
-Relationship Phase: {phase} (Level {level}/10)
-
-=== BEHAVIORAL RULES ===
-- Let your current emotional state heavily influence your tone and how much you open up.
-- High trust/affection → be warmer and more engaged.
-- Low trust or high disappointment → be more reserved.
-"""
-        return context.strip()
     except Exception as e:
-        logger.error(f"get_emotional_context_for_prompt error: {e}")
-        return ""
+        logger.error(f"Error building emotional context: {e}")
+        return (
+            "You are soft, warm, and naturally feminine. "
+            "Your energy is gentle and inviting."
+        )
+
 
 def cosine_similarity(vec1, vec2):
     if not vec1 or not vec2:

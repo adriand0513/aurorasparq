@@ -341,7 +341,6 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     start_time = time.time()
     convo_id = body.get("convo_id")
     user_message = body.get("message", "").strip()
-
     logger.info(f"📥 /api/reply | user={user.get('id')} | tier={user.get('subscription_tier')} | convo={convo_id}")
 
     if not convo_id:
@@ -395,14 +394,30 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         # === SECOND BRAIN CONTEXT ===
         emotional_context = get_emotional_context_for_prompt(convo_id) or ""
-        memory_context = get_memory_context_for_prompt(convo_id, user_message) or ""
+
+        # Memory injection temporarily disabled to reduce repetition
+        memory_context = ""
+
+        # === Question mode (every 2-5 of Isabella's turns) ===
+        # 1 turn = one user send → one Isabella reply (regardless of bubble count)
+        assistant_turns = len([m for m in history if m.get("role") == "assistant"])
+
+        # First 1-2 of her turns: allowed
+        # After that: allow roughly every 3 turns (within 2-5 range)
+        if assistant_turns < 2:
+            question_mode = "allowed"
+        elif (assistant_turns + 1) % 3 == 0:
+            question_mode = "allowed"
+        else:
+            question_mode = "avoid"
 
         system_prompt = get_system_prompt(
             user_name=user.get("full_name"),
             current_time="",
             tier=tier,
             emotional_context=emotional_context,
-            memory_context=memory_context
+            memory_context=memory_context,
+            question_mode=question_mode
         )
 
         messages = [{"role": "system", "content": system_prompt}] + history[-15:]
@@ -427,7 +442,6 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                 )
                 resp.raise_for_status()
                 raw_reply = resp.json()["choices"][0]["message"]["content"].strip()
-
                 current_bubbles = split_into_bubbles(clean_reply(raw_reply))
 
                 # === Embedding Deduplication Check ===
@@ -456,13 +470,11 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                 # === REGENERATION ===
                 if attempt < max_regen_attempts - 1:
                     logger.warning(f"🔄 Regeneration triggered on attempt {attempt + 2} (similarity: {highest_similarity:.2f})")
-
                     try:
                         last_assistant_snippets = [
                             msg["content"][:180] for msg in history if msg.get("role") == "assistant"
                         ][-2:]
                         emotional_state = get_current_emotional_state(convo_id)
-
                         log_event(
                             "regeneration_triggered",
                             convo_id,
@@ -547,7 +559,6 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         duration_ms = int((time.time() - start_time) * 1000)
         log_event("response_generated", convo_id, user_id=user.get("id"), duration_ms=duration_ms)
-
         return response
 
     except Exception as e:

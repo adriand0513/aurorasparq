@@ -64,6 +64,7 @@ sys.path.insert(0, str(BRAIN_DIR))
 from brain.reflection.graph import run_reflection
 from brain.relationship.state import load_relationship_state
 from aurorasparq_brain.prompts.personality import get_system_prompt
+from aurorasparq_brain.prompts.rules import get_rules_context
 from brain.memory import (
     get_relevant_facts,
     extract_and_save_facts,
@@ -411,14 +412,18 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         else:
             question_mode = "avoid"
 
-        system_prompt = get_system_prompt(
+        # === PERSONALITY + RULES (separated) ===
+        personality = get_system_prompt(
             user_name=user.get("full_name"),
             current_time="",
             tier=tier,
             emotional_context=emotional_context,
-            memory_context=memory_context,
-            question_mode=question_mode
+            memory_context=memory_context
         )
+
+        rules = get_rules_context(question_mode=question_mode)
+
+        system_prompt = personality + "\n\n" + rules
 
         messages = [{"role": "system", "content": system_prompt}] + history[-15:]
 
@@ -564,7 +569,6 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     except Exception as e:
         logger.error(f"💥 Unexpected error in /api/reply: {e}", exc_info=True)
         return {"replies": []}
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

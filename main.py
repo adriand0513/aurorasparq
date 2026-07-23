@@ -65,6 +65,8 @@ from brain.reflection.graph import run_reflection
 from brain.relationship.state import load_relationship_state
 from aurorasparq_brain.prompts.personality import get_system_prompt
 from aurorasparq_brain.prompts.rules import get_rules_context
+from aurorasparq_brain.prompts.character_context import get_character_context
+
 from brain.memory import (
     get_relevant_facts,
     extract_and_save_facts,
@@ -399,6 +401,21 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         # Memory injection temporarily disabled to reduce repetition
         memory_context = ""
 
+        # === Relationship level (for character depth gating) ===
+        relationship_level = 1
+        try:
+            state = load_relationship_state(convo_id)
+            if state:
+                relationship_level = getattr(state, "relationship_level", 1) or 1
+        except Exception:
+            pass
+
+        # === Selective character bible injection ===
+        character_context = get_character_context(
+            user_message=user_message,
+            relationship_level=relationship_level
+        )
+
         # === Question mode (every 2-5 of Isabella's turns) ===
         # 1 turn = one user send → one Isabella reply (regardless of bubble count)
         assistant_turns = len([m for m in history if m.get("role") == "assistant"])
@@ -412,7 +429,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         else:
             question_mode = "avoid"
 
-        # === PERSONALITY + RULES (separated) ===
+        # === PERSONALITY + RULES + CHARACTER (separated layers) ===
         personality = get_system_prompt(
             user_name=user.get("full_name"),
             current_time="",
@@ -424,6 +441,8 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         rules = get_rules_context(question_mode=question_mode)
 
         system_prompt = personality + "\n\n" + rules
+        if character_context:
+            system_prompt += "\n\n" + character_context
 
         messages = [{"role": "system", "content": system_prompt}] + history[-15:]
 
@@ -569,6 +588,8 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     except Exception as e:
         logger.error(f"💥 Unexpected error in /api/reply: {e}", exc_info=True)
         return {"replies": []}
+
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

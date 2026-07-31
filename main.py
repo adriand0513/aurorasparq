@@ -64,7 +64,7 @@ sys.path.insert(0, str(BRAIN_DIR))
 from brain.reflection.graph import run_reflection
 from brain.relationship.state import load_relationship_state
 from aurorasparq_brain.prompts.personality import get_system_prompt
-from aurorasparq_brain.prompts.rules import get_rules_context
+from aurorasparq_brain.prompts.hard_rules import get_hard_rules
 from aurorasparq_brain.prompts.character_context import get_character_context
 
 from brain.memory import (

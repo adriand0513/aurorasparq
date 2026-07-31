@@ -344,6 +344,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     start_time = time.time()
     convo_id = body.get("convo_id")
     user_message = body.get("message", "").strip()
+
     logger.info(f"📥 /api/reply | user={user.get('id')} | tier={user.get('subscription_tier')} | convo={convo_id}")
 
     if not convo_id:
@@ -352,7 +353,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     tier = user.get("subscription_tier", "free").lower()
     is_premium = tier == "premium"
 
-    # Daily limit
+    # Daily limit for free users
     if not is_premium:
         daily_limit = 10
         conn = get_db_connection()
@@ -378,7 +379,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                 ]
             }
 
-    # Rate limiting
+    # Simple cooldown
     now = time.time()
     if now - last_reply_time.get(convo_id, 0) < REPLY_COOLDOWN_SECONDS:
         return {"replies": []}
@@ -388,192 +389,106 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         return {"replies": []}
 
     try:
+        # Save user message
         if user_message:
             save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
-            if is_premium and random.random() < 0.35:
-                extract_and_save_facts(convo_id, user_message, tier)
 
         history = get_history(convo_id)
 
-        # === SECOND BRAIN CONTEXT ===
-        emotional_context = get_emotional_context_for_prompt(convo_id) or ""
-
-        # Memory injection temporarily disabled to reduce repetition
-        memory_context = ""
-
-        # === Relationship level (for character depth gating) ===
+        # === Light emotional context from Second Brain ===
+        emotional_context = ""
         relationship_level = 1
         try:
             state = load_relationship_state(convo_id)
             if state:
                 relationship_level = getattr(state, "relationship_level", 1) or 1
+                if state.emotional_state:
+                    es = state.emotional_state
+                    emotional_context = (
+                        f"Affection: {getattr(es, 'affection', 5)}/10 | "
+                        f"Trust: {getattr(es, 'trust', 5)}/10"
+                    )
         except Exception:
             pass
 
-        # === Selective character bible injection ===
+        # === Selective character context ===
         character_context = get_character_context(
             user_message=user_message,
             relationship_level=relationship_level
         )
 
-        # === Question mode (every 2-5 of Isabella's turns) ===
-        # 1 turn = one user send → one Isabella reply (regardless of bubble count)
-        assistant_turns = len([m for m in history if m.get("role") == "assistant"])
-
-        # First 1-2 of her turns: allowed
-        # After that: allow roughly every 3 turns (within 2-5 range)
-        if assistant_turns < 2:
-            question_mode = "allowed"
-        elif (assistant_turns + 1) % 3 == 0:
-            question_mode = "allowed"
-        else:
-            question_mode = "avoid"
-
-        # === PERSONALITY + RULES + CHARACTER (separated layers) ===
+        # === Build clean system prompt ===
+        # Matches the new get_system_prompt signature
         personality = get_system_prompt(
             user_name=user.get("full_name"),
-            current_time="",
+            nyc_time="",                    # can inject real NYC time later
             tier=tier,
             emotional_context=emotional_context,
-            memory_context=memory_context
+            character_slice=character_context
         )
 
-        rules = get_rules_context(question_mode=question_mode)
+        hard_rules = get_hard_rules()
 
-        system_prompt = personality + "\n\n" + rules
-        if character_context:
-            system_prompt += "\n\n" + character_context
+        system_prompt = f"{personality}\n\n{hard_rules}"
 
         messages = [{"role": "system", "content": system_prompt}] + history[-15:]
 
-        # === STRONG REGENERATION + DEDUPLICATION ===
-        bubbles = []
-        max_regen_attempts = 6
-        highest_similarity = 0.0
-
-        for attempt in range(max_regen_attempts):
-            try:
-                resp = requests.post(
-                    XAI_API_BASE,
-                    headers={"Authorization": f"Bearer {XAI_API_KEY}", "Content-Type": "application/json"},
-                    json={
-                        "model": XAI_MODEL,
-                        "messages": messages,
-                        "temperature": XAI_TEMPERATURE,
-                        "max_tokens": XAI_MAX_TOKENS,
-                    },
-                    timeout=60
-                )
-                resp.raise_for_status()
-                raw_reply = resp.json()["choices"][0]["message"]["content"].strip()
-                current_bubbles = split_into_bubbles(clean_reply(raw_reply))
-
-                # === Embedding Deduplication Check ===
-                duplicate_detected = False
-                if current_bubbles and attempt > 0:
-                    recent_assistant = [msg for msg in history if msg.get("role") == "assistant"][-3:]
-                    for bubble in current_bubbles:
-                        try:
-                            bubble_emb = get_embedding(bubble)
-                            for past_msg in recent_assistant:
-                                if "embedding" not in past_msg:
-                                    past_msg["embedding"] = get_embedding(past_msg["content"])
-                                similarity = cosine_similarity(bubble_emb, past_msg["embedding"])
-                                if similarity > highest_similarity:
-                                    highest_similarity = similarity
-                                if similarity > 0.83:
-                                    duplicate_detected = True
-                                    break
-                        except Exception as e:
-                            logger.error(f"Embedding dedup error: {e}")
-
-                if current_bubbles and not duplicate_detected:
-                    bubbles = current_bubbles
-                    break
-
-                # === REGENERATION ===
-                if attempt < max_regen_attempts - 1:
-                    logger.warning(f"🔄 Regeneration triggered on attempt {attempt + 2} (similarity: {highest_similarity:.2f})")
-                    try:
-                        last_assistant_snippets = [
-                            msg["content"][:180] for msg in history if msg.get("role") == "assistant"
-                        ][-2:]
-                        emotional_state = get_current_emotional_state(convo_id)
-                        log_event(
-                            "regeneration_triggered",
-                            convo_id,
-                            user_id=user.get("id"),
-                            metadata={
-                                "attempt": attempt + 2,
-                                "similarity_score": round(highest_similarity, 3),
-                                "tier": tier,
-                                "hour_of_day": datetime.now().hour,
-                                "message_count": len(history),
-                                "user_message": user_message[:220] if user_message else "",
-                                "last_assistant_snippets": last_assistant_snippets,
-                                "emotional_state": emotional_state,
-                                "convo_length": len(history)
-                            }
-                        )
-                    except Exception as e:
-                        logger.error(f"Failed to log regeneration analytics: {e}")
-
-                    if attempt == 0:
-                        regen_instruction = "Your previous response was too similar to what you said recently. Please reply with a completely fresh opening and different emotional energy."
-                    elif attempt == 1:
-                        regen_instruction = "The last responses were still too repetitive. Change your opening sentence and shift your tone significantly."
-                    else:
-                        regen_instruction = "You keep repeating yourself. Force a completely different opening and emotional tone."
-
-                    messages.append({"role": "system", "content": regen_instruction})
-
-            except Exception as e:
-                logger.error(f"xAI attempt failed: {e}")
-                if attempt < max_regen_attempts - 1:
-                    await asyncio.sleep(1.5)
-                    continue
-                else:
-                    return {"replies": []}
+        # === Simple generation (minimal interference) ===
+        try:
+            resp = requests.post(
+                XAI_API_BASE,
+                headers={
+                    "Authorization": f"Bearer {XAI_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": XAI_MODEL,
+                    "messages": messages,
+                    "temperature": XAI_TEMPERATURE,
+                    "max_tokens": XAI_MAX_TOKENS,
+                },
+                timeout=60
+            )
+            resp.raise_for_status()
+            raw_reply = resp.json()["choices"][0]["message"]["content"].strip()
+            bubbles = split_into_bubbles(clean_reply(raw_reply))
+        except Exception as e:
+            logger.error(f"Generation error: {e}")
+            bubbles = ["Hey... give me a second to think about that."]
 
         if not bubbles:
-            bubbles = ["Hmm... give me a second to think about that."]
+            bubbles = ["Hmm... give me a second."]
 
         # Save assistant replies
         for bubble in bubbles:
             save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user.get("id"))
 
-        # Voice generation (Premium)
+        # Voice notes (Premium only)
         voice_url = None
-        if is_premium:
+        if is_premium and bubbles:
             try:
-                final_text = " ".join(bubbles) if bubbles else ""
-                if len(final_text) > 15 and random.random() < 0.40:
+                final_text = " ".join(bubbles)
+                if len(final_text) > 15 and random.random() < 0.35:
                     text_for_voice = final_text[:1400]
                     voice_url = generate_voice_note(text_for_voice, tier=tier)
             except Exception as e:
                 logger.error(f"Voice generation error: {e}")
 
-        # === SECOND BRAIN REFLECTION + SUMMARIZATION ===
+        # Optional: light Second Brain reflection (keep or remove later)
         try:
             message_count = len(get_history(convo_id, limit=400))
-            if message_count >= 6:
-                reflection_every = 8 if is_premium else 12
-                if message_count % reflection_every == 0:
-                    recent_context = "\n".join([
-                        f"{msg['role']}: {msg['content']}" for msg in history[-25:]
-                    ])
-                    reflection_result = run_reflection(
-                        convo_id=convo_id,
-                        user_id=user.get("id"),
-                        tier=tier,
-                        recent_messages=recent_context,
-                        trigger_type="regular_interval"
-                    )
-                    logger.info(f"✅ Reflection completed")
-
-                summary_every = 25 if is_premium else 40
-                if message_count % summary_every == 0 and message_count > 15:
-                    generate_and_save_summary(convo_id, tier)
+            if message_count >= 8 and message_count % 10 == 0:
+                recent_context = "\n".join([
+                    f"{msg['role']}: {msg['content']}" for msg in history[-20:]
+                ])
+                run_reflection(
+                    convo_id=convo_id,
+                    user_id=user.get("id"),
+                    tier=tier,
+                    recent_messages=recent_context,
+                    trigger_type="regular_interval"
+                )
+                logger.info("✅ Reflection completed")
         except Exception as e:
             logger.error(f"Reflection error: {e}")
 
@@ -583,12 +498,12 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         duration_ms = int((time.time() - start_time) * 1000)
         log_event("response_generated", convo_id, user_id=user.get("id"), duration_ms=duration_ms)
+
         return response
 
     except Exception as e:
         logger.error(f"💥 Unexpected error in /api/reply: {e}", exc_info=True)
-        return {"replies": []}
-
+        return None
 
 
 if __name__ == "__main__":

@@ -67,12 +67,12 @@ from aurorasparq_brain.prompts.personality import get_system_prompt
 from aurorasparq_brain.prompts.hard_rules import get_hard_rules
 from aurorasparq_brain.prompts.character_context import get_character_context
 
-from brain.memory import (
-    get_relevant_facts,
-    extract_and_save_facts,
-    get_memory_context_for_prompt,
-    generate_and_save_summary,
-)
+# from brain.memory import (
+#     get_relevant_facts,
+#     extract_and_save_facts,
+#     get_memory_context_for_prompt,
+#     generate_and_save_summary,
+# )
 
 # ==================== PERMANENT GLOBAL FIX ====================
 class DateTimeJSONResponse(JSONResponse):
@@ -96,7 +96,6 @@ from config import (
     XAI_TEMPERATURE, XAI_MAX_TOKENS, ADMIN_TOKEN
 )
 from postprocess import clean_reply, split_into_bubbles
-from memory import get_history, save_message
 from analytics import log_event
 from auth import (
     register_user, authenticate_user, create_access_token,
@@ -389,13 +388,9 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         return {"replies": []}
 
     try:
-        # Save user message
-        if user_message:
-            save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
+        # === NO HISTORY / NO SAVE MESSAGE ===
+        # Only system prompt + current user message
 
-        history = get_history(convo_id)
-
-        # === Light emotional context from Second Brain ===
         emotional_context = ""
         relationship_level = 1
         try:
@@ -411,29 +406,29 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         except Exception:
             pass
 
-        # === Selective character context ===
         character_context = get_character_context(
             user_message=user_message,
             relationship_level=relationship_level
         )
 
-        # === Build clean system prompt ===
-        # Matches the new get_system_prompt signature
         personality = get_system_prompt(
             user_name=user.get("full_name"),
-            nyc_time="",                    # can inject real NYC time later
+            nyc_time="",
             tier=tier,
             emotional_context=emotional_context,
             character_slice=character_context
         )
 
         hard_rules = get_hard_rules()
-
         system_prompt = f"{personality}\n\n{hard_rules}"
 
-        messages = [{"role": "system", "content": system_prompt}] + history[-15:]
+        # Only the current message — no conversation history
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message or "hi"}
+        ]
 
-        # === Simple generation (minimal interference) ===
+        # Generation
         try:
             resp = requests.post(
                 XAI_API_BASE,
@@ -459,10 +454,6 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         if not bubbles:
             bubbles = ["Hmm... give me a second."]
 
-        # Save assistant replies
-        for bubble in bubbles:
-            save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user.get("id"))
-
         # Voice notes (Premium only)
         voice_url = None
         if is_premium and bubbles:
@@ -473,24 +464,6 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                     voice_url = generate_voice_note(text_for_voice, tier=tier)
             except Exception as e:
                 logger.error(f"Voice generation error: {e}")
-
-        # Optional: light Second Brain reflection (keep or remove later)
-        try:
-            message_count = len(get_history(convo_id, limit=400))
-            if message_count >= 8 and message_count % 10 == 0:
-                recent_context = "\n".join([
-                    f"{msg['role']}: {msg['content']}" for msg in history[-20:]
-                ])
-                run_reflection(
-                    convo_id=convo_id,
-                    user_id=user.get("id"),
-                    tier=tier,
-                    recent_messages=recent_context,
-                    trigger_type="regular_interval"
-                )
-                logger.info("✅ Reflection completed")
-        except Exception as e:
-            logger.error(f"Reflection error: {e}")
 
         response = {"replies": bubbles}
         if voice_url:
@@ -503,8 +476,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
     except Exception as e:
         logger.error(f"💥 Unexpected error in /api/reply: {e}", exc_info=True)
-        return None
-
+        return {"replies": None}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

@@ -345,13 +345,12 @@ async def get_audio(filename: str):
 @app.post("/api/reply")
 async def generate_reply(body: dict = Body(...), user: dict = Depends(get_current_user)):
     start_time = time.time()
-    convo_id = body.get("convo_id")
     user_message = body.get("message", "").strip()
 
-    logger.info(f"📥 /api/reply | user={user.get('id')} | tier={user.get('subscription_tier')} | convo={convo_id}")
+    # ALWAYS use a stable convo_id so history matches across tabs/sessions
+    convo_id = f"user_{user['id']}"
 
-    if not convo_id:
-        raise HTTPException(400, "convo_id required")
+    logger.info(f"📥 /api/reply | user={user.get('id')} | tier={user.get('subscription_tier')} | convo={convo_id}")
 
     tier = user.get("subscription_tier", "free").lower()
     is_premium = tier == "premium"
@@ -395,6 +394,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         # Save user message (FRONTEND ONLY — never sent to LLM)
         if user_message:
             save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
+            logger.info(f"💾 Saved user message | convo={convo_id}")
 
         # Light emotional context
         emotional_context = ""
@@ -458,20 +458,21 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             bubbles = split_into_bubbles(clean_reply(raw_reply))
         except Exception as e:
             logger.error(f"Generation error: {e}")
-            bubbles = [None]
+            bubbles = ["Hey... give me a second to think about that."]
 
         if not bubbles:
-            bubbles = [None]
+            bubbles = ["Hmm... give me a second."]
 
         # Save assistant replies (FRONTEND ONLY — never sent to LLM)
         for bubble in bubbles:
-            save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user.get("id"))
+            if bubble:  # skip empty
+                save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user.get("id"))
 
         # Voice notes (Premium only) — 80% chance + always if user asks
         voice_url = None
         if is_premium and bubbles:
             try:
-                final_text = " ".join(bubbles)
+                final_text = " ".join([b for b in bubbles if b])
                 user_asked_for_voice = any(
                     phrase in user_message.lower()
                     for phrase in [
@@ -487,6 +488,8 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                 if should_send_voice:
                     text_for_voice = final_text[:1400]
                     voice_url = generate_voice_note(text_for_voice, tier=tier)
+                    if voice_url:
+                        logger.info(f"🎙️ Voice note generated: {voice_url}")
             except Exception as e:
                 logger.error(f"Voice generation error: {e}")
 
@@ -500,7 +503,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         return response
 
     except Exception as e:
-        logger.error(f"💥 Unexpected error in /api/reply: {e}", exc_info=True)
+        logger.error(f"💥 Unexpected error in /api/reply: {e}", exp_info=True)
         return {"replies": []}
         
 

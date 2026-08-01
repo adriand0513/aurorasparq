@@ -454,12 +454,24 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         if not bubbles:
             bubbles = ["Hmm... give me a second."]
 
-        # Voice notes (Premium only)
+        # Voice notes (Premium only) — 80% chance + always if user asks
         voice_url = None
         if is_premium and bubbles:
             try:
                 final_text = " ".join(bubbles)
-                if len(final_text) > 15 and random.random() < 0.35:
+                user_asked_for_voice = any(
+                    phrase in user_message.lower()
+                    for phrase in [
+                        "voice note", "voice message", "send a voice",
+                        "voice memo", "can you send a voice", "send me a voice"
+                    ]
+                )
+
+                should_send_voice = user_asked_for_voice or (
+                    len(final_text) > 15 and random.random() < 0.80
+                )
+
+                if should_send_voice:
                     text_for_voice = final_text[:1400]
                     voice_url = generate_voice_note(text_for_voice, tier=tier)
             except Exception as e:
@@ -476,7 +488,8 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
     except Exception as e:
         logger.error(f"💥 Unexpected error in /api/reply: {e}", exc_info=True)
-        return {"replies": None}
+        return {"replies": []}
+        
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

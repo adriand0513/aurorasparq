@@ -275,7 +275,7 @@
         let token = localStorage.getItem('token');
         let currentUser = null;
         let convoId = null;
-   
+
         const messagesContainer = document.getElementById('messages');
         const typingContainer = document.getElementById('typing-container');
         const input = document.getElementById('user-input');
@@ -284,8 +284,17 @@
         const chatWrapper = document.getElementById('chat-wrapper');
         const userInfo = document.getElementById('user-info');
         const offlineMessage = document.getElementById('offline-message');
-    
+
         let isSending = false;
+        let pendingMessages = [];
+        let debounceTimer = null;
+        let isProcessingQueue = false;
+
+        // Timing
+        const READING_DELAY_MS = 5000;      // 5s "she's reading"
+        const TYPING_DELAY_MS = 1800;       // typing before first bubble
+        const BETWEEN_BUBBLES_MS = 1200;    // pause between reply bubbles
+        const USER_DONE_MS = 1800;          // silence before we assume user is done
 
         // ==================== AVAILABILITY (DISABLED FOR TESTING) ====================
         function isIsabellaAvailable() {
@@ -308,7 +317,7 @@
                     'Authorization': `Bearer ${token}`
                 }
             });
-    
+
             if (res.status === 401) {
                 localStorage.removeItem('token');
                 localStorage.removeItem('user');
@@ -316,10 +325,10 @@
                 window.location.reload();
                 return null;
             }
-    
+
             return res;
         }
-   
+
         function showLogin() {
             document.getElementById('login-form').style.display = 'block';
             document.getElementById('register-form').style.display = 'none';
@@ -334,26 +343,24 @@
             const fullName = document.getElementById('reg-fullname').value.trim();
             const email = document.getElementById('reg-email').value.trim();
             const password = document.getElementById('reg-password').value.trim();
-        
+
             if (!email || !password) return alert("Email and password required");
-        
+
             try {
                 const res = await fetch('/auth/register', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email, password, full_name: fullName })
                 });
-        
+
                 const data = await res.json();
-        
+
                 if (res.ok) {
-                    // Hide the forms
                     document.getElementById('register-form').style.display = 'none';
                     document.getElementById('login-form').style.display = 'none';
-        
+
                     const authCard = document.querySelector('.auth-card');
-        
-                    // STEP 1: Show success animation
+
                     authCard.innerHTML = `
                         <div style="text-align: center; padding: 30px 10px;">
                             <div style="font-size: 60px; margin-bottom: 15px; animation: popIn 0.4s ease;">✅</div>
@@ -361,18 +368,16 @@
                             <p style="color:#e0d4ff; font-size:1.05rem;">You're all set, ${fullName.split(" ")[0]}.</p>
                         </div>
                     `;
-        
-                    // STEP 2: After 1.4 seconds, show the Premium offer screen
+
                     setTimeout(() => {
                         authCard.innerHTML = `
                             <div style="text-align: center; padding: 10px 0;">
                                 <h2 style="color:#c300ff; margin-bottom:12px; font-size:1.85rem;">Welcome, ${fullName.split(" ")[0]}!</h2>
-                                
+                               
                                 <p style="margin-bottom:24px; line-height:1.6; color:#e0d4ff; font-size:1.05rem;">
                                     Want the <strong>best experience</strong> with Isabella?
                                 </p>
-        
-                                <!-- Premium Benefits Box -->
+
                                 <div style="background: rgba(107, 0, 179, 0.12); border: 1px solid #6b00b3; border-radius: 16px; padding: 18px 20px; margin-bottom: 26px; text-align: left;">
                                     <div style="color:#c300ff; font-weight:600; margin-bottom:10px; font-size:1rem;">Premium includes:</div>
                                     <ul style="margin:0; padding-left:18px; color:#e0d4ff; line-height:1.75; font-size:0.95rem;">
@@ -382,32 +387,29 @@
                                         <li>Priority access</li>
                                     </ul>
                                 </div>
-        
-                                <!-- Upgrade Button -->
+
                                 <button id="upgrade-btn"
                                         style="width:100%; padding:18px 20px; background: linear-gradient(135deg, #6b00b3, #c300ff); border:none; border-radius:16px; color:white; font-size:1.1rem; font-weight:600; margin-bottom:14px; cursor:pointer; box-shadow: 0 4px 20px rgba(195, 0, 255, 0.5); transition: all 0.2s ease;">
                                     Yes, Upgrade to Premium — $14.99/mo
                                 </button>
-                                
-                                <!-- Skip Button -->
+                               
                                 <button id="skip-btn"
                                         style="width:100%; padding:13px 20px; background:transparent; border:1px solid #555; color:#aaa; border-radius:50px; cursor:pointer; font-size:0.95rem; transition: all 0.2s ease;">
                                     No thanks, continue with Free
                                 </button>
                             </div>
                         `;
-        
+
                         const upgradeBtn = document.getElementById('upgrade-btn');
                         const skipBtn = document.getElementById('skip-btn');
-        
-                        // Click handlers with loading states
+
                         upgradeBtn.onclick = async () => {
                             upgradeBtn.disabled = true;
                             upgradeBtn.style.opacity = '0.7';
                             upgradeBtn.innerHTML = 'Processing... Please wait';
                             await upgradeAfterRegister(email, password);
                         };
-        
+
                         skipBtn.onclick = () => {
                             skipBtn.disabled = true;
                             skipBtn.style.opacity = '0.6';
@@ -416,8 +418,7 @@
                                 showLoginAfterRegister();
                             }, 500);
                         };
-        
-                        // Hover effects
+
                         upgradeBtn.onmouseover = () => {
                             if (!upgradeBtn.disabled) {
                                 upgradeBtn.style.transform = 'translateY(-2px)';
@@ -430,7 +431,7 @@
                                 upgradeBtn.style.boxShadow = '0 4px 20px rgba(195, 0, 255, 0.5)';
                             }
                         };
-        
+
                         skipBtn.onmouseover = () => {
                             if (!skipBtn.disabled) {
                                 skipBtn.style.borderColor = '#888';
@@ -443,9 +444,9 @@
                                 skipBtn.style.color = '#aaa';
                             }
                         };
-        
-                    }, 1400); // Show success animation for 1.4 seconds
-        
+
+                    }, 1400);
+
                 } else {
                     alert(data.detail || "Registration failed");
                 }
@@ -453,53 +454,51 @@
                 alert("Error during registration");
             }
         }
-        
-        // Auto-login + Upgrade to Premium
+
         async function upgradeAfterRegister(email, password) {
             const upgradeBtn = document.getElementById('upgrade-btn');
-            
-            // Show loading state
+
             if (upgradeBtn) {
                 upgradeBtn.disabled = true;
                 upgradeBtn.style.opacity = '0.7';
                 upgradeBtn.innerHTML = 'Processing... Please wait';
             }
-        
+
             try {
-                // Step 1: Auto login
                 const formData = new FormData();
                 formData.append('username', email);
                 formData.append('password', password);
-        
+
                 const loginRes = await fetch('/auth/login', {
                     method: 'POST',
                     body: formData
                 });
-        
+
                 const loginData = await loginRes.json();
-        
+
                 if (!loginRes.ok) {
                     alert("Something went wrong during auto-login. Please try logging in manually.");
                     showLogin();
                     return;
                 }
-        
-                // Step 2: Save token and user data
+
                 token = loginData.access_token;
                 currentUser = loginData.user;
                 localStorage.setItem('token', token);
                 localStorage.setItem('user', JSON.stringify(currentUser));
-        
-                // Step 3: Trigger Stripe checkout
+
+                convoId = `user_${currentUser.id}`;
+                localStorage.setItem('convo_id', convoId);
+
                 await upgradePlan('premium_monthly');
-        
+
             } catch (error) {
                 console.error(error);
                 alert("Something went wrong. Please try logging in and upgrading manually.");
                 showLogin();
             }
         }
-        
+
         function showLoginAfterRegister() {
             showLogin();
             alert("Account created! You can upgrade to Premium anytime from the Upgrade button.");
@@ -508,38 +507,40 @@
         async function login() {
             const email = document.getElementById('login-email').value.trim();
             const password = document.getElementById('login-password').value.trim();
-       
+
             if (!email || !password) {
                 alert("Please enter email and password");
                 return;
             }
-    
+
             try {
                 const formData = new FormData();
                 formData.append('username', email);
                 formData.append('password', password);
-           
+
                 const res = await fetch('/auth/login', {
                     method: 'POST',
                     body: formData
                 });
-           
+
                 const data = await res.json();
-           
+
                 if (res.ok) {
                     token = data.access_token;
                     currentUser = data.user;
-                    convoId = `user_${currentUser.id}`;
-                    localStorage.setItem('convo_id', convoId);
-               
+
                     localStorage.setItem('token', token);
                     localStorage.setItem('user', JSON.stringify(currentUser));
-               
+
+                    // Stable convo ID
+                    convoId = `user_${currentUser.id}`;
+                    localStorage.setItem('convo_id', convoId);
+
                     authScreen.style.display = 'none';
                     chatWrapper.style.display = 'flex';
-               
+
                     userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email}`;
-               
+
                     await updateSubscriptionDisplay();
                     await loadUserHistory();
                     updateAvailability();
@@ -553,16 +554,23 @@
                 alert("Login error. Please try again.");
             }
         }
-    
+
         async function refreshUserData() {
             if (!token) return;
             try {
                 const res = await authFetch('/auth/me');
                 if (!res) return;
-    
+
                 const freshUser = await res.json();
                 currentUser = freshUser;
                 localStorage.setItem('user', JSON.stringify(freshUser));
+
+                // Keep convoId stable
+                if (currentUser && currentUser.id) {
+                    convoId = `user_${currentUser.id}`;
+                    localStorage.setItem('convo_id', convoId);
+                }
+
                 await updateSubscriptionDisplay();
                 console.log("✅ User data refreshed - New Tier:", freshUser.subscription_tier);
             } catch(e) {
@@ -573,24 +581,25 @@
         function logout() {
             localStorage.removeItem('token');
             localStorage.removeItem('user');
+            localStorage.removeItem('convo_id');
             window.location.reload();
         }
 
         // ==================== CHAT CORE ====================
         async function loadUserHistory() {
             if (!token || !currentUser) return;
-        
-            // Always use the same stable ID
+
+            // Always use stable ID
             convoId = `user_${currentUser.id}`;
             localStorage.setItem('convo_id', convoId);
-        
+
             try {
                 const res = await authFetch('/api/history');
                 if (!res) return;
-        
+
                 const data = await res.json();
                 messagesContainer.innerHTML = '';
-        
+
                 if (data.messages && data.messages.length > 0) {
                     data.messages.forEach(m => {
                         if (!m.content) return;
@@ -601,7 +610,7 @@
                 scrollToBottom();
             } catch(e) {
                 console.error("Failed to load history", e);
-                // Do NOT create a new timestamped ID
+                // Do NOT create a timestamped ID
             }
         }
 
@@ -618,41 +627,77 @@
         }
 
         function showTyping() {
+            typingContainer.innerHTML = `
+                <div class="typing-indicator">
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                    <span>Isabella is typing...</span>
+                </div>
+            `;
             typingContainer.style.display = 'block';
             scrollToBottom();
         }
 
         function hideTyping() {
             typingContainer.style.display = 'none';
+            typingContainer.innerHTML = '';
         }
 
-        function playVoiceNote(voiceUrl) {
-            const audio = new Audio(voiceUrl);
-        
-            if (typingContainer) {
-                typingContainer.innerHTML = `
-                    <div style="display:flex; align-items:center; gap:8px; padding:8px 12px;
-                                background:rgba(195,0,255,0.1); border-radius:12px; width:fit-content;">
-                        <span style="font-size:13px; color:#c300ff;">🔊 Isabella is speaking...</span>
-                    </div>
-                `;
-                typingContainer.style.display = 'block';
-            }
-            audio.play().catch(err => {
-                console.error("Audio playback failed:", err);
-            });
-            audio.onended = () => {
-                if (typingContainer) {
-                    typingContainer.style.display = 'none';
-                    typingContainer.innerHTML = '';
-                }
-            };
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
         }
 
-        async function sendToBackend(msg) {
-            isSending = true;
+        function addVoiceMessageOnly(voiceUrl) {
+            const div = document.createElement('div');
+            div.className = `message received voice-only`;
+
+            div.innerHTML = `
+                <audio controls style="width: 100%; max-width: 260px; height: 32px;">
+                    <source src="${voiceUrl}" type="audio/mpeg">
+                    Your browser does not support the audio element.
+                </audio>
+            `;
+
+            messagesContainer.appendChild(div);
+            scrollToBottom();
+        }
+
+        // ==================== MESSAGE QUEUE + DELAYS ====================
+        function sendMessage() {
+            const msg = input.value.trim();
+            if (!msg) return;
+
+            // Show instantly — never block the user
+            addMessage(msg, 'sent');
+            input.value = '';
+
+            pendingMessages.push(msg);
+
+            // Reset "user is done" timer
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                processMessageQueue();
+            }, USER_DONE_MS);
+        }
+
+        async function processMessageQueue() {
+            if (isProcessingQueue || pendingMessages.length === 0) return;
+            isProcessingQueue = true;
+
+            const messagesToSend = [...pendingMessages];
+            pendingMessages = [];
+
+            // Combine so she "reads" everything they just sent
+            const combinedMessage = messagesToSend.join('\n');
+
+            // 1. Reading delay
+            await sleep(READING_DELAY_MS);
+
+            // 2. Typing indicator
             showTyping();
-       
+            await sleep(TYPING_DELAY_MS);
+
             try {
                 const res = await fetch('/api/reply', {
                     method: 'POST',
@@ -662,58 +707,48 @@
                     },
                     body: JSON.stringify({
                         convo_id: convoId,
-                        message: msg
+                        message: combinedMessage
                     })
                 });
-       
+
                 const data = await res.json();
-       
-                // Send text replies normally
+                hideTyping();
+
+                // 3. Show each bubble with typing between them
                 if (data.replies && Array.isArray(data.replies)) {
-                    data.replies.forEach(bubble => {
-                        if (bubble) addMessage(bubble, 'received');
-                    });
+                    for (let i = 0; i < data.replies.length; i++) {
+                        const bubble = data.replies[i];
+                        if (!bubble) continue;
+
+                        if (i > 0) {
+                            showTyping();
+                            await sleep(BETWEEN_BUBBLES_MS);
+                            hideTyping();
+                        }
+
+                        addMessage(bubble, 'received');
+                    }
                 }
-       
-                // Send voice note as its own separate message
+
+                // Voice note
                 if (data.voice_message && data.voice_message.voice_url) {
                     addVoiceMessageOnly(data.voice_message.voice_url);
-                } 
-                // Fallback support for old response format
-                else if (data.voice_url) {
+                } else if (data.voice_url) {
                     addVoiceMessageOnly(data.voice_url);
                 }
-       
-            } catch (err) {
-                console.error("SendToBackend error:", err);
-            } finally {
-                hideTyping();
-                isSending = false;
-                await updateUsageCounter();
-            }
-        }
-      
-        function addVoiceMessageOnly(voiceUrl) {
-            const div = document.createElement('div');
-            div.className = `message received voice-only`;
-           
-            div.innerHTML = `
-                <audio controls style="width: 100%; max-width: 260px; height: 32px;">
-                    <source src="${voiceUrl}" type="audio/mpeg">
-                    Your browser does not support the audio element.
-                </audio>
-            `;
-           
-            messagesContainer.appendChild(div);
-            scrollToBottom();
-        }
 
-        function sendMessage() {
-            const msg = input.value.trim();
-            if (!msg || isSending) return;
-            addMessage(msg, 'sent');
-            input.value = '';
-            sendToBackend(msg);
+            } catch (err) {
+                console.error("Send error:", err);
+                hideTyping();
+            } finally {
+                isProcessingQueue = false;
+                await updateUsageCounter();
+
+                // If more messages arrived while processing, handle them next
+                if (pendingMessages.length > 0) {
+                    debounceTimer = setTimeout(() => processMessageQueue(), USER_DONE_MS);
+                }
+            }
         }
 
         // ==================== PAYMENTS & USAGE ====================
@@ -736,9 +771,9 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ price_type: priceType })
                 });
-    
+
                 if (!res) return;
-    
+
                 const data = await res.json();
                 if (data.url) {
                     window.location.href = data.url;
@@ -752,13 +787,13 @@
 
         async function updateSubscriptionDisplay() {
             if (!currentUser) return;
-         
+
             const statusEl = document.getElementById('subscription-status');
             const tierEl = document.getElementById('current-tier');
             const counterEl = document.getElementById('usage-counter');
-         
+
             const tier = (currentUser.subscription_tier || 'free').toLowerCase();
-         
+
             if (tier === 'premium') {
                 tierEl.textContent = "PREMIUM Plan";
                 if (counterEl) counterEl.style.display = 'none';
@@ -766,26 +801,26 @@
                 tierEl.textContent = 'Free Plan';
                 if (counterEl) counterEl.style.display = 'block';
             }
-         
+
             statusEl.style.display = 'block';
         }
-       
+
         async function updateUsageCounter() {
             const counterEl = document.getElementById('usage-counter');
             if (!counterEl || !currentUser || !token) return;
-       
+
             try {
                 const res = await authFetch('/api/usage');
                 if (!res) return;
-       
+
                 if (!res.ok) {
                     counterEl.innerHTML = '—';
                     return;
                 }
-       
+
                 const data = await res.json();
                 const tier = (currentUser.subscription_tier || 'free').toLowerCase();
-       
+
                 if (tier === 'premium') {
                     counterEl.innerHTML = 'Unlimited ✨';
                     counterEl.style.background = 'rgba(0, 200, 100, 0.15)';
@@ -793,7 +828,7 @@
                 } else {
                     const remaining = Math.max(0, 10 - (data.daily_count || 0));
                     counterEl.innerHTML = `${remaining} / 10 today`;
-       
+
                     if (remaining < 5) {
                         counterEl.style.background = 'rgba(255, 100, 100, 0.2)';
                         counterEl.style.border = '1px solid #ff6464';
@@ -806,7 +841,7 @@
                 counterEl.innerHTML = '—';
             }
         }
-        
+
         // ==================== INIT ====================
         window.addEventListener('load', () => {
             if (token) {
@@ -814,7 +849,13 @@
                 authScreen.style.display = 'none';
                 chatWrapper.style.display = 'flex';
                 userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email || 'User'}`;
-            
+
+                // Stable convo ID
+                if (currentUser && currentUser.id) {
+                    convoId = `user_${currentUser.id}`;
+                    localStorage.setItem('convo_id', convoId);
+                }
+
                 loadUserHistory();
                 updateSubscriptionDisplay();
                 updateUsageCounter();
@@ -832,7 +873,6 @@
                 }
             });
         }
-
         if (sendBtn) {
             sendBtn.addEventListener('click', sendMessage);
         }

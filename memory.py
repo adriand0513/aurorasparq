@@ -27,29 +27,35 @@ def get_db_connection():
 
 # ==================== CHAT HISTORY ====================
 
-def get_history(convo_id: str, limit: int = 50) -> List[Dict]:
-    """
-    Get recent chat history.
-    Only returns role + content (no timestamp) to avoid JSON issues.
-    """
+def get_history(convo_id: str, limit: int = None) -> list:
     conn = get_db_connection()
-    if conn is None:
-        return []
-
     cur = conn.cursor()
-    cur.execute('''
-        SELECT role, content
-        FROM chat_history
-        WHERE convo_id = %s
-        ORDER BY timestamp ASC
-        LIMIT %s
-    ''', (convo_id, limit))
+    try:
+        if limit is None:
+            cur.execute("""
+                SELECT role, content, timestamp
+                FROM chat_history
+                WHERE convo_id = %s
+                ORDER BY timestamp ASC
+            """, (convo_id,))
+        else:
+            cur.execute("""
+                SELECT role, content, timestamp
+                FROM chat_history
+                WHERE convo_id = %s
+                ORDER BY timestamp DESC
+                LIMIT %s
+            """, (convo_id, limit))
+            # reverse so oldest is first
+            rows = cur.fetchall()
+            rows = list(reversed(rows))
+            return [{"role": r[0], "content": r[1], "timestamp": r[2]} for r in rows]
 
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
-
-    return [{"role": r[0], "content": r[1]} for r in rows]
+        rows = cur.fetchall()
+        return [{"role": r[0], "content": r[1], "timestamp": r[2]} for r in rows]
+    finally:
+        cur.close()
+        conn.close()
 
 
 def save_message(convo_id: str, message: Dict, user_id: Optional[int] = None):

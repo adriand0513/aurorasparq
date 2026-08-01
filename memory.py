@@ -58,19 +58,21 @@ def get_history(convo_id: str, limit: int = None) -> list:
         conn.close()
 
 
-def save_message(convo_id: str, message: Dict, user_id: Optional[int] = None):
+def save_message(convo_id: str, message: dict, user_id: int = None):
     conn = get_db_connection()
-    if conn is None:
-        return
-
     cur = conn.cursor()
-    cur.execute('''
-        INSERT INTO chat_history (convo_id, user_id, role, content)
-        VALUES (%s, %s, %s, %s)
-    ''', (convo_id, user_id, message["role"], message["content"]))
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        cur.execute("""
+            INSERT INTO chat_history (convo_id, user_id, role, content)
+            VALUES (%s, %s, %s, %s)
+        """, (convo_id, user_id, message["role"], message["content"]))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"save_message error: {e}")
+        conn.rollback()
+    finally:
+        cur.close()
+        conn.close()
 
 
 # ==================== INITIALIZE TABLES ====================

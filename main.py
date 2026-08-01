@@ -241,7 +241,6 @@ def get_current_emotional_state(convo_id: str) -> str:
         pass
     return ""
 
-
 @app.get("/")
 async def home():
     try:
@@ -253,6 +252,7 @@ async def home():
     except Exception as e:
         logger.error(f"Homepage error: {e}")
         return HTMLResponse("<h1>Server running but chat.html missing</h1>", 500)
+        
 # ── Auth Routes ─────────────────────────────────────
 @app.post("/auth/register")
 async def register(body: dict = Body(...)):
@@ -334,10 +334,8 @@ async def payment_success(session_id: str = None):
 
 @app.get("/audio/{filename}")
 async def get_audio(filename: str):
-    # Render persistent disk path
     file_path = Path("/var/data/audio") / filename
     if not file_path.exists():
-        # fallback to local static folder
         file_path = Path("static/audio_notes") / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Audio not found")
@@ -460,10 +458,10 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             bubbles = split_into_bubbles(clean_reply(raw_reply))
         except Exception as e:
             logger.error(f"Generation error: {e}")
-            bubbles = ["Hey... give me a second to think about that."]
+            bubbles = [None]
 
         if not bubbles:
-            bubbles = ["Hmm... give me a second."]
+            bubbles = [None]
 
         # Save assistant replies (FRONTEND ONLY — never sent to LLM)
         for bubble in bubbles:

@@ -74,6 +74,8 @@ from aurorasparq_brain.prompts.character_context import get_character_context
 #     generate_and_save_summary,
 # )
 
+from memory import get_history, save_message
+
 # ==================== PERMANENT GLOBAL FIX ====================
 class DateTimeJSONResponse(JSONResponse):
     def render(self, content: any) -> bytes:
@@ -276,7 +278,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 @app.get("/api/history")
 async def get_chat_history(user: dict = Depends(get_current_user)):
     default_convo_id = f"user_{user['id']}"
-    history = get_history(default_convo_id, limit=200)
+    history = get_history(default_convo_id, limit=None)
     return {"convo_id": default_convo_id, "messages": history}
 
 @app.get("/api/usage")
@@ -332,7 +334,11 @@ async def payment_success(session_id: str = None):
 
 @app.get("/audio/{filename}")
 async def get_audio(filename: str):
-    file_path = AUDIO_DIR / filename
+    # Render persistent disk path
+    file_path = Path("/var/data/audio") / filename
+    if not file_path.exists():
+        # fallback to local static folder
+        file_path = Path("static/audio_notes") / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Audio not found")
     return FileResponse(file_path, media_type="audio/mpeg")
@@ -388,9 +394,11 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         return {"replies": []}
 
     try:
-        # === NO HISTORY / NO SAVE MESSAGE ===
-        # Only system prompt + current user message
+        # Save user message (FRONTEND ONLY — never sent to LLM)
+        if user_message:
+            save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
 
+        # Light emotional context
         emotional_context = ""
         relationship_level = 1
         try:
@@ -422,7 +430,10 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         hard_rules = get_hard_rules()
         system_prompt = f"{personality}\n\n{hard_rules}"
 
-        # Only the current message — no conversation history
+        # ============================================================
+        # CRITICAL: Only current message goes to the LLM
+        # No history is ever included here
+        # ============================================================
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message or "hi"}
@@ -453,6 +464,10 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         if not bubbles:
             bubbles = ["Hmm... give me a second."]
+
+        # Save assistant replies (FRONTEND ONLY — never sent to LLM)
+        for bubble in bubbles:
+            save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user.get("id"))
 
         # Voice notes (Premium only) — 80% chance + always if user asks
         voice_url = None

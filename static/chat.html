@@ -529,6 +529,8 @@
                 if (res.ok) {
                     token = data.access_token;
                     currentUser = data.user;
+                    convoId = `user_${currentUser.id}`;
+                    localStorage.setItem('convo_id', convoId);
                
                     localStorage.setItem('token', token);
                     localStorage.setItem('user', JSON.stringify(currentUser));
@@ -576,18 +578,22 @@
 
         // ==================== CHAT CORE ====================
         async function loadUserHistory() {
-            if (!token) return;
+            if (!token || !currentUser) return;
+        
+            // Always use the same stable ID
+            convoId = `user_${currentUser.id}`;
+            localStorage.setItem('convo_id', convoId);
+        
             try {
                 const res = await authFetch('/api/history');
                 if (!res) return;
-    
+        
                 const data = await res.json();
-                convoId = data.convo_id || `user_${currentUser.id}`;
-                localStorage.setItem('convo_id', convoId);
                 messagesContainer.innerHTML = '';
-    
-                if (data.messages) {
+        
+                if (data.messages && data.messages.length > 0) {
                     data.messages.forEach(m => {
+                        if (!m.content) return;
                         const type = m.role === 'user' ? 'sent' : 'received';
                         addMessage(m.content, type);
                     });
@@ -595,7 +601,7 @@
                 scrollToBottom();
             } catch(e) {
                 console.error("Failed to load history", e);
-                convoId = `user_${currentUser.id}_${Date.now()}`;
+                // Do NOT create a new timestamped ID
             }
         }
 

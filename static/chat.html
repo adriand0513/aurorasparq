@@ -291,12 +291,12 @@
         let isProcessingQueue = false;
 
         // Timing
-        const READING_DELAY_MS = 5000;      // 5s "she's reading"
-        const TYPING_DELAY_MS = 1800;       // typing before first bubble
-        const BETWEEN_BUBBLES_MS = 1200;    // pause between reply bubbles
-        const USER_DONE_MS = 1800;          // silence before we assume user is done
+        const READING_DELAY_MS = 5000;
+        const TYPING_DELAY_MS = 1800;
+        const BETWEEN_BUBBLES_MS = 1200;
+        const USER_DONE_MS = 1800;
 
-        // ==================== AVAILABILITY (DISABLED FOR TESTING) ====================
+        // ==================== AVAILABILITY ====================
         function isIsabellaAvailable() {
             return true;
         }
@@ -532,7 +532,6 @@
                     localStorage.setItem('token', token);
                     localStorage.setItem('user', JSON.stringify(currentUser));
 
-                    // Stable convo ID
                     convoId = `user_${currentUser.id}`;
                     localStorage.setItem('convo_id', convoId);
 
@@ -565,7 +564,6 @@
                 currentUser = freshUser;
                 localStorage.setItem('user', JSON.stringify(freshUser));
 
-                // Keep convoId stable
                 if (currentUser && currentUser.id) {
                     convoId = `user_${currentUser.id}`;
                     localStorage.setItem('convo_id', convoId);
@@ -589,7 +587,6 @@
         async function loadUserHistory() {
             if (!token || !currentUser) return;
 
-            // Always use stable ID
             convoId = `user_${currentUser.id}`;
             localStorage.setItem('convo_id', convoId);
 
@@ -602,22 +599,25 @@
 
                 if (data.messages && data.messages.length > 0) {
                     data.messages.forEach(m => {
-                        if (!m.content) return;
+                        const content = (m.content || "").trim();
+                        if (!content) return;
                         const type = m.role === 'user' ? 'sent' : 'received';
-                        addMessage(m.content, type);
+                        addMessage(content, type);
                     });
                 }
                 scrollToBottom();
             } catch(e) {
                 console.error("Failed to load history", e);
-                // Do NOT create a timestamped ID
             }
         }
 
         function addMessage(text, type) {
+            const content = (text || "").trim();
+            if (!content) return;
+
             const div = document.createElement('div');
             div.className = `message ${type}`;
-            div.textContent = text;
+            div.textContent = content;
             messagesContainer.appendChild(div);
             scrollToBottom();
         }
@@ -649,11 +649,18 @@
         }
 
         function addVoiceMessageOnly(voiceUrl) {
+            if (!voiceUrl) return;
+
             const div = document.createElement('div');
-            div.className = `message received voice-only`;
+            div.className = 'message received voice-only';
+            div.style.minWidth = '220px';
+            div.style.padding = '10px 14px';
 
             div.innerHTML = `
-                <audio controls style="width: 100%; max-width: 260px; height: 32px;">
+                <div style="font-size:12px; color:#c300ff; margin-bottom:6px; font-weight:600;">
+                    🎙️ Voice note
+                </div>
+                <audio controls preload="auto" style="width:100%; max-width:260px; height:36px; border-radius:8px;">
                     <source src="${voiceUrl}" type="audio/mpeg">
                     Your browser does not support the audio element.
                 </audio>
@@ -668,13 +675,11 @@
             const msg = input.value.trim();
             if (!msg) return;
 
-            // Show instantly — never block the user
             addMessage(msg, 'sent');
             input.value = '';
 
             pendingMessages.push(msg);
 
-            // Reset "user is done" timer
             if (debounceTimer) clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
                 processMessageQueue();
@@ -688,7 +693,6 @@
             const messagesToSend = [...pendingMessages];
             pendingMessages = [];
 
-            // Combine so she "reads" everything they just sent
             const combinedMessage = messagesToSend.join('\n');
 
             // 1. Reading delay
@@ -714,23 +718,23 @@
                 const data = await res.json();
                 hideTyping();
 
-                // 3. Show each bubble with typing between them
+                // 3. Show each non-empty bubble
                 if (data.replies && Array.isArray(data.replies)) {
-                    for (let i = 0; i < data.replies.length; i++) {
-                        const bubble = data.replies[i];
-                        if (!bubble) continue;
+                    const cleanReplies = data.replies
+                        .map(b => (b || "").trim())
+                        .filter(b => b.length > 0);
 
+                    for (let i = 0; i < cleanReplies.length; i++) {
                         if (i > 0) {
                             showTyping();
                             await sleep(BETWEEN_BUBBLES_MS);
                             hideTyping();
                         }
-
-                        addMessage(bubble, 'received');
+                        addMessage(cleanReplies[i], 'received');
                     }
                 }
 
-                // Voice note
+                // Voice note (visible player)
                 if (data.voice_message && data.voice_message.voice_url) {
                     addVoiceMessageOnly(data.voice_message.voice_url);
                 } else if (data.voice_url) {
@@ -744,7 +748,6 @@
                 isProcessingQueue = false;
                 await updateUsageCounter();
 
-                // If more messages arrived while processing, handle them next
                 if (pendingMessages.length > 0) {
                     debounceTimer = setTimeout(() => processMessageQueue(), USER_DONE_MS);
                 }
@@ -850,7 +853,6 @@
                 chatWrapper.style.display = 'flex';
                 userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email || 'User'}`;
 
-                // Stable convo ID
                 if (currentUser && currentUser.id) {
                     convoId = `user_${currentUser.id}`;
                     localStorage.setItem('convo_id', convoId);

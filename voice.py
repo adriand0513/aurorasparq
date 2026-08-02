@@ -60,18 +60,17 @@ def generate_voice_note(text: str, tier: str = "premium", add_pause: bool = True
     """
     Generate a voice note using ElevenLabs.
     Returns the public URL if successful, otherwise None.
+    Decision of WHEN to call this lives in main.py — not here.
     """
     if not ELEVENLABS_API_KEY or not ELEVENLABS_VOICE_ID:
         print("ElevenLabs keys missing - skipping voice note")
         return None
 
-    if not should_generate_voice(tier):
+    if not text or not text.strip():
         return None
 
-    # Prepare TTS-optimized text
     tts_text = expand_abbreviations_for_tts(text)
 
-    # Add natural pauses for longer messages
     if add_pause and len(tts_text) > 60:
         tts_text = re.sub(r'([.!?])\s+', r'\1... ', tts_text)
 
@@ -82,7 +81,6 @@ def generate_voice_note(text: str, tier: str = "premium", add_pause: bool = True
         "Accept": "audio/mpeg"
     }
 
-    # Voice settings tuned for seductive/intimate feel
     payload = {
         "text": tts_text,
         "model_id": "eleven_multilingual_v2",
@@ -102,7 +100,6 @@ def generate_voice_note(text: str, tier: str = "premium", add_pause: bool = True
             response = requests.post(url, json=payload, headers=headers, timeout=40)
             response.raise_for_status()
 
-            # Save to persistent disk
             timestamp = int(time.time())
             rand_suffix = random.randint(1000, 9999)
             filename = f"vn_{timestamp}_{rand_suffix}.mp3"
@@ -112,7 +109,7 @@ def generate_voice_note(text: str, tier: str = "premium", add_pause: bool = True
                 f.write(response.content)
 
             print(f"Voice note saved: {filepath}")
-            return f"/audio/{filename}"   # Public URL route we'll create
+            return f"/audio/{filename}"
 
         except requests.exceptions.RequestException as e:
             print(f"ElevenLabs attempt {attempt+1} failed: {e}")

@@ -349,7 +349,6 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
     # ALWAYS use a stable convo_id so history matches across tabs/sessions
     convo_id = f"user_{user['id']}"
-
     logger.info(f"📥 /api/reply | user={user.get('id')} | tier={user.get('subscription_tier')} | convo={convo_id}")
 
     tier = user.get("subscription_tier", "free").lower()
@@ -460,19 +459,24 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             logger.error(f"Generation error: {e}")
             bubbles = ["Hey... give me a second to think about that."]
 
+        # Clean empty bubbles
+        bubbles = [b.strip() for b in bubbles if b and b.strip()]
         if not bubbles:
             bubbles = ["Hmm... give me a second."]
 
         # Save assistant replies (FRONTEND ONLY — never sent to LLM)
         for bubble in bubbles:
-            if bubble:  # skip empty
-                save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user.get("id"))
+            save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user.get("id"))
 
-        # Voice notes (Premium only) — 80% chance + always if user asks
+        # ============================================================
+        # VOICE NOTES (Premium)
+        # Separate spoken script — NOT a read-aloud of the text message
+        # ============================================================
         voice_url = None
         if is_premium and bubbles:
             try:
-                final_text = " ".join([b for b in bubbles if b])
+                final_text = " ".join(bubbles).strip()
+
                 user_asked_for_voice = any(
                     phrase in user_message.lower()
                     for phrase in [
@@ -485,11 +489,52 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                     len(final_text) > 15 and random.random() < 0.80
                 )
 
-                if should_send_voice:
-                    text_for_voice = final_text[:1400]
+                if should_send_voice and final_text:
+                    # Create a DIFFERENT short script for the voice note
+                    voice_script_prompt = f"""Rewrite the message below as a short natural voice note.
+                    Rules:
+                    - 1 to 2 sentences max
+                    - Completely different wording from the original
+                    - Sound spoken, warm, and feminine
+                    - Do not read the original message out loud
+                    - No stage directions, no quotes, no labels
+                    
+                    Original message:
+                    {final_text[:600]}
+                    
+                    Spoken voice note:"""
+
+                    voice_script = final_text[:200]  # safe fallback
+                    try:
+                        voice_resp = requests.post(
+                            XAI_API_BASE,
+                            headers={
+                                "Authorization": f"Bearer {XAI_API_KEY}",
+                                "Content-Type": "application/json"
+                            },
+                            json={
+                                "model": XAI_MODEL,
+                                "messages": [{"role": "user", "content": voice_script_prompt}],
+                                "temperature": 0.85,
+                                "max_tokens": 120
+                            },
+                            timeout=20
+                        )
+                        if voice_resp.status_code == 200:
+                            rewritten = voice_resp.json()["choices"][0]["message"]["content"].strip()
+                            rewritten = rewritten.replace("Spoken voice note:", "").replace("Voice note:", "").strip()
+                            if 15 < len(rewritten) < 400:
+                                voice_script = rewritten
+                    except Exception as e:
+                        logger.warning(f"Voice script rewrite failed, using fallback: {e}")
+
+                    text_for_voice = voice_script[:1400]
                     voice_url = generate_voice_note(text_for_voice, tier=tier)
+
                     if voice_url:
-                        logger.info(f"🎙️ Voice note generated: {voice_url}")
+                        logger.info(f"🎙️ Voice note generated (separate script): {voice_url}")
+                        logger.info(f"🎙️ Voice script: {text_for_voice[:120]}...")
+
             except Exception as e:
                 logger.error(f"Voice generation error: {e}")
 
@@ -503,7 +548,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         return response
 
     except Exception as e:
-        logger.error(f"💥 Unexpected error in /api/reply: {e}", exp_info=True)
+        logger.error(f"💥 Unexpected error in /api/reply: {e}", exc_info=True)
         return {"replies": []}
         
 

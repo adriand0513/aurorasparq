@@ -458,6 +458,15 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             logger.info(f"💾 Saved user message | convo={convo_id}")
 
         # ============================================================
+        # EXACT NYC TIME
+        # ============================================================
+        nyc_now = datetime.now(ZoneInfo("America/New_York"))
+        try:
+            nyc_time_str = nyc_now.strftime("%-I:%M %p").lstrip("0")
+        except ValueError:
+            nyc_time_str = nyc_now.strftime("%I:%M %p").lstrip("0")
+
+        # ============================================================
         # SECOND BRAIN → Premium emotional tone (soft open bias early)
         # ============================================================
         emotional_context = ""
@@ -486,7 +495,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         personality = get_system_prompt(
             user_name=user.get("full_name"),
-            nyc_time="",
+            nyc_time=nyc_time_str,
             tier=tier,
             emotional_context=emotional_context,
             character_slice=character_context
@@ -527,17 +536,13 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             logger.error(f"Generation error: {e}")
             bubbles = ["Hey... give me a second to think about that."]
 
-        # Clean empty bubbles
         bubbles = [b.strip() for b in bubbles if b and b.strip()]
         if not bubbles:
             bubbles = ["Hmm... give me a second."]
 
-        # Save assistant text replies (only if we are not sending voice-only)
-        # We'll decide voice-only below first, then save accordingly.
-
         # ============================================================
         # VOICE NOTES (Premium) — STANDALONE ONLY
-        # No text bubbles when a voice note is sent
+        # More frequent (0.55)
         # ============================================================
         voice_url = None
         send_voice_only = False
@@ -552,22 +557,21 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                     ]
                 )
 
-                # Lower rate so voice stays special (raise later if you want)
-                should_send_voice = user_asked_for_voice or (random.random() < 0.35)
+                should_send_voice = user_asked_for_voice or (random.random() < 0.55)
 
                 if should_send_voice:
                     voice_only_prompt = f"""You are Isabella. Write a short natural voice note to him.
-Rules:
-- 1 to 2 spoken sentences only
-- Warm, feminine, present
-- Do not introduce yourself with age/city unless he asked
-- No stage directions, no quotes, no labels
-- Sound like something said out loud, not a text message
-
-His message:
-{user_message[:300]}
-
-Spoken voice note:"""
+                    Rules:
+                    - 1 to 2 spoken sentences only
+                    - Warm, feminine, present
+                    - Do not introduce yourself with age/city unless he asked
+                    - No stage directions, no quotes, no labels
+                    - Sound like something said out loud, not a text message
+                    
+                    His message:
+                    {user_message[:300]}
+                    
+                    Spoken voice note:"""
 
                     voice_script = "Hey... I just wanted to say that."
                     try:
@@ -599,7 +603,6 @@ Spoken voice note:"""
                         logger.info(f"🎙️ Standalone voice note: {voice_url}")
                         logger.info(f"🎙️ Script: {voice_script[:120]}...")
 
-                        # Save a marker so history knows a voice note was sent
                         save_message(
                             convo_id,
                             {"role": "assistant", "content": f"[voice note] {voice_script}"},
@@ -622,6 +625,31 @@ Spoken voice note:"""
             }
         else:
             response = {"replies": bubbles}
+
+        # ==================== SECOND BRAIN REFLECTION ====================
+        try:
+            history = get_history(convo_id, limit=200)
+            message_count = len(history)
+            reflection_every = 10 if is_premium else 14
+
+            if message_count > 0 and message_count % reflection_every == 0:
+                logger.info(f"🧠 [Reflection Engine] TRIGGERED | convo={convo_id} | msgs={message_count}")
+                recent_context = "\n".join(
+                    f"{m['role']}: {m['content']}" for m in history[-25:]
+                )
+                reflection_result = run_reflection(
+                    convo_id=convo_id,
+                    user_id=user.get("id"),
+                    tier=tier,
+                    recent_messages=recent_context,
+                    trigger_type="regular_interval"
+                )
+                logger.info(
+                    f"✅ [Reflection] changes={reflection_result.get('emotional_changes')} "
+                    f"level_change={reflection_result.get('level_change')}"
+                )
+        except Exception as e:
+            logger.error(f"Reflection Engine error: {e}", exc_info=True)
 
         duration_ms = int((time.time() - start_time) * 1000)
         log_event("response_generated", convo_id, user_id=user.get("id"), duration_ms=duration_ms)

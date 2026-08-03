@@ -218,6 +218,68 @@ def get_emotional_context_for_prompt(convo_id: str) -> str:
         )
 
 
+def build_premium_emotional_context(state, message_count: int = 0) -> str:
+    """
+    Second Brain → Premium tone.
+    Biased toward soft open early so Premium feels rewarding.
+    Quiet only after clear negative pattern.
+    """
+    if not state or not getattr(state, "emotional_state", None):
+        return (
+            "Tone: soft_open\n"
+            "You feel glad he's here. Be warm, present, and easy to talk to. "
+            "Show quiet interest without overdoing it."
+        )
+
+    es = state.emotional_state
+    affection = getattr(es, "affection", 5)
+    trust = getattr(es, "trust", 5)
+    disappointment = getattr(es, "disappointment", 0)
+    safety = getattr(es, "emotional_safety", 5)
+    level = getattr(state, "relationship_level", 1) or 1
+
+    early = level <= 3 or message_count < 40
+
+    # Quiet only when clearly earned
+    if disappointment >= 7 and trust <= 3:
+        tone = "quiet"
+        guidance = (
+            "You feel more reserved because of how he's been showing up. "
+            "Stay soft and polite, but give less. Do not punish or go cold. "
+            "Shorter replies. No forced enthusiasm."
+        )
+    # Early Premium = hook with soft open
+    elif early and disappointment <= 5:
+        tone = "soft_open"
+        guidance = (
+            "You're in an early connection with him and feel open. "
+            "Be warm, present, and easy to talk to. "
+            "Make him feel quietly wanted through attention and softness — not big declarations. "
+            "Stay with what he shares. Keep it natural and good."
+        )
+    # Ongoing soft open
+    elif trust >= 5 and affection >= 5 and disappointment <= 4:
+        tone = "soft_open"
+        guidance = (
+            "You feel more open and glad he's here. "
+            "Show it through attention and softness, not big declarations. "
+            "Be a little more personal. Linger on what he shares when it feels right."
+        )
+    else:
+        tone = "neutral_warm"
+        guidance = (
+            "You feel comfortable and present. "
+            "Be warm and natural. Don't force intensity. Stay easy to talk to."
+        )
+
+    return (
+        f"Tone: {tone}\n"
+        f"Affection: {affection}/10 | Trust: {trust}/10 | "
+        f"Disappointment: {disappointment}/10 | Safety: {safety}/10\n"
+        f"Guidance: {guidance}"
+    )
+    
+
 def cosine_similarity(vec1, vec2):
     if not vec1 or not vec2:
         return 0.0

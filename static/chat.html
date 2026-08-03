@@ -288,13 +288,15 @@
         let isSending = false;
         let pendingMessages = [];
         let debounceTimer = null;
+        let readingTimer = null;
         let isProcessingQueue = false;
+        let phase = 'idle'; // idle | waiting | reading | processing
 
         // Timing
-        const READING_DELAY_MS = 5000;
-        const TYPING_DELAY_MS = 1800;
-        const BETWEEN_BUBBLES_MS = 1200;
-        const USER_DONE_MS = 1800;
+        const READING_DELAY_MS = 5000;      // "she's reading"
+        const TYPING_DELAY_MS = 1800;       // typing before first bubble
+        const BETWEEN_BUBBLES_MS = 1200;    // pause between reply bubbles
+        const USER_DONE_MS = 1800;          // silence before reading starts
 
         // ==================== AVAILABILITY ====================
         function isIsabellaAvailable() {
@@ -671,34 +673,66 @@
         }
 
         // ==================== MESSAGE QUEUE + DELAYS ====================
+        function cancelReading() {
+            if (readingTimer) {
+                clearTimeout(readingTimer);
+                readingTimer = null;
+            }
+            if (phase === 'reading') {
+                phase = 'waiting';
+            }
+        }
+
         function sendMessage() {
             const msg = input.value.trim();
             if (!msg) return;
+            if (phase === 'processing') return; // don't interrupt while she's replying
+
+            // New send always cancels reading
+            cancelReading();
 
             addMessage(msg, 'sent');
             input.value = '';
-
             pendingMessages.push(msg);
+
+            phase = 'waiting';
 
             if (debounceTimer) clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
-                processMessageQueue();
+                startReadingPhase();
             }, USER_DONE_MS);
+        }
+
+        function startReadingPhase() {
+            if (pendingMessages.length === 0) {
+                phase = 'idle';
+                return;
+            }
+            if (phase === 'processing') return;
+
+            phase = 'reading';
+
+            readingTimer = setTimeout(() => {
+                readingTimer = null;
+                // Only proceed if still in reading and queue still has messages
+                if (phase === 'reading' && pendingMessages.length > 0) {
+                    processMessageQueue();
+                }
+            }, READING_DELAY_MS);
         }
 
         async function processMessageQueue() {
             if (isProcessingQueue || pendingMessages.length === 0) return;
+
             isProcessingQueue = true;
+            phase = 'processing';
 
             const messagesToSend = [...pendingMessages];
             pendingMessages = [];
 
             const combinedMessage = messagesToSend.join('\n');
 
-            // 1. Reading delay
-            await sleep(READING_DELAY_MS);
-
-            // 2. Typing indicator
+            // Typing illusion (reading already finished)
             showTyping();
             await sleep(TYPING_DELAY_MS);
 
@@ -718,7 +752,6 @@
                 const data = await res.json();
                 hideTyping();
 
-                // 3. Show each non-empty bubble
                 if (data.replies && Array.isArray(data.replies)) {
                     const cleanReplies = data.replies
                         .map(b => (b || "").trim())
@@ -734,7 +767,6 @@
                     }
                 }
 
-                // Voice note (visible player)
                 if (data.voice_message && data.voice_message.voice_url) {
                     addVoiceMessageOnly(data.voice_message.voice_url);
                 } else if (data.voice_url) {
@@ -746,10 +778,14 @@
                 hideTyping();
             } finally {
                 isProcessingQueue = false;
+                phase = 'idle';
                 await updateUsageCounter();
 
+                // Messages that arrived while processing
                 if (pendingMessages.length > 0) {
-                    debounceTimer = setTimeout(() => processMessageQueue(), USER_DONE_MS);
+                    phase = 'waiting';
+                    if (debounceTimer) clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(() => startReadingPhase(), USER_DONE_MS);
                 }
             }
         }
@@ -868,13 +904,23 @@
 
         // ==================== EVENT LISTENERS ====================
         if (input) {
+            // Enter to send
             input.addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     sendMessage();
                 }
             });
+
+            // Typing during reading delay → cancel reading
+            input.addEventListener('input', function() {
+                if (phase === 'reading') {
+                    cancelReading();
+                    phase = 'waiting';
+                }
+            });
         }
+
         if (sendBtn) {
             sendBtn.addEventListener('click', sendMessage);
         }

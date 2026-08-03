@@ -457,21 +457,27 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
             logger.info(f"💾 Saved user message | convo={convo_id}")
 
-        # Light emotional context
+        # ============================================================
+        # SECOND BRAIN → Premium emotional tone (soft open bias early)
+        # ============================================================
         emotional_context = ""
         relationship_level = 1
         try:
             state = load_relationship_state(convo_id)
+            history_for_count = get_history(convo_id, limit=100)
+            message_count = len(history_for_count) if history_for_count else 0
+
             if state:
                 relationship_level = getattr(state, "relationship_level", 1) or 1
-                if state.emotional_state:
-                    es = state.emotional_state
-                    emotional_context = (
-                        f"Affection: {getattr(es, 'affection', 5)}/10 | "
-                        f"Trust: {getattr(es, 'trust', 5)}/10"
-                    )
-        except Exception:
-            pass
+                emotional_context = build_premium_emotional_context(state, message_count)
+            else:
+                emotional_context = build_premium_emotional_context(None, message_count)
+        except Exception as e:
+            logger.warning(f"Emotional context error: {e}")
+            emotional_context = (
+                "Tone: soft_open\n"
+                "You feel glad he's here. Be warm, present, and easy to talk to."
+            )
 
         character_context = get_character_context(
             user_message=user_message,
@@ -526,19 +532,18 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         if not bubbles:
             bubbles = ["Hmm... give me a second."]
 
-        # Save assistant replies (FRONTEND ONLY — never sent to LLM)
-        for bubble in bubbles:
-            save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user.get("id"))
+        # Save assistant text replies (only if we are not sending voice-only)
+        # We'll decide voice-only below first, then save accordingly.
 
         # ============================================================
-        # VOICE NOTES (Premium)
-        # Separate spoken script — NOT a read-aloud of the text message
+        # VOICE NOTES (Premium) — STANDALONE ONLY
+        # No text bubbles when a voice note is sent
         # ============================================================
         voice_url = None
-        if is_premium and bubbles:
-            try:
-                final_text = " ".join(bubbles).strip()
+        send_voice_only = False
 
+        if is_premium:
+            try:
                 user_asked_for_voice = any(
                     phrase in user_message.lower()
                     for phrase in [
@@ -547,26 +552,24 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                     ]
                 )
 
-                should_send_voice = user_asked_for_voice or (
-                    len(final_text) > 15 and random.random() < 0.80
-                )
+                # Lower rate so voice stays special (raise later if you want)
+                should_send_voice = user_asked_for_voice or (random.random() < 0.35)
 
-                if should_send_voice and final_text:
-                    # Create a DIFFERENT short script for the voice note
-                    voice_script_prompt = f"""Rewrite the message below as a short natural voice note.
-                    Rules:
-                    - 1 to 2 sentences max
-                    - Completely different wording from the original
-                    - Sound spoken, warm, and feminine
-                    - Do not read the original message out loud
-                    - No stage directions, no quotes, no labels
-                    
-                    Original message:
-                    {final_text[:600]}
-                    
-                    Spoken voice note:"""
+                if should_send_voice:
+                    voice_only_prompt = f"""You are Isabella. Write a short natural voice note to him.
+Rules:
+- 1 to 2 spoken sentences only
+- Warm, feminine, present
+- Do not introduce yourself with age/city unless he asked
+- No stage directions, no quotes, no labels
+- Sound like something said out loud, not a text message
 
-                    voice_script = final_text[:200]  # safe fallback
+His message:
+{user_message[:300]}
+
+Spoken voice note:"""
+
+                    voice_script = "Hey... I just wanted to say that."
                     try:
                         voice_resp = requests.post(
                             XAI_API_BASE,
@@ -576,33 +579,49 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                             },
                             json={
                                 "model": XAI_MODEL,
-                                "messages": [{"role": "user", "content": voice_script_prompt}],
-                                "temperature": 0.85,
-                                "max_tokens": 120
+                                "messages": [{"role": "user", "content": voice_only_prompt}],
+                                "temperature": 0.9,
+                                "max_tokens": 100
                             },
                             timeout=20
                         )
                         if voice_resp.status_code == 200:
                             rewritten = voice_resp.json()["choices"][0]["message"]["content"].strip()
                             rewritten = rewritten.replace("Spoken voice note:", "").replace("Voice note:", "").strip()
-                            if 15 < len(rewritten) < 400:
+                            if 10 < len(rewritten) < 350:
                                 voice_script = rewritten
                     except Exception as e:
-                        logger.warning(f"Voice script rewrite failed, using fallback: {e}")
+                        logger.warning(f"Voice-only script failed: {e}")
 
-                    text_for_voice = voice_script[:1400]
-                    voice_url = generate_voice_note(text_for_voice, tier=tier)
-
+                    voice_url = generate_voice_note(voice_script[:1400], tier=tier)
                     if voice_url:
-                        logger.info(f"🎙️ Voice note generated (separate script): {voice_url}")
-                        logger.info(f"🎙️ Voice script: {text_for_voice[:120]}...")
+                        send_voice_only = True
+                        logger.info(f"🎙️ Standalone voice note: {voice_url}")
+                        logger.info(f"🎙️ Script: {voice_script[:120]}...")
+
+                        # Save a marker so history knows a voice note was sent
+                        save_message(
+                            convo_id,
+                            {"role": "assistant", "content": f"[voice note] {voice_script}"},
+                            user_id=user.get("id")
+                        )
 
             except Exception as e:
                 logger.error(f"Voice generation error: {e}")
 
-        response = {"replies": bubbles}
-        if voice_url:
-            response["voice_message"] = {"voice_url": voice_url}
+        # Save text bubbles only when NOT sending voice-only
+        if not send_voice_only:
+            for bubble in bubbles:
+                save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user.get("id"))
+
+        # Response
+        if send_voice_only and voice_url:
+            response = {
+                "replies": [],
+                "voice_message": {"voice_url": voice_url}
+            }
+        else:
+            response = {"replies": bubbles}
 
         duration_ms = int((time.time() - start_time) * 1000)
         log_event("response_generated", convo_id, user_id=user.get("id"), duration_ms=duration_ms)

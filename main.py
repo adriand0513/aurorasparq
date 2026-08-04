@@ -15,11 +15,13 @@ import json
 import sys
 import random
 import stripe
+
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Body, WebSocket, WebSocketDisconnect, Depends, status
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordRequestForm
+
 import uvicorn
 import asyncio
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -65,6 +67,7 @@ from aurorasparq_brain.prompts.personality import get_system_prompt
 from aurorasparq_brain.prompts.hard_rules import get_hard_rules
 from aurorasparq_brain.prompts.character_context import get_character_context
 from memory import get_history, save_message
+from brain.memory.facts import get_facts_for_prompt, extract_facts_from_exchange
 
 # ==================== PERMANENT GLOBAL FIX ====================
 class DateTimeJSONResponse(JSONResponse):
@@ -399,17 +402,27 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             relationship_level=relationship_level
         )
 
+        # ============================================================
+        # FACT MEMORY (retrieve only — not full chat history)
+        # ============================================================
+        known_facts = ""
+        try:
+            known_facts = get_facts_for_prompt(convo_id, limit=10)
+        except Exception as e:
+            logger.warning(f"Fact retrieval error: {e}")
+
         personality = get_system_prompt(
             user_name=user.get("full_name"),
             nyc_time=nyc_time_str,
             tier=tier,
             emotional_context=emotional_context,
-            character_slice=character_context
+            character_slice=character_context,
+            known_facts=known_facts
         )
 
         hard_rules = get_hard_rules()
 
-        # Time is stated twice on purpose so the model cannot ignore it
+        # Time stated twice on purpose so the model cannot ignore it
         system_prompt = (
             f"{personality}\n\n"
             f"Current New York time (use this exact value if asked): {nyc_time_str}\n\n"
@@ -475,6 +488,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                     - 1 to 2 spoken sentences only
                     - Warm, feminine, present
                     - Do not introduce yourself with age/city unless he asked
+                    - No stage directions, no quotes, no labels
                     - Sound like something said out loud, not a text message
                     
                     His message:
@@ -532,6 +546,15 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         else:
             response = {"replies": bubbles}
 
+        # ==================== FACT MEMORY (store only) ====================
+        try:
+            if not send_voice_only:
+                assistant_text = " ".join(bubbles) if bubbles else ""
+                if user_message or assistant_text:
+                    extract_facts_from_exchange(convo_id, user_message, assistant_text)
+        except Exception as e:
+            logger.warning(f"Fact extraction skipped: {e}")
+
         # ==================== SECOND BRAIN REFLECTION ====================
         try:
             history = get_history(convo_id, limit=200)
@@ -565,7 +588,6 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     except Exception as e:
         logger.error(f"💥 Unexpected error in /api/reply: {e}", exc_info=True)
         return {"replies": []}
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

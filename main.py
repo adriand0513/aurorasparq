@@ -1,5 +1,4 @@
 # main.py - Isabella Chatbot (Premium Only Version)
-
 import os
 import re
 import time
@@ -32,7 +31,6 @@ from config import OPENAI_API_KEY, DATABASE_URL
 # ============================================================
 from sentence_transformers import SentenceTransformer
 
-# Lazy-loaded embedding model (prevents Render startup timeout)
 _embedding_model = None
 
 def get_embedding_model():
@@ -66,14 +64,6 @@ from brain.relationship.state import load_relationship_state
 from aurorasparq_brain.prompts.personality import get_system_prompt
 from aurorasparq_brain.prompts.hard_rules import get_hard_rules
 from aurorasparq_brain.prompts.character_context import get_character_context
-
-# from brain.memory import (
-#     get_relevant_facts,
-#     extract_and_save_facts,
-#     get_memory_context_for_prompt,
-#     generate_and_save_summary,
-# )
-
 from memory import get_history, save_message
 
 # ==================== PERMANENT GLOBAL FIX ====================
@@ -111,6 +101,7 @@ AUDIO_DIR = Path("static/audio_notes")
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 scheduler = BackgroundScheduler()
+
 app = FastAPI(title="Isabella Chatbot", default_response_class=DateTimeJSONResponse)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(payment_router)
@@ -145,79 +136,6 @@ def is_rate_limited(convo_id: str, max_per_minute: int = 20) -> bool:
 # ============================================================
 # === SECOND BRAIN CONTEXT
 # ============================================================
-def get_emotional_context_for_prompt(convo_id: str) -> str:
-    """
-    Light, high-signal emotional context.
-    Influences Isabella's mood and energy without over-constraining her.
-    """
-    try:
-        state = load_relationship_state(convo_id)
-        if not state or not state.emotional_state:
-            return (
-                "You are soft, warm, and naturally feminine. "
-                "Your energy is gentle and inviting."
-            )
-
-        es = state.emotional_state
-        level = state.relationship_level
-        phase = state.phase.value if hasattr(state.phase, "value") else str(state.phase)
-
-        trust = getattr(es, "trust", 5)
-        affection = getattr(es, "affection", 5)
-        disappointment = getattr(es, "disappointment", 0)
-        sensual = getattr(es, "sensual_openness", 3)
-
-        # === Base feminine energy (always present) ===
-        context = (
-            "You are deeply feminine in the way you speak and carry yourself. "
-            "Your energy is soft, warm, and naturally inviting. "
-            "You express yourself with a gentle, womanly presence."
-        )
-
-        # === Emotional temperature (light + high-signal) ===
-        if disappointment >= 6:
-            context += (
-                " Right now you feel a little distant and less open. "
-                "Your warmth is quieter and more reserved."
-            )
-        elif trust >= 7 and affection >= 7:
-            context += (
-                " You feel a real softness toward him. "
-                "Your warmth comes through easily and you feel more open."
-            )
-        elif trust >= 5 and affection >= 5:
-            context += (
-                " You feel a quiet pull toward him and a growing fondness. "
-                "You’re warm, but still a little careful."
-            )
-        else:
-            context += (
-                " You’re still getting a feel for him. "
-                "Your energy is gentle and slightly reserved."
-            )
-
-        # === Sensual tone (subtle) ===
-        if sensual >= 6 and trust >= 6:
-            context += (
-                " There’s a soft, feminine undercurrent in how you relate to him."
-            )
-
-        # === Relationship phase (very light) ===
-        if level <= 2:
-            context += " This still feels new."
-        elif level >= 6:
-            context += " There’s a growing sense of closeness between you."
-
-        return context
-
-    except Exception as e:
-        logger.error(f"Error building emotional context: {e}")
-        return (
-            "You are soft, warm, and naturally feminine. "
-            "Your energy is gentle and inviting."
-        )
-
-
 def build_premium_emotional_context(state, message_count: int = 0) -> str:
     """
     Second Brain → Premium tone.
@@ -226,9 +144,9 @@ def build_premium_emotional_context(state, message_count: int = 0) -> str:
     """
     if not state or not getattr(state, "emotional_state", None):
         return (
-            "Tone: soft_open\n"
             "You feel glad he's here. Be warm, present, and easy to talk to. "
-            "Show quiet interest without overdoing it."
+            "Show quiet interest without overdoing it. Have your own energy — "
+            "don't just mirror him."
         )
 
     es = state.emotional_state
@@ -237,48 +155,33 @@ def build_premium_emotional_context(state, message_count: int = 0) -> str:
     disappointment = getattr(es, "disappointment", 0)
     safety = getattr(es, "emotional_safety", 5)
     level = getattr(state, "relationship_level", 1) or 1
-
     early = level <= 3 or message_count < 40
 
-    # Quiet only when clearly earned
     if disappointment >= 7 and trust <= 3:
-        tone = "quiet"
-        guidance = (
+        return (
             "You feel more reserved because of how he's been showing up. "
             "Stay soft and polite, but give less. Do not punish or go cold. "
             "Shorter replies. No forced enthusiasm."
         )
-    # Early Premium = hook with soft open
     elif early and disappointment <= 5:
-        tone = "soft_open"
-        guidance = (
+        return (
             "You're in an early connection with him and feel open. "
             "Be warm, present, and easy to talk to. "
             "Make him feel quietly wanted through attention and softness — not big declarations. "
-            "Stay with what he shares. Keep it natural and good."
+            "Have your own thoughts and energy. Don't just mirror him."
         )
-    # Ongoing soft open
     elif trust >= 5 and affection >= 5 and disappointment <= 4:
-        tone = "soft_open"
-        guidance = (
+        return (
             "You feel more open and glad he's here. "
             "Show it through attention and softness, not big declarations. "
-            "Be a little more personal. Linger on what he shares when it feels right."
+            "Be a little more personal. Share small pieces of your own life when it fits."
         )
     else:
-        tone = "neutral_warm"
-        guidance = (
+        return (
             "You feel comfortable and present. "
-            "Be warm and natural. Don't force intensity. Stay easy to talk to."
+            "Be warm and natural. Don't force intensity. Stay easy to talk to. "
+            "Have your own energy in the conversation."
         )
-
-    return (
-        f"Tone: {tone}\n"
-        f"Affection: {affection}/10 | Trust: {trust}/10 | "
-        f"Disappointment: {disappointment}/10 | Safety: {safety}/10\n"
-        f"Guidance: {guidance}"
-    )
-    
 
 def cosine_similarity(vec1, vec2):
     if not vec1 or not vec2:
@@ -290,16 +193,19 @@ def cosine_similarity(vec1, vec2):
     norm2 = np.linalg.norm(vec2)
     if norm1 == 0 or norm2 == 0:
         return 0.0
-    return dot_product / (norm1 * norm2)
+    return float(dot_product / (norm1 * norm2))
 
 def get_current_emotional_state(convo_id: str) -> str:
     try:
-        from brain.relationship.state import load_relationship_state
         state = load_relationship_state(convo_id)
         if state and state.emotional_state:
             es = state.emotional_state
-            return f"disappointment={getattr(es, 'disappointment', 0)}, trust={getattr(es, 'trust', 0)}, affection={getattr(es, 'affection', 0)}"
-    except:
+            return (
+                f"disappointment={getattr(es, 'disappointment', 0)}, "
+                f"trust={getattr(es, 'trust', 0)}, "
+                f"affection={getattr(es, 'affection', 0)}"
+            )
+    except Exception:
         pass
     return ""
 
@@ -314,7 +220,7 @@ async def home():
     except Exception as e:
         logger.error(f"Homepage error: {e}")
         return HTMLResponse("<h1>Server running but chat.html missing</h1>", 500)
-        
+
 # ── Auth Routes ─────────────────────────────────────
 @app.post("/auth/register")
 async def register(body: dict = Body(...)):
@@ -383,7 +289,7 @@ async def payment_success(session_id: str = None):
     try:
         with open("static/success.html", "r", encoding="utf-8") as f:
             return HTMLResponse(f.read())
-    except:
+    except Exception:
         return HTMLResponse("""
             <h1 style="text-align:center; margin-top:100px; color:#c300ff;">
                 Upgrade Successful!<br><br>
@@ -409,7 +315,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     start_time = time.time()
     user_message = body.get("message", "").strip()
 
-    # ALWAYS use a stable convo_id so history matches across tabs/sessions
+    # ALWAYS use a stable convo_id
     convo_id = f"user_{user['id']}"
     logger.info(f"📥 /api/reply | user={user.get('id')} | tier={user.get('subscription_tier')} | convo={convo_id}")
 
@@ -442,7 +348,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                 ]
             }
 
-    # Simple cooldown
+    # Cooldown
     now = time.time()
     if now - last_reply_time.get(convo_id, 0) < REPLY_COOLDOWN_SECONDS:
         return {"replies": []}
@@ -452,13 +358,13 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         return {"replies": []}
 
     try:
-        # Save user message (FRONTEND ONLY — never sent to LLM)
+        # Save user message (not sent to LLM)
         if user_message:
             save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
             logger.info(f"💾 Saved user message | convo={convo_id}")
 
         # ============================================================
-        # EXACT NYC TIME
+        # EXACT NYC TIME (locked)
         # ============================================================
         nyc_now = datetime.now(ZoneInfo("America/New_York"))
         try:
@@ -467,7 +373,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             nyc_time_str = nyc_now.strftime("%I:%M %p").lstrip("0")
 
         # ============================================================
-        # SECOND BRAIN → Premium emotional tone (soft open bias early)
+        # SECOND BRAIN → emotional context
         # ============================================================
         emotional_context = ""
         relationship_level = 1
@@ -484,8 +390,8 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         except Exception as e:
             logger.warning(f"Emotional context error: {e}")
             emotional_context = (
-                "Tone: soft_open\n"
-                "You feel glad he's here. Be warm, present, and easy to talk to."
+                "You feel glad he's here. Be warm, present, and easy to talk to. "
+                "Have your own energy — don't just mirror him."
             )
 
         character_context = get_character_context(
@@ -502,18 +408,22 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         )
 
         hard_rules = get_hard_rules()
-        system_prompt = f"{personality}\n\n{hard_rules}"
+
+        # Time is stated twice on purpose so the model cannot ignore it
+        system_prompt = (
+            f"{personality}\n\n"
+            f"Current New York time (use this exact value if asked): {nyc_time_str}\n\n"
+            f"{hard_rules}"
+        )
 
         # ============================================================
-        # CRITICAL: Only current message goes to the LLM
-        # No history is ever included here
+        # Only current message goes to the LLM (no history)
         # ============================================================
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message or "hi"}
         ]
 
-        # Generation
         try:
             resp = requests.post(
                 XAI_API_BASE,
@@ -542,7 +452,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         # ============================================================
         # VOICE NOTES (Premium) — STANDALONE ONLY
-        # More frequent (0.55)
+        # Frequency: 0.55
         # ============================================================
         voice_url = None
         send_voice_only = False
@@ -565,7 +475,6 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                     - 1 to 2 spoken sentences only
                     - Warm, feminine, present
                     - Do not introduce yourself with age/city unless he asked
-                    - No stage directions, no quotes, no labels
                     - Sound like something said out loud, not a text message
                     
                     His message:
@@ -602,22 +511,19 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                         send_voice_only = True
                         logger.info(f"🎙️ Standalone voice note: {voice_url}")
                         logger.info(f"🎙️ Script: {voice_script[:120]}...")
-
                         save_message(
                             convo_id,
                             {"role": "assistant", "content": f"[voice note] {voice_script}"},
                             user_id=user.get("id")
                         )
-
             except Exception as e:
                 logger.error(f"Voice generation error: {e}")
 
-        # Save text bubbles only when NOT sending voice-only
+        # Save text only when not voice-only
         if not send_voice_only:
             for bubble in bubbles:
                 save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user.get("id"))
 
-        # Response
         if send_voice_only and voice_url:
             response = {
                 "replies": [],
@@ -659,7 +565,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     except Exception as e:
         logger.error(f"💥 Unexpected error in /api/reply: {e}", exc_info=True)
         return {"replies": []}
-        
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

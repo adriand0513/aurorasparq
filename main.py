@@ -67,7 +67,11 @@ from aurorasparq_brain.prompts.personality import get_system_prompt
 from aurorasparq_brain.prompts.hard_rules import get_hard_rules
 from aurorasparq_brain.prompts.character_context import get_character_context
 from memory import get_history, save_message
-from brain.memory.facts import get_facts_for_prompt, extract_facts_from_exchange
+from brain.memory.facts import (
+    get_facts_for_prompt,
+    extract_facts_from_exchange,
+    get_or_set_sticky_activity,
+)
 
 # ==================== PERMANENT GLOBAL FIX ====================
 class DateTimeJSONResponse(JSONResponse):
@@ -407,7 +411,17 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         # ============================================================
         known_facts = ""
         try:
-            known_facts = get_facts_for_prompt(convo_id, limit=10)
+            known_facts = get_facts_for_prompt(convo_id, limit=12)
+
+            # Promote sticky activity if present
+            if known_facts and "STICKY_ACTIVITY:" in known_facts:
+                sticky_line = ""
+                for line in known_facts.splitlines():
+                    if "STICKY_ACTIVITY:" in line:
+                        sticky_line = line.replace("STICKY_ACTIVITY:", "").replace("-", "", 1).strip()
+                        break
+                if sticky_line:
+                    known_facts = f"- Current activity already established: {sticky_line}\n{known_facts}"
         except Exception as e:
             logger.warning(f"Fact retrieval error: {e}")
 
@@ -484,17 +498,17 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
                 if should_send_voice:
                     voice_only_prompt = f"""You are Isabella. Write a short natural voice note to him.
-                    Rules:
-                    - 1 to 2 spoken sentences only
-                    - Warm, feminine, present
-                    - Do not introduce yourself with age/city unless he asked
-                    - No stage directions, no quotes, no labels
-                    - Sound like something said out loud, not a text message
-                    
-                    His message:
-                    {user_message[:300]}
-                    
-                    Spoken voice note:"""
+Rules:
+- 1 to 2 spoken sentences only
+- Warm, feminine, present
+- Do not introduce yourself with age/city unless he asked
+- No stage directions, no quotes, no labels
+- Sound like something said out loud, not a text message
+
+His message:
+{user_message[:300]}
+
+Spoken voice note:"""
 
                     voice_script = "Hey... I just wanted to say that."
                     try:
@@ -546,14 +560,19 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         else:
             response = {"replies": bubbles}
 
-        # ==================== FACT MEMORY (store only) ====================
+        # ==================== FACT MEMORY + STICKY ACTIVITY ====================
         try:
             if not send_voice_only:
                 assistant_text = " ".join(bubbles) if bubbles else ""
+
                 if user_message or assistant_text:
                     extract_facts_from_exchange(convo_id, user_message, assistant_text)
+
+                sticky = get_or_set_sticky_activity(convo_id, assistant_text)
+                if sticky:
+                    logger.info(f"📌 Sticky activity: {sticky}")
         except Exception as e:
-            logger.warning(f"Fact extraction skipped: {e}")
+            logger.warning(f"Fact/sticky memory skipped: {e}")
 
         # ==================== SECOND BRAIN REFLECTION ====================
         try:
@@ -578,7 +597,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                     f"level_change={reflection_result.get('level_change')}"
                 )
         except Exception as e:
-            logger.error(f"Reflection Engine error: {e}", exc_info=True)
+            logger.error(f"Reflection Engine error: {e}", exp_info=True)
 
         duration_ms = int((time.time() - start_time) * 1000)
         log_event("response_generated", convo_id, user_id=user.get("id"), duration_ms=duration_ms)
@@ -588,6 +607,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     except Exception as e:
         logger.error(f"💥 Unexpected error in /api/reply: {e}", exc_info=True)
         return {"replies": []}
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

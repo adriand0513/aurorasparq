@@ -4,6 +4,7 @@ import logging
 from typing import List
 from db.schema import get_db_connection
 import os
+import re
 
 logger = logging.getLogger(__name__)
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -122,3 +123,59 @@ Facts:"""
                 add_fact(convo_id, line, importance=7)
     except Exception as e:
         logger.error(f"extract_facts_from_exchange error: {e}")
+
+
+ACTIVITY_PATTERNS = [
+    r"\b(?:i'm|i am|im)\s+(?:just\s+)?(.+?)(?:\.|$)",
+    r"\b(?:just\s+)?(?:got done|finished|been)\s+(.+?)(?:\.|$)",
+    r"\b(?:heading|going|on my way)\s+(.+?)(?:\.|$)",
+]
+
+def extract_her_activity(text: str) -> str:
+    """Pull a simple current-activity line from her reply, if any."""
+    if not text:
+        return ""
+    lowered = text.strip()
+    for pat in ACTIVITY_PATTERNS:
+        m = re.search(pat, lowered, flags=re.IGNORECASE)
+        if m:
+            activity = m.group(0).strip().rstrip(".")
+            # Normalize to third-person fact
+            activity = re.sub(r"^(i'm|i am|im)\s+", "She is ", activity, flags=re.IGNORECASE)
+            activity = re.sub(r"^i\s+", "She ", activity, flags=re.IGNORECASE)
+            if 8 <= len(activity) <= 120:
+                return activity
+    return ""
+
+
+def get_or_set_sticky_activity(convo_id: str, assistant_text: str) -> str:
+    """
+    Keep one current activity stable for the conversation.
+    - If a sticky activity exists, return it
+    - Else, if she just stated one, save + return it
+    """
+    existing = ""
+    try:
+        # Reuse key_facts as sticky store with a marker prefix
+        facts = get_facts_for_prompt(convo_id, limit=20)
+        for line in facts.splitlines():
+            clean = line.lstrip("- ").strip()
+            if clean.startswith("STICKY_ACTIVITY:"):
+                existing = clean.replace("STICKY_ACTIVITY:", "", 1).strip()
+                break
+    except Exception:
+        pass
+
+    if existing:
+        return existing
+
+    found = extract_her_activity(assistant_text or "")
+    if found:
+        try:
+            add_fact(convo_id, f"STICKY_ACTIVITY: {found}", importance=9)
+        except Exception:
+            pass
+        return found
+
+    return ""
+

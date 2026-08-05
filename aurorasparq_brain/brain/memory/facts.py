@@ -59,12 +59,7 @@ def add_fact(convo_id: str, fact: str, importance: int = 6, fact_type: str = "ge
         conn.close()
 
 
-# brain/memory/facts.py
-
 def get_facts_for_prompt(convo_id: str, limit: int = 12) -> str:
-    """
-    Pretty, typed known-facts block for the system prompt.
-    """
     conn = get_db_connection()
     if conn is None:
         return ""
@@ -72,58 +67,72 @@ def get_facts_for_prompt(convo_id: str, limit: int = 12) -> str:
     try:
         cur.execute(
             """
-            SELECT fact, importance
+            SELECT fact, importance, timestamp, last_recalled
             FROM key_facts
             WHERE convo_id = %s
-            ORDER BY importance DESC, last_recalled DESC NULLS LAST, timestamp DESC
-            LIMIT %s
+            ORDER BY timestamp DESC
+            LIMIT 40
             """,
-            (convo_id, limit),
+            (convo_id,),
         )
         rows = cur.fetchall()
         if not rows:
             return ""
 
-        buckets = {
-            "activity_now": [],
-            "today": [],
-            "later": [],
-            "past": [],
-            "people": [],
-            "preference": [],
-            "user": [],
-            "other": [],
-        }
+        def rank(row):
+            fact, importance, ts, last = row
+            f = (fact or "").lower()
+            score = importance or 5
+            # USER facts win
+            if f.startswith("[user]") or "user]" in f[:12]:
+                score += 8
+            # Durable identity
+            if f.startswith("[past]") or f.startswith("[people]"):
+                score += 4
+            # Activity is allowed but weaker
+            if f.startswith("[activity_now]") or "sticky" in f:
+                score -= 2
+            return score
 
-        for fact, _imp in rows:
+        ranked = sorted(rows, key=rank, reverse=True)[:limit]
+
+        buckets = {
+            "user": [], "past": [], "people": [], "preference": [],
+            "today": [], "later": [], "activity_now": [], "other": []
+        }
+        for fact, imp, *_ in ranked:
             text = fact or ""
             placed = False
-            for key in ["activity_now", "today", "later", "past", "people", "preference", "user"]:
-                prefix = f"[{key}]"
-                if text.startswith(prefix):
-                    buckets[key].append(text[len(prefix):].strip())
+            for key in buckets:
+                if key == "other":
+                    continue
+                if text.startswith(f"[{key}]"):
+                    buckets[key].append(text[len(key)+2:].strip())
                     placed = True
                     break
             if not placed:
                 buckets["other"].append(text)
 
+        # Order in prompt: HIM first
         sections = []
-        labels = [
-            ("activity_now", "Right now"),
-            ("today", "Today"),
-            ("later", "Later / plans"),
-            ("past", "Past"),
+        order = [
+            ("user", "About him"),
+            ("past", "Her past"),
             ("people", "People"),
             ("preference", "Preferences"),
-            ("user", "About him"),
+            ("today", "Today"),
+            ("later", "Plans"),
+            ("activity_now", "Right now"),
             ("other", "Other"),
         ]
-        for key, label in labels:
+        for key, label in order:
             items = buckets[key][:4]
             if not items:
                 continue
-            lines = "\n".join(f"- {x}" for x in items)
-            sections.append(f"{label}:\n{lines}")
+            # Cap activity to 1 line so it can't dominate
+            if key == "activity_now":
+                items = items[:1]
+            sections.append(label + ":\n" + "\n".join(f"- {x}" for x in items))
 
         return "\n".join(sections)
     except Exception as e:
@@ -184,22 +193,29 @@ def extract_facts_from_exchange(
 
     prompt = f"""Extract durable facts from this chat exchange for a companion AI named Isabella.
 
-Return ONLY valid JSON list. Each item:
-{{"type":"activity_now|today|later|past|people|preference|user","fact":"...","importance":1-10}}
-
-Rules:
-- Prefer Isabella's life claims (what she is doing, did today, plans, past, people, preferences).
-- Also capture strong user personal facts if clearly stated.
-- One clear fact per item. Short. No quotes dump.
-- If she states current activity, type=activity_now, importance 8.
-- If plans later/tonight/tomorrow, type=later, importance 7.
-- If past/family/hometown, type=past, importance 9.
-- If roommate/family names, type=people, importance 9.
-- Max 5 items. If nothing durable, return [].
-
-User: {user_message[:400]}
-Isabella: {assistant_reply[:600]}
-"""
+        Return ONLY valid JSON list. Each item:
+        {{"type":"activity_now|today|later|past|people|preference|user","fact":"...","importance":1-10}}
+        
+        Priority rules:
+        1) USER facts first (his job, goals, city, move, hobbies, personality, body, relationship intent).
+           - Clear user personal facts → type "user", importance 8–10
+        2) Isabella life facts second (her activity, past, people, plans).
+        3) Max 5 items. Short, concrete. No quotes dump.
+        4) If nothing durable → []
+        
+        Rules:
+        - Prefer Isabella's life claims (what she is doing, did today, plans, past, people, preferences).
+        - Also capture strong user personal facts if clearly stated.
+        - One clear fact per item. Short. No quotes dump.
+        - If she states current activity, type=activity_now, importance 8.
+        - If plans later/tonight/tomorrow, type=later, importance 7.
+        - If past/family/hometown, type=past, importance 9.
+        - If roommate/family names, type=people, importance 9.
+        - Max 5 items. If nothing durable, return [].
+        
+        User: {user_message[:400]}
+        Isabella: {assistant_reply[:600]}
+        """
 
     try:
         resp = requests.post(

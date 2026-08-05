@@ -204,13 +204,14 @@ def extract_facts_from_exchange(
         4) If nothing durable → []
         
         Rules:
-        - Prefer Isabella's life claims (what she is doing, did today, plans, past, people, preferences).
-        - Also capture strong user personal facts if clearly stated.
-        - One clear fact per item. Short. No quotes dump.
-        - If she states current activity, type=activity_now, importance 8.
-        - If plans later/tonight/tomorrow, type=later, importance 7.
-        - If past/family/hometown, type=past, importance 9.
-        - If roommate/family names, type=people, importance 9.
+        - USER facts first when clearly stated (city, move, goals, job, hobbies, body, relationship intent).
+          type=user, importance 8–10.
+        - Isabella life second (activity, past, people, plans, preferences).
+        - One clear fact per item. Short. No quote dumps.
+        - Current activity → type=activity_now, importance 5–7 (not higher than strong user facts).
+        - Plans later/tonight/tomorrow → type=later, importance 6–7.
+        - Past/family/hometown → type=past, importance 8–9.
+        - Roommate/family names → type=people, importance 8–9.
         - Max 5 items. If nothing durable, return [].
         
         User: {user_message[:400]}

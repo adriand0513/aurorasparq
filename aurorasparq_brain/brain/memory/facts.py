@@ -59,8 +59,12 @@ def add_fact(convo_id: str, fact: str, importance: int = 6, fact_type: str = "ge
         conn.close()
 
 
+# brain/memory/facts.py
+
 def get_facts_for_prompt(convo_id: str, limit: int = 12) -> str:
-    """Return compact known facts for the system prompt."""
+    """
+    Pretty, typed known-facts block for the system prompt.
+    """
     conn = get_db_connection()
     if conn is None:
         return ""
@@ -79,8 +83,49 @@ def get_facts_for_prompt(convo_id: str, limit: int = 12) -> str:
         rows = cur.fetchall()
         if not rows:
             return ""
-        lines = [f"- {r[0]}" for r in rows]
-        return "\n".join(lines)
+
+        buckets = {
+            "activity_now": [],
+            "today": [],
+            "later": [],
+            "past": [],
+            "people": [],
+            "preference": [],
+            "user": [],
+            "other": [],
+        }
+
+        for fact, _imp in rows:
+            text = fact or ""
+            placed = False
+            for key in ["activity_now", "today", "later", "past", "people", "preference", "user"]:
+                prefix = f"[{key}]"
+                if text.startswith(prefix):
+                    buckets[key].append(text[len(prefix):].strip())
+                    placed = True
+                    break
+            if not placed:
+                buckets["other"].append(text)
+
+        sections = []
+        labels = [
+            ("activity_now", "Right now"),
+            ("today", "Today"),
+            ("later", "Later / plans"),
+            ("past", "Past"),
+            ("people", "People"),
+            ("preference", "Preferences"),
+            ("user", "About him"),
+            ("other", "Other"),
+        ]
+        for key, label in labels:
+            items = buckets[key][:4]
+            if not items:
+                continue
+            lines = "\n".join(f"- {x}" for x in items)
+            sections.append(f"{label}:\n{lines}")
+
+        return "\n".join(sections)
     except Exception as e:
         logger.error(f"get_facts_for_prompt error: {e}")
         return ""

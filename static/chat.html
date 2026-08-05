@@ -1146,20 +1146,23 @@
                 alert("Payment error. Please try again.");
             }
         }
-        async function updateSubscriptionDisplay() {
+        function updateSubscriptionDisplay() {
             if (!currentUser) return;
+        
             const statusEl = document.getElementById('subscription-status');
             const tierEl = document.getElementById('current-tier');
-            const counterEl = document.getElementById('usage-counter');
+            const upgradeBtn = document.querySelector('.btn-upgrade'); // or #upgrade-btn if you add an id
+        
             const tier = (currentUser.subscription_tier || 'free').toLowerCase();
+        
             if (tier === 'premium') {
-                tierEl.textContent = "PREMIUM Plan";
-                if (counterEl) counterEl.style.display = 'none';
+                if (tierEl) tierEl.textContent = 'PREMIUM PLAN';
+                if (statusEl) statusEl.style.display = 'block';
+                if (upgradeBtn) upgradeBtn.style.display = 'none';
             } else {
-                tierEl.textContent = 'Free Plan';
-                if (counterEl) counterEl.style.display = 'block';
+                if (statusEl) statusEl.style.display = 'none';
+                if (upgradeBtn) upgradeBtn.style.display = 'inline-block'; // or '' / 'flex'
             }
-            statusEl.style.display = 'block';
         }
         async function updateUsageCounter() {
             const counterEl = document.getElementById('usage-counter');

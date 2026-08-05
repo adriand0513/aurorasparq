@@ -428,9 +428,6 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         personality = get_system_prompt(
             user_name=user.get("full_name"),
             nyc_time=nyc_time_str,
-            tier=tier,
-            emotional_context=emotional_context,
-            character_slice=character_context,
             known_facts=known_facts
         )
 

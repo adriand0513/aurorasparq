@@ -379,24 +379,37 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             nyc_time_str = nyc_now.strftime("%I:%M %p").lstrip("0")
 
         # ============================================================
-        # FACT MEMORY (retrieve only — no full chat history to LLM)
+        # FACT MEMORY — user facts ranked first
+        # Sticky activity only if he asked about her day
         # ============================================================
         known_facts = ""
         try:
-            known_facts = get_facts_for_prompt(convo_id, limit=12)
-            sticky = get_or_set_sticky_activity(convo_id)
-            if sticky and "activity_now" not in (known_facts or "").lower():
-                known_facts = f"Right now:\n- {sticky}\n{known_facts}".strip()
+            known_facts = get_facts_for_prompt(convo_id, limit=12) or ""
+
+            asks_about_her_day = any(
+                p in (user_message or "").lower()
+                for p in [
+                    "what are you doing", "what're you doing", "what are u doing",
+                    "you up to", "what you up to", "how was your day",
+                    "what did you do", "how was the shoot", "how's your day",
+                    "how is your day",
+                ]
+            )
+            if asks_about_her_day:
+                sticky = get_or_set_sticky_activity(convo_id)
+                if sticky and sticky.lower() not in known_facts.lower():
+                    known_facts = f"Right now:\n- {sticky}\n{known_facts}".strip()
         except Exception as e:
             logger.warning(f"Fact retrieval error: {e}")
+            known_facts = ""
 
         # ============================================================
-        # PROMPT (personality + hard rules + facts + time)
+        # PROMPT
         # ============================================================
         personality = get_system_prompt(
             user_name=user.get("full_name"),
             nyc_time=nyc_time_str,
-            known_facts=known_facts or ""
+            known_facts=known_facts
         )
         hard_rules = get_hard_rules()
 
@@ -441,13 +454,13 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             bubbles = ["Hmm... give me a second."]
 
         # ============================================================
-        # VOICE NOTES (Premium) — up to 2, MUST be new content
+        # VOICE NOTES (Premium) — up to 2, new content, URL persisted
         # ============================================================
         voice_notes = []
         if is_premium:
             try:
                 user_asked_for_voice = any(
-                    phrase in user_message.lower()
+                    phrase in (user_message or "").lower()
                     for phrase in [
                         "voice note", "voice message", "send a voice",
                         "voice memo", "can you send a voice", "send me a voice"
@@ -467,27 +480,27 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
                         voice_only_prompt = f"""You are Isabella sending a voice note in a text chat.
 
-                    Write ONLY the spoken words for voice note #{i + 1} of {n_voices}.
-                    
-                    Hard rules:
-                    - This is NOT a reread or paraphrase of her text reply.
-                    - This is NOT a reread of any previous voice note this turn.
-                    - Add a NEW beat that moves the conversation forward
-                      (a small extra thought, feeling, question, or what she's about to do).
-                    - 1–5 spoken sentences max.
-                    - Warm, feminine, natural out-loud speech.
-                    - No quotes, labels, stage directions, or "voice note:".
-                    
-                    His message:
-                    {user_message[:300]}
-                    
-                    Her text reply this turn (do NOT repeat or rephrase this):
-                    {assistant_text[:400]}
-                    
-                    Already used voice scripts this turn (do NOT repeat or rephrase):
-                    {avoid_block if avoid_block else "(none)"}
-                    
-                    New spoken voice note:"""
+Write ONLY the spoken words for voice note #{i + 1} of {n_voices}.
+
+Hard rules:
+- This is NOT a reread or paraphrase of her text reply.
+- This is NOT a reread of any previous voice note this turn.
+- Add a NEW beat that moves the conversation forward
+  (a small extra thought, feeling, question, or what she's about to do).
+- 1–2 short spoken sentences max.
+- Warm, feminine, natural out-loud speech.
+- No quotes, labels, stage directions, or "voice note:".
+
+His message:
+{(user_message or '')[:300]}
+
+Her text reply this turn (do NOT repeat or rephrase this):
+{assistant_text[:400]}
+
+Already used voice scripts this turn (do NOT repeat or rephrase):
+{avoid_block if avoid_block else "(none)"}
+
+New spoken voice note:"""
 
                         voice_script = ""
                         try:
@@ -520,12 +533,15 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                         except Exception as e:
                             logger.warning(f"Voice script failed: {e}")
 
-                        # Skip weak / too-similar scripts
                         if not voice_script:
                             continue
 
+                        # Skip if too similar to text / prior scripts
                         blob = (assistant_text + " " + " ".join(used_scripts)).lower()
-                        overlap = sum(1 for w in voice_script.lower().split() if len(w) > 3 and w in blob)
+                        overlap = sum(
+                            1 for w in voice_script.lower().split()
+                            if len(w) > 3 and w in blob
+                        )
                         if overlap >= max(4, len(voice_script.split()) // 2):
                             logger.info("🎙️ Skipped voice script (too similar)")
                             continue
@@ -535,6 +551,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                             voice_notes.append(url)
                             used_scripts.append(voice_script)
                             logger.info(f"🎙️ Voice note {i + 1}: {voice_script[:100]}")
+                            # Persist URL so refresh keeps the player
                             save_message(
                                 convo_id,
                                 {
@@ -550,20 +567,24 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         for bubble in bubbles:
             save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user.get("id"))
 
-        # Response shape: text + optional multi voice
+        # Response: text + optional multi voice
         response = {"replies": bubbles}
         if voice_notes:
             response["voice_notes"] = voice_notes
-            response["voice_message"] = {"voice_url": voice_notes[0]}  # backward compatible
+            response["voice_message"] = {"voice_url": voice_notes[0]}
 
         # ============================================================
-        # FACT MEMORY + STICKY ACTIVITY
+        # FACT MEMORY + STICKY UPDATE (after reply)
         # ============================================================
         try:
             assistant_text = " ".join(bubbles) if bubbles else ""
             if user_message or assistant_text:
                 extract_facts_from_exchange(convo_id, user_message, assistant_text)
-            sticky = get_or_set_sticky_activity(convo_id, assistant_text if assistant_text else None)
+            # Keep sticky in DB for consistency; prompt only uses it when asked
+            sticky = get_or_set_sticky_activity(
+                convo_id,
+                assistant_text if assistant_text else None
+            )
             if sticky:
                 logger.info(f"📌 Sticky activity: {sticky}")
         except Exception as e:

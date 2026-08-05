@@ -321,7 +321,6 @@ async def get_audio(filename: str):
 async def generate_reply(body: dict = Body(...), user: dict = Depends(get_current_user)):
     start_time = time.time()
     user_message = body.get("message", "").strip()
-
     # ALWAYS use a stable convo_id
     convo_id = f"user_{user['id']}"
     logger.info(f"📥 /api/reply | user={user.get('id')} | tier={user.get('subscription_tier')} | convo={convo_id}")
@@ -365,13 +364,13 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         return {"replies": []}
 
     try:
-        # Save user message (not sent to LLM)
+        # Save user message
         if user_message:
             save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
             logger.info(f"💾 Saved user message | convo={convo_id}")
 
         # ============================================================
-        # EXACT NYC TIME (locked)
+        # EXACT NYC TIME
         # ============================================================
         nyc_now = datetime.now(ZoneInfo("America/New_York"))
         try:
@@ -380,74 +379,41 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             nyc_time_str = nyc_now.strftime("%I:%M %p").lstrip("0")
 
         # ============================================================
-        # SECOND BRAIN → emotional context
-        # ============================================================
-        emotional_context = ""
-        relationship_level = 1
-        try:
-            state = load_relationship_state(convo_id)
-            history_for_count = get_history(convo_id, limit=100)
-            message_count = len(history_for_count) if history_for_count else 0
-
-            if state:
-                relationship_level = getattr(state, "relationship_level", 1) or 1
-                emotional_context = build_premium_emotional_context(state, message_count)
-            else:
-                emotional_context = build_premium_emotional_context(None, message_count)
-        except Exception as e:
-            logger.warning(f"Emotional context error: {e}")
-            emotional_context = (
-                "You feel glad he's here. Be warm, present, and easy to talk to. "
-                "Have your own energy — don't just mirror him."
-            )
-
-        character_context = get_character_context(
-            user_message=user_message,
-            relationship_level=relationship_level
-        )
-
-        # ============================================================
-        # FACT MEMORY (retrieve only — not full chat history)
+        # FACT MEMORY (retrieve only — no full chat history to LLM)
         # ============================================================
         known_facts = ""
         try:
             known_facts = get_facts_for_prompt(convo_id, limit=12)
-
-            # Promote sticky activity if present
-            if known_facts and "STICKY_ACTIVITY:" in known_facts:
-                sticky_line = ""
-                for line in known_facts.splitlines():
-                    if "STICKY_ACTIVITY:" in line:
-                        sticky_line = line.replace("STICKY_ACTIVITY:", "").replace("-", "", 1).strip()
-                        break
-                if sticky_line:
-                    known_facts = f"- Current activity already established: {sticky_line}\n{known_facts}"
+            sticky = get_or_set_sticky_activity(convo_id)
+            if sticky and "activity_now" not in (known_facts or "").lower():
+                known_facts = f"Right now:\n- {sticky}\n{known_facts}".strip()
         except Exception as e:
             logger.warning(f"Fact retrieval error: {e}")
 
+        # ============================================================
+        # PROMPT (personality + hard rules + facts + time)
+        # ============================================================
         personality = get_system_prompt(
             user_name=user.get("full_name"),
             nyc_time=nyc_time_str,
-            known_facts=known_facts
+            known_facts=known_facts or ""
         )
-
         hard_rules = get_hard_rules()
 
-        # Time stated twice on purpose so the model cannot ignore it
         system_prompt = (
             f"{personality}\n\n"
             f"Current New York time (use this exact value if asked): {nyc_time_str}\n\n"
             f"{hard_rules}"
         )
 
-        # ============================================================
-        # Only current message goes to the LLM (no history)
-        # ============================================================
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message or "hi"}
         ]
 
+        # ============================================================
+        # GENERATE TEXT REPLY
+        # ============================================================
         try:
             resp = requests.post(
                 XAI_API_BASE,
@@ -475,12 +441,9 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             bubbles = ["Hmm... give me a second."]
 
         # ============================================================
-        # VOICE NOTES (Premium) — STANDALONE ONLY
-        # Frequency: 0.55
+        # VOICE NOTES (Premium) — up to 2 standalone notes
         # ============================================================
-        voice_url = None
-        send_voice_only = False
-
+        voice_notes = []
         if is_premium:
             try:
                 user_asked_for_voice = any(
@@ -490,93 +453,98 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                         "voice memo", "can you send a voice", "send me a voice"
                     ]
                 )
-
-                should_send_voice = user_asked_for_voice or (random.random() < 0.55)
+                should_send_voice = user_asked_for_voice or (random.random() < 0.40)
 
                 if should_send_voice:
-                    voice_only_prompt = f"""You are Isabella. Write a short natural voice note to him.
-Rules:
-- 1 to 2 spoken sentences only
-- Warm, feminine, present
-- Do not introduce yourself with age/city unless he asked
-- No stage directions, no quotes, no labels
-- Sound like something said out loud, not a text message
+                    # 1 note usually, sometimes 2
+                    n_voices = 2 if (user_asked_for_voice or random.random() < 0.30) else 1
 
-His message:
-{user_message[:300]}
+                    for i in range(n_voices):
+                        voice_only_prompt = f"""You are Isabella. Write a short natural voice note to him.
+                    Rules:
+                    - 1 to 5 spoken sentences only
+                    - Warm, feminine, present
+                    - Do not introduce yourself with age/city unless he asked
+                    - No stage directions, no quotes, no labels
+                    - Sound spoken out loud, not like a polished text
+                    - Note #{i + 1} of {n_voices} — make it distinct if more than one
+                    
+                    His message:
+                    {user_message[:300]}
+                    
+                    Spoken voice note:"""
 
-Spoken voice note:"""
+                        voice_script = "Hey... I just wanted to say that."
+                        try:
+                            voice_resp = requests.post(
+                                XAI_API_BASE,
+                                headers={
+                                    "Authorization": f"Bearer {XAI_API_KEY}",
+                                    "Content-Type": "application/json"
+                                },
+                                json={
+                                    "model": XAI_MODEL,
+                                    "messages": [{"role": "user", "content": voice_only_prompt}],
+                                    "temperature": 0.9,
+                                    "max_tokens": 100
+                                },
+                                timeout=20
+                            )
+                            if voice_resp.status_code == 200:
+                                rewritten = voice_resp.json()["choices"][0]["message"]["content"].strip()
+                                rewritten = (
+                                    rewritten
+                                    .replace("Spoken voice note:", "")
+                                    .replace("Voice note:", "")
+                                    .strip()
+                                )
+                                if 10 < len(rewritten) < 350:
+                                    voice_script = rewritten
+                        except Exception as e:
+                            logger.warning(f"Voice script failed: {e}")
 
-                    voice_script = "Hey... I just wanted to say that."
-                    try:
-                        voice_resp = requests.post(
-                            XAI_API_BASE,
-                            headers={
-                                "Authorization": f"Bearer {XAI_API_KEY}",
-                                "Content-Type": "application/json"
-                            },
-                            json={
-                                "model": XAI_MODEL,
-                                "messages": [{"role": "user", "content": voice_only_prompt}],
-                                "temperature": 0.9,
-                                "max_tokens": 100
-                            },
-                            timeout=20
-                        )
-                        if voice_resp.status_code == 200:
-                            rewritten = voice_resp.json()["choices"][0]["message"]["content"].strip()
-                            rewritten = rewritten.replace("Spoken voice note:", "").replace("Voice note:", "").strip()
-                            if 10 < len(rewritten) < 350:
-                                voice_script = rewritten
-                    except Exception as e:
-                        logger.warning(f"Voice-only script failed: {e}")
-
-                    voice_url = generate_voice_note(voice_script[:1400], tier=tier)
-                    if voice_url:
-                        send_voice_only = True
-                        logger.info(f"🎙️ Standalone voice note: {voice_url}")
-                        logger.info(f"🎙️ Script: {voice_script[:120]}...")
-                        save_message(
-                            convo_id,
-                            {"role": "assistant", "content": f"[voice note] {voice_script}"},
-                            user_id=user.get("id")
-                        )
+                        url = generate_voice_note(voice_script[:1400], tier=tier)
+                        if url:
+                            voice_notes.append(url)
+                            logger.info(f"🎙️ Voice note {i + 1}: {url}")
+                            save_message(
+                                convo_id,
+                                {"role": "assistant", "content": f"[voice note] {voice_script}"},
+                                user_id=user.get("id")
+                            )
             except Exception as e:
                 logger.error(f"Voice generation error: {e}")
 
-        # Save text only when not voice-only
-        if not send_voice_only:
-            for bubble in bubbles:
-                save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user.get("id"))
+        # Save text bubbles
+        for bubble in bubbles:
+            save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user.get("id"))
 
-        if send_voice_only and voice_url:
-            response = {
-                "replies": [],
-                "voice_message": {"voice_url": voice_url}
-            }
-        else:
-            response = {"replies": bubbles}
+        # Response shape: text + optional multi voice
+        response = {"replies": bubbles}
+        if voice_notes:
+            response["voice_notes"] = voice_notes
+            response["voice_message"] = {"voice_url": voice_notes[0]}  # backward compatible
 
-        # ==================== FACT MEMORY + STICKY ACTIVITY ====================
+        # ============================================================
+        # FACT MEMORY + STICKY ACTIVITY
+        # ============================================================
         try:
-            if not send_voice_only:
-                assistant_text = " ".join(bubbles) if bubbles else ""
-
-                if user_message or assistant_text:
-                    extract_facts_from_exchange(convo_id, user_message, assistant_text)
-
-                sticky = get_or_set_sticky_activity(convo_id, assistant_text)
-                if sticky:
-                    logger.info(f"📌 Sticky activity: {sticky}")
+            assistant_text = " ".join(bubbles) if bubbles else ""
+            if user_message or assistant_text:
+                extract_facts_from_exchange(convo_id, user_message, assistant_text)
+            sticky = get_or_set_sticky_activity(convo_id, assistant_text if assistant_text else None)
+            if sticky:
+                logger.info(f"📌 Sticky activity: {sticky}")
         except Exception as e:
             logger.warning(f"Fact/sticky memory skipped: {e}")
 
-        # ==================== SECOND BRAIN REFLECTION ====================
+        # ============================================================
+        # SECOND BRAIN REFLECTION
+        # ============================================================
         try:
             history = get_history(convo_id, limit=200)
             message_count = len(history)
             reflection_every = 10 if is_premium else 14
-
             if message_count > 0 and message_count % reflection_every == 0:
                 logger.info(f"🧠 [Reflection Engine] TRIGGERED | convo={convo_id} | msgs={message_count}")
                 recent_context = "\n".join(
@@ -594,11 +562,10 @@ Spoken voice note:"""
                     f"level_change={reflection_result.get('level_change')}"
                 )
         except Exception as e:
-            logger.error(f"Reflection Engine error: {e}", exp_info=True)
+            logger.error(f"Reflection Engine error: {e}", exc_info=True)
 
         duration_ms = int((time.time() - start_time) * 1000)
         log_event("response_generated", convo_id, user_id=user.get("id"), duration_ms=duration_ms)
-
         return response
 
     except Exception as e:

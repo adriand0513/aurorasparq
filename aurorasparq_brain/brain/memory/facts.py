@@ -1,70 +1,86 @@
-# aurorasparq_brain/brain/memory/facts.py  (minimal)
+# brain/memory/facts.py  (extraction + sticky helpers)
 
+import json
 import logging
-from typing import List
+import requests
+from datetime import datetime, timedelta
+from typing import List, Optional
+
+from config import XAI_API_KEY, XAI_API_BASE, XAI_MODEL
 from db.schema import get_db_connection
-import os
-import re
 
 logger = logging.getLogger(__name__)
-DATABASE_URL = os.getenv("DATABASE_URL")
 
-def add_fact(convo_id: str, fact: str, importance: int = 6) -> None:
-    if not fact or len(fact) < 8:
-        return
+LIFE_TYPES = {
+    "activity_now",
+    "today",
+    "later",
+    "past",
+    "people",
+    "preference",
+    "user",  # still capture strong user facts
+}
+
+
+def add_fact(convo_id: str, fact: str, importance: int = 6, fact_type: str = "general"):
+    """Save one fact. fact_type helps retrieval later."""
+    if not fact or not convo_id:
+        return False
     fact = fact.strip()
+    if len(fact) < 3:
+        return False
+
     conn = get_db_connection()
     if conn is None:
-        return
+        return False
     cur = conn.cursor()
     try:
-        if DATABASE_URL:
-            cur.execute("""
-                INSERT INTO key_facts (convo_id, fact, importance, last_recalled)
-                VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
-                ON CONFLICT (convo_id, fact) DO UPDATE
-                SET last_recalled = CURRENT_TIMESTAMP,
-                    importance = GREATEST(key_facts.importance, EXCLUDED.importance)
-            """, (convo_id, fact, importance))
-        else:
-            cur.execute("""
-                INSERT OR IGNORE INTO key_facts (convo_id, fact, importance, last_recalled)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-            """, (convo_id, fact, importance))
+        # Store type in the fact text prefix for simple schemas:
+        # e.g. "[activity_now] editing photos at home"
+        stored = f"[{fact_type}] {fact}" if fact_type else fact
+        cur.execute(
+            """
+            INSERT INTO key_facts (convo_id, fact, importance, last_recalled)
+            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (convo_id, fact) DO UPDATE
+            SET importance = GREATEST(key_facts.importance, EXCLUDED.importance),
+                last_recalled = CURRENT_TIMESTAMP
+            """,
+            (convo_id, stored, max(1, min(10, importance))),
+        )
         conn.commit()
+        return True
     except Exception as e:
         logger.error(f"add_fact error: {e}")
         conn.rollback()
+        return False
     finally:
         cur.close()
         conn.close()
 
 
-def get_facts_for_prompt(convo_id: str, limit: int = 10) -> str:
+def get_facts_for_prompt(convo_id: str, limit: int = 12) -> str:
+    """Return compact known facts for the system prompt."""
     conn = get_db_connection()
     if conn is None:
         return ""
     cur = conn.cursor()
     try:
-        if DATABASE_URL:
-            cur.execute("""
-                SELECT fact FROM key_facts
-                WHERE convo_id = %s
-                ORDER BY importance DESC, last_recalled DESC NULLS LAST, timestamp DESC
-                LIMIT %s
-            """, (convo_id, limit))
-        else:
-            cur.execute("""
-                SELECT fact FROM key_facts
-                WHERE convo_id = ?
-                ORDER BY importance DESC, timestamp DESC
-                LIMIT ?
-            """, (convo_id, limit))
+        cur.execute(
+            """
+            SELECT fact, importance
+            FROM key_facts
+            WHERE convo_id = %s
+            ORDER BY importance DESC, last_recalled DESC NULLS LAST, timestamp DESC
+            LIMIT %s
+            """,
+            (convo_id, limit),
+        )
         rows = cur.fetchall()
-        facts = [r[0] for r in rows if r and r[0]]
-        if not facts:
+        if not rows:
             return ""
-        return "\n".join(f"- {f}" for f in facts)
+        lines = [f"- {r[0]}" for r in rows]
+        return "\n".join(lines)
     except Exception as e:
         logger.error(f"get_facts_for_prompt error: {e}")
         return ""
@@ -73,109 +89,113 @@ def get_facts_for_prompt(convo_id: str, limit: int = 10) -> str:
         conn.close()
 
 
-def extract_facts_from_exchange(convo_id: str, user_message: str, assistant_reply: str) -> None:
+def get_or_set_sticky_activity(convo_id: str, candidate: Optional[str] = None) -> str:
     """
-    Lightweight extraction via LLM. Saves only durable facts.
-    Call AFTER the reply is generated (does not affect speech style).
+    Keep one current activity stable.
+    If one exists, return it. If candidate given and none exists, save it.
     """
-    import requests
-    from config import XAI_API_KEY, XAI_API_BASE, XAI_MODEL
+    conn = get_db_connection()
+    if conn is None:
+        return candidate or ""
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT fact FROM key_facts
+            WHERE convo_id = %s AND fact LIKE '[activity_now]%%'
+            ORDER BY last_recalled DESC NULLS LAST, timestamp DESC
+            LIMIT 1
+            """,
+            (convo_id,),
+        )
+        row = cur.fetchone()
+        if row and row[0]:
+            # strip prefix for clean use
+            return row[0].replace("[activity_now] ", "", 1)
 
-    if not user_message and not assistant_reply:
-        return
+        if candidate:
+            add_fact(convo_id, candidate, importance=8, fact_type="activity_now")
+            return candidate
+        return ""
+    except Exception as e:
+        logger.error(f"sticky activity error: {e}")
+        return candidate or ""
+    finally:
+        cur.close()
+        conn.close()
 
-    prompt = f"""Extract durable facts from this exchange for long-term memory.
-Only keep stable personal facts (location, job, interests, relationship status, preferences, important life details).
-Skip temporary mood, greetings, and one-off compliments.
-Write each fact as a short line starting with "He" or "She".
-Max 5 facts. If none, return NONE.
+
+def extract_facts_from_exchange(
+    convo_id: str,
+    user_message: str,
+    assistant_reply: str,
+) -> List[str]:
+    """
+    Extract life facts Isabella claimed + strong user facts.
+    Save them so her world grows and stays consistent.
+    """
+    if not assistant_reply or len(assistant_reply) < 8:
+        return []
+
+    prompt = f"""Extract durable facts from this chat exchange for a companion AI named Isabella.
+
+Return ONLY valid JSON list. Each item:
+{{"type":"activity_now|today|later|past|people|preference|user","fact":"...","importance":1-10}}
+
+Rules:
+- Prefer Isabella's life claims (what she is doing, did today, plans, past, people, preferences).
+- Also capture strong user personal facts if clearly stated.
+- One clear fact per item. Short. No quotes dump.
+- If she states current activity, type=activity_now, importance 8.
+- If plans later/tonight/tomorrow, type=later, importance 7.
+- If past/family/hometown, type=past, importance 9.
+- If roommate/family names, type=people, importance 9.
+- Max 5 items. If nothing durable, return [].
 
 User: {user_message[:400]}
-Isabella: {assistant_reply[:400]}
-
-Facts:"""
+Isabella: {assistant_reply[:600]}
+"""
 
     try:
         resp = requests.post(
             XAI_API_BASE,
             headers={
                 "Authorization": f"Bearer {XAI_API_KEY}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             },
             json={
                 "model": XAI_MODEL,
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.2,
-                "max_tokens": 200
+                "max_tokens": 350,
             },
-            timeout=20
+            timeout=25,
         )
         if resp.status_code != 200:
-            return
-        text = resp.json()["choices"][0]["message"]["content"].strip()
-        if not text or text.upper() == "NONE":
-            return
-        for line in text.splitlines():
-            line = line.strip(" -•\t")
-            if len(line) < 8:
+            return []
+
+        raw = resp.json()["choices"][0]["message"]["content"].strip()
+        # crude JSON list extract
+        start = raw.find("[")
+        end = raw.rfind("]")
+        if start == -1 or end == -1:
+            return []
+        items = json.loads(raw[start : end + 1])
+        saved = []
+        for item in items[:5]:
+            ftype = str(item.get("type", "general")).strip().lower()
+            fact = str(item.get("fact", "")).strip()
+            imp = int(item.get("importance", 6))
+            if not fact:
                 continue
-            if line.lower().startswith(("he ", "she ", "user ", "isabella ")):
-                add_fact(convo_id, line, importance=7)
+            if ftype not in LIFE_TYPES:
+                ftype = "preference" if ftype == "general" else ftype
+            if add_fact(convo_id, fact, importance=imp, fact_type=ftype):
+                saved.append(f"[{ftype}] {fact}")
+                # sticky mirror for activity
+                if ftype == "activity_now":
+                    get_or_set_sticky_activity(convo_id, fact)
+        return saved
     except Exception as e:
         logger.error(f"extract_facts_from_exchange error: {e}")
-
-
-ACTIVITY_PATTERNS = [
-    r"\b(?:i'm|i am|im)\s+(?:just\s+)?(.+?)(?:\.|$)",
-    r"\b(?:just\s+)?(?:got done|finished|been)\s+(.+?)(?:\.|$)",
-    r"\b(?:heading|going|on my way)\s+(.+?)(?:\.|$)",
-]
-
-def extract_her_activity(text: str) -> str:
-    """Pull a simple current-activity line from her reply, if any."""
-    if not text:
-        return ""
-    lowered = text.strip()
-    for pat in ACTIVITY_PATTERNS:
-        m = re.search(pat, lowered, flags=re.IGNORECASE)
-        if m:
-            activity = m.group(0).strip().rstrip(".")
-            # Normalize to third-person fact
-            activity = re.sub(r"^(i'm|i am|im)\s+", "She is ", activity, flags=re.IGNORECASE)
-            activity = re.sub(r"^i\s+", "She ", activity, flags=re.IGNORECASE)
-            if 8 <= len(activity) <= 120:
-                return activity
-    return ""
-
-
-def get_or_set_sticky_activity(convo_id: str, assistant_text: str) -> str:
-    """
-    Keep one current activity stable for the conversation.
-    - If a sticky activity exists, return it
-    - Else, if she just stated one, save + return it
-    """
-    existing = ""
-    try:
-        # Reuse key_facts as sticky store with a marker prefix
-        facts = get_facts_for_prompt(convo_id, limit=20)
-        for line in facts.splitlines():
-            clean = line.lstrip("- ").strip()
-            if clean.startswith("STICKY_ACTIVITY:"):
-                existing = clean.replace("STICKY_ACTIVITY:", "", 1).strip()
-                break
-    except Exception:
-        pass
-
-    if existing:
-        return existing
-
-    found = extract_her_activity(assistant_text or "")
-    if found:
-        try:
-            add_fact(convo_id, f"STICKY_ACTIVITY: {found}", importance=9)
-        except Exception:
-            pass
-        return found
-
-    return ""
-
+        return []

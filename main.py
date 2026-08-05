@@ -441,7 +441,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             bubbles = ["Hmm... give me a second."]
 
         # ============================================================
-        # VOICE NOTES (Premium) — up to 2 standalone notes
+        # VOICE NOTES (Premium) — up to 2, MUST be new content
         # ============================================================
         voice_notes = []
         if is_premium:
@@ -456,25 +456,40 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                 should_send_voice = user_asked_for_voice or (random.random() < 0.40)
 
                 if should_send_voice:
-                    # 1 note usually, sometimes 2
                     n_voices = 2 if (user_asked_for_voice or random.random() < 0.30) else 1
+                    assistant_text = " ".join(bubbles)
+                    used_scripts = []
 
                     for i in range(n_voices):
-                        voice_only_prompt = f"""You are Isabella. Write a short natural voice note to him.
-                    Rules:
-                    - 1 to 5 spoken sentences only
-                    - Warm, feminine, present
-                    - Do not introduce yourself with age/city unless he asked
-                    - No stage directions, no quotes, no labels
-                    - Sound spoken out loud, not like a polished text
-                    - Note #{i + 1} of {n_voices} — make it distinct if more than one
+                        avoid_block = "\n".join(
+                            f"- {s}" for s in ([assistant_text] + used_scripts) if s
+                        )[:900]
+
+                        voice_only_prompt = f"""You are Isabella sending a voice note in a text chat.
+
+                    Write ONLY the spoken words for voice note #{i + 1} of {n_voices}.
+                    
+                    Hard rules:
+                    - This is NOT a reread or paraphrase of her text reply.
+                    - This is NOT a reread of any previous voice note this turn.
+                    - Add a NEW beat that moves the conversation forward
+                      (a small extra thought, feeling, question, or what she's about to do).
+                    - 1–5 spoken sentences max.
+                    - Warm, feminine, natural out-loud speech.
+                    - No quotes, labels, stage directions, or "voice note:".
                     
                     His message:
                     {user_message[:300]}
                     
-                    Spoken voice note:"""
+                    Her text reply this turn (do NOT repeat or rephrase this):
+                    {assistant_text[:400]}
+                    
+                    Already used voice scripts this turn (do NOT repeat or rephrase):
+                    {avoid_block if avoid_block else "(none)"}
+                    
+                    New spoken voice note:"""
 
-                        voice_script = "Hey... I just wanted to say that."
+                        voice_script = ""
                         try:
                             voice_resp = requests.post(
                                 XAI_API_BASE,
@@ -485,8 +500,8 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                                 json={
                                     "model": XAI_MODEL,
                                     "messages": [{"role": "user", "content": voice_only_prompt}],
-                                    "temperature": 0.9,
-                                    "max_tokens": 100
+                                    "temperature": 0.95,
+                                    "max_tokens": 90
                                 },
                                 timeout=20
                             )
@@ -496,17 +511,30 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                                     rewritten
                                     .replace("Spoken voice note:", "")
                                     .replace("Voice note:", "")
+                                    .replace("New spoken voice note:", "")
                                     .strip()
+                                    .strip('"')
                                 )
-                                if 10 < len(rewritten) < 350:
+                                if 12 < len(rewritten) < 320:
                                     voice_script = rewritten
                         except Exception as e:
                             logger.warning(f"Voice script failed: {e}")
 
+                        # Skip weak / too-similar scripts
+                        if not voice_script:
+                            continue
+
+                        blob = (assistant_text + " " + " ".join(used_scripts)).lower()
+                        overlap = sum(1 for w in voice_script.lower().split() if len(w) > 3 and w in blob)
+                        if overlap >= max(4, len(voice_script.split()) // 2):
+                            logger.info("🎙️ Skipped voice script (too similar)")
+                            continue
+
                         url = generate_voice_note(voice_script[:1400], tier=tier)
                         if url:
                             voice_notes.append(url)
-                            logger.info(f"🎙️ Voice note {i + 1}: {url}")
+                            used_scripts.append(voice_script)
+                            logger.info(f"🎙️ Voice note {i + 1}: {voice_script[:100]}")
                             save_message(
                                 convo_id,
                                 {"role": "assistant", "content": f"[voice note] {voice_script}"},

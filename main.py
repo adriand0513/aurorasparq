@@ -537,7 +537,10 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                             logger.info(f"🎙️ Voice note {i + 1}: {voice_script[:100]}")
                             save_message(
                                 convo_id,
-                                {"role": "assistant", "content": f"[voice note] {voice_script}"},
+                                {
+                                    "role": "assistant",
+                                    "content": f"[voice_note]|{url}|Voice note"
+                                },
                                 user_id=user.get("id")
                             )
             except Exception as e:

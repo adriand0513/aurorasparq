@@ -480,27 +480,27 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
                         voice_only_prompt = f"""You are Isabella sending a voice note in a text chat.
 
-Write ONLY the spoken words for voice note #{i + 1} of {n_voices}.
-
-Hard rules:
-- This is NOT a reread or paraphrase of her text reply.
-- This is NOT a reread of any previous voice note this turn.
-- Add a NEW beat that moves the conversation forward
-  (a small extra thought, feeling, question, or what she's about to do).
-- 1–2 short spoken sentences max.
-- Warm, feminine, natural out-loud speech.
-- No quotes, labels, stage directions, or "voice note:".
-
-His message:
-{(user_message or '')[:300]}
-
-Her text reply this turn (do NOT repeat or rephrase this):
-{assistant_text[:400]}
-
-Already used voice scripts this turn (do NOT repeat or rephrase):
-{avoid_block if avoid_block else "(none)"}
-
-New spoken voice note:"""
+                        Write ONLY the spoken words for voice note #{i + 1} of {n_voices}.
+                        
+                        Hard rules:
+                        - This is NOT a reread or paraphrase of her text reply.
+                        - This is NOT a reread of any previous voice note this turn.
+                        - Add a NEW beat that moves the conversation forward
+                          (a small extra thought, feeling, question, or what she's about to do).
+                        - 1–5 spoken sentences max.
+                        - Warm, feminine, natural out-loud speech.
+                        - No quotes, labels, stage directions, or "voice note:".
+                        
+                        His message:
+                        {(user_message or '')[:300]}
+                        
+                        Her text reply this turn (do NOT repeat or rephrase this):
+                        {assistant_text[:400]}
+                        
+                        Already used voice scripts this turn (do NOT repeat or rephrase):
+                        {avoid_block if avoid_block else "(none)"}
+                        
+                        New spoken voice note:"""
 
                         voice_script = ""
                         try:
@@ -516,7 +516,7 @@ New spoken voice note:"""
                                     "temperature": 0.95,
                                     "max_tokens": 90
                                 },
-                                timeout=20
+                                timeout=45
                             )
                             if voice_resp.status_code == 200:
                                 rewritten = voice_resp.json()["choices"][0]["message"]["content"].strip()

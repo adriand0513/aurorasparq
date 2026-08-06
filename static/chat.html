@@ -432,13 +432,13 @@
     <!-- Auth Screen -->
     <div id="auth-screen">
         <div class="auth-card">
-            <h2 class="text-center text-2xl mb-6">Welcome to Aurora Sparq</h2>
-            
+            <h2>Welcome to Aurora Sparq</h2>
+
             <div id="login-form">
                 <input id="login-email" type="email" placeholder="Email" />
                 <input id="login-password" type="password" placeholder="Password" />
                 <button class="btn-primary" onclick="login()">Login</button>
-                <p class="text-center text-sm mt-4">
+                <p style="text-align:center; margin-top:14px; font-size:0.9rem;">
                     No account? <span onclick="showRegister()" style="color:var(--accent); cursor:pointer;">Register</span>
                 </p>
             </div>
@@ -448,22 +448,22 @@
                 <input id="reg-email" type="email" placeholder="Email" />
                 <input id="reg-password" type="password" placeholder="Password" />
                 <button class="btn-primary" onclick="register()">Create Account</button>
-                <p class="text-center text-sm mt-4">
+                <p style="text-align:center; margin-top:14px; font-size:0.9rem;">
                     Already have an account? <span onclick="showLogin()" style="color:var(--accent); cursor:pointer;">Login</span>
                 </p>
             </div>
         </div>
     </div>
 
-    <!-- Chat Screen -->
-    <div id="chat-wrapper" style="display: none;">
+    <!-- Chat Screen — EVERYTHING chat-related stays inside this div -->
+    <div id="chat-wrapper">
         <div class="header">
             <div class="avatar"></div>
             <div class="header-info">
                 <div class="header-name">Isabella</div>
                 <div class="header-status"><span class="status-dot"></span> Online · Queens, NY</div>
             </div>
-        
+
             <div class="header-actions">
                 <div id="user-info"></div>
                 <div id="usage-counter"></div>
@@ -474,17 +474,10 @@
                 <button class="btn-logout" onclick="logout()">Log Out</button>
             </div>
         </div>
-    </div>
-        
+
         <div id="messages"></div>
 
-        <div id="offline-message">
-            <h3>🌙 Isabella is Offline</h3>
-            <p>Only available between <strong>5:00 PM - 2:00 AM ET</strong></p>
-            <p style="margin-top: 8px; opacity: 0.8;">Come back during those hours ✨</p>
-        </div>
-
-        <div id="typing-container" style="display:none; padding:8px 16px;">
+        <div id="typing-container" style="display:none;">
             <div class="typing-indicator">
                 <div class="typing-dot"></div>
                 <div class="typing-dot"></div>
@@ -493,25 +486,23 @@
             </div>
         </div>
 
-        <div class="input-area" style="padding:12px 16px; display:flex; gap:10px;">
+        <div class="input-area">
             <input id="user-input" placeholder="Message Isabella..." autocomplete="off" />
-            <button id="send-btn" style="width:50px;height:50px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));color:white;border:none;font-size:20px;cursor:pointer;">➤</button>
+            <button id="send-btn">➤</button>
         </div>
     </div>
 
     <!-- Pricing Modal -->
-    <div id="pricing-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 9999; align-items: center; justify-content: center;">
-        <div style="background: #1a0033; padding: 40px 30px; border-radius: 24px; border: 3px solid #c300ff; max-width: 420px; text-align: center; box-shadow: 0 0 60px rgba(195,0,255,0.6);">
-            <h2 style="color: #c300ff; margin-bottom: 30px;">Choose Your Experience</h2>
-           
+    <div id="pricing-modal">
+        <div style="background:#1a0033; padding:40px 30px; border-radius:24px; border:3px solid #c300ff; max-width:420px; text-align:center; box-shadow:0 0 60px rgba(195,0,255,0.6);">
+            <h2 style="color:#c300ff; margin-bottom:30px;">Choose Your Experience</h2>
             <button onclick="upgradePlan('premium_monthly')"
-                    style="width: 100%; padding: 20px; margin: 12px 0; background: #6b00b3; border: none; border-radius: 16px; color: white; font-size: 1.15rem; cursor: pointer;">
+                    style="width:100%; padding:20px; margin:12px 0; background:#6b00b3; border:none; border-radius:16px; color:white; font-size:1.15rem; cursor:pointer;">
                 <strong>Premium — $14.99/mo</strong><br>
-                <small style="opacity: 0.9;">Unlimited messages • Voice Notes • Better Memory</small>
+                <small style="opacity:0.9;">Unlimited messages • Voice Notes • Better Memory</small>
             </button>
-           
             <button onclick="hidePricingModal()"
-                    style="margin-top: 25px; background: transparent; border: 1px solid #666; color: #ccc; padding: 12px 50px; border-radius: 50px; cursor: pointer;">
+                    style="margin-top:25px; background:transparent; border:1px solid #666; color:#ccc; padding:12px 50px; border-radius:50px; cursor:pointer;">
                 Maybe Later
             </button>
         </div>

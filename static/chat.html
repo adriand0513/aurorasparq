@@ -236,7 +236,7 @@
             font-size: 0.95rem;
         }
     
-        /* ========== MESSAGES ========== */
+        /* ========== MESSAGES (full width) ========== */
         #messages,
         .messages {
             flex: 1;
@@ -246,8 +246,6 @@
             flex-direction: column;
             gap: 8px;
             width: 100%;
-            max-width: 820px;
-            margin: 0 auto;
             scroll-behavior: smooth;
         }
     
@@ -258,7 +256,7 @@
         }
     
         .message {
-            max-width: min(78%, 480px);
+            max-width: min(78%, 520px);
             padding: 10px 14px;
             border-radius: var(--radius);
             line-height: 1.42;
@@ -353,22 +351,19 @@
             transition: width 0.1s linear;
         }
     
-        /* Hide native audio if any leftover */
         .message.voice-only audio,
         .message.voice-card audio {
             display: none;
         }
     
-        /* Typing */
+        /* Typing (full width) */
         #typing-container,
         .typing {
             padding: 4px 16px 8px;
             color: var(--text-muted);
             font-size: 0.85rem;
             min-height: 22px;
-            max-width: 820px;
             width: 100%;
-            margin: 0 auto;
         }
     
         .typing-indicator {
@@ -390,7 +385,7 @@
             40% { opacity: 1; transform: scale(1); }
         }
     
-        /* ========== INPUT BAR ========== */
+        /* ========== INPUT BAR (full width) ========== */
         .input-area,
         #input-area {
             flex-shrink: 0;
@@ -402,9 +397,7 @@
             display: flex;
             gap: 10px;
             align-items: center;
-            max-width: 820px;
             width: 100%;
-            margin: 0 auto;
         }
     
         #user-input,

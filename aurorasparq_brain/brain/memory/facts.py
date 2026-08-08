@@ -231,7 +231,7 @@ def extract_facts_from_exchange(
                 "temperature": 0.2,
                 "max_tokens": 350,
             },
-            timeout=45,
+            timeout=60,
         )
         if resp.status_code != 200:
             return []

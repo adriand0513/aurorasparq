@@ -573,23 +573,46 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             response["voice_notes"] = voice_notes
             response["voice_message"] = {"voice_url": voice_notes[0]}
 
+         # ============================================================
+        # FACT MEMORY — user facts ranked first
+        # Sticky / activity ONLY if he asked about her day
         # ============================================================
-        # FACT MEMORY + STICKY UPDATE (after reply)
-        # ============================================================
+        known_facts = ""
         try:
-            assistant_text = " ".join(bubbles) if bubbles else ""
-            if user_message or assistant_text:
-                extract_facts_from_exchange(convo_id, user_message, assistant_text)
-            # Keep sticky in DB for consistency; prompt only uses it when asked
-            sticky = get_or_set_sticky_activity(
-                convo_id,
-                assistant_text if assistant_text else None
-            )
-            if sticky:
-                logger.info(f"📌 Sticky activity: {sticky}")
-        except Exception as e:
-            logger.warning(f"Fact/sticky memory skipped: {e}")
+            known_facts = get_facts_for_prompt(convo_id, limit=12) or ""
 
+            # Strip activity-style lines unless he asked about her day
+            asks_about_her_day = any(
+                p in (user_message or "").lower()
+                for p in [
+                    "what are you doing", "what're you doing", "what are u doing",
+                    "you up to", "what you up to", "how was your day",
+                    "what did you do", "how was the shoot", "how's your day",
+                    "how is your day", "what are you up to", "busy?",
+                ]
+            )
+
+            activity_markers = (
+                "right now:", "unwinding", "on the couch", "after a", "shoot",
+                "scrolling", "legs up", "full day", "long day", "activity_now",
+            )
+
+            if known_facts and not asks_about_her_day:
+                lines = []
+                for line in known_facts.splitlines():
+                    low = line.lower()
+                    if any(m in low for m in activity_markers):
+                        continue
+                    lines.append(line)
+                known_facts = "\n".join(lines).strip()
+
+            if asks_about_her_day:
+                sticky = get_or_set_sticky_activity(convo_id)
+                if sticky and sticky.lower() not in known_facts.lower():
+                    known_facts = f"Right now:\n- {sticky}\n{known_facts}".strip()
+        except Exception as e:
+            logger.warning(f"Fact retrieval error: {e}")
+            known_facts = ""
         # ============================================================
         # SECOND BRAIN REFLECTION
         # ============================================================

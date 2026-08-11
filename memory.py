@@ -75,6 +75,46 @@ def save_message(convo_id: str, message: dict, user_id: int = None):
         conn.close()
 
 
+def get_recent_text_messages(convo_id: str, limit: int = 8) -> list:
+    """Last N user/assistant text messages only (no voice_note URL rows)."""
+    history = get_history(convo_id, limit=40) or []
+    out = []
+    for m in history:
+        role = m.get("role")
+        content = (m.get("content") or "").strip()
+        if not content or role not in ("user", "assistant"):
+            continue
+        if content.startswith("[voice_note]|"):
+            continue
+        if content.startswith("[voice_script]|"):
+            # expose as what she said out loud
+            script = content.split("|", 1)[-1].strip()
+            if script:
+                out.append({"role": "assistant", "content": script})
+            continue
+        out.append({"role": role, "content": content})
+    return out[-limit:]
+
+
+def set_last_voice_script(convo_id: str, script: str, user_id: int = None):
+    """Persist what she actually said in the last voice note."""
+    if not script or len(script) < 8:
+        return
+    save_message(
+        convo_id,
+        {"role": "assistant", "content": f"[voice_script]|{script[:500]}"},
+        user_id=user_id,
+    )
+
+
+def get_last_voice_script(convo_id: str) -> str:
+    history = get_history(convo_id, limit=30) or []
+    for m in reversed(history):
+        content = (m.get("content") or "")
+        if content.startswith("[voice_script]|"):
+            return content.split("|", 1)[-1].strip()
+    return ""
+
 # ==================== INITIALIZE TABLES ====================
 
 def init_db():

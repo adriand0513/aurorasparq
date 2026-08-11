@@ -66,7 +66,8 @@ from brain.relationship.state import load_relationship_state
 from aurorasparq_brain.prompts.personality import get_system_prompt
 from aurorasparq_brain.prompts.hard_rules import get_hard_rules
 from aurorasparq_brain.prompts.character_context import get_character_context
-from memory import get_history, save_message
+from memory import get_history, save_message, get_recent_text_messages, set_last_voice_script, get_last_voice_script
+
 from brain.memory.facts import (
     get_facts_for_prompt,
     extract_facts_from_exchange,
@@ -345,7 +346,6 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         finally:
             cur.close()
             conn.close()
-
         if daily_count >= daily_limit:
             return {
                 "replies": [
@@ -380,208 +380,12 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         # ============================================================
         # FACT MEMORY — user facts ranked first
-        # Sticky activity only if he asked about her day
-        # ============================================================
-        known_facts = ""
-        try:
-            known_facts = get_facts_for_prompt(convo_id, limit=12) or ""
-
-            asks_about_her_day = any(
-                p in (user_message or "").lower()
-                for p in [
-                    "what are you doing", "what're you doing", "what are u doing",
-                    "you up to", "what you up to", "how was your day",
-                    "what did you do", "how was the shoot", "how's your day",
-                    "how is your day",
-                ]
-            )
-            if asks_about_her_day:
-                sticky = get_or_set_sticky_activity(convo_id)
-                if sticky and sticky.lower() not in known_facts.lower():
-                    known_facts = f"Right now:\n- {sticky}\n{known_facts}".strip()
-        except Exception as e:
-            logger.warning(f"Fact retrieval error: {e}")
-            known_facts = ""
-
-        # ============================================================
-        # PROMPT
-        # ============================================================
-        personality = get_system_prompt(
-            user_name=user.get("full_name"),
-            nyc_time=nyc_time_str,
-            known_facts=known_facts
-        )
-        hard_rules = get_hard_rules()
-
-        system_prompt = (
-            f"{personality}\n\n"
-            f"Current New York time (use this exact value if asked): {nyc_time_str}\n\n"
-            f"{hard_rules}"
-        )
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message or "hi"}
-        ]
-
-        # ============================================================
-        # GENERATE TEXT REPLY
-        # ============================================================
-        try:
-            resp = requests.post(
-                XAI_API_BASE,
-                headers={
-                    "Authorization": f"Bearer {XAI_API_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": XAI_MODEL,
-                    "messages": messages,
-                    "temperature": XAI_TEMPERATURE,
-                    "max_tokens": XAI_MAX_TOKENS,
-                },
-                timeout=60
-            )
-            resp.raise_for_status()
-            raw_reply = resp.json()["choices"][0]["message"]["content"].strip()
-            bubbles = split_into_bubbles(clean_reply(raw_reply))
-        except Exception as e:
-            logger.error(f"Generation error: {e}")
-            bubbles = ["Hey... give me a second to think about that."]
-
-        bubbles = [b.strip() for b in bubbles if b and b.strip()]
-        if not bubbles:
-            bubbles = ["Hmm... give me a second."]
-
-        # ============================================================
-        # VOICE NOTES (Premium) — up to 2, new content, URL persisted
-        # ============================================================
-        voice_notes = []
-        if is_premium:
-            try:
-                user_asked_for_voice = any(
-                    phrase in (user_message or "").lower()
-                    for phrase in [
-                        "voice note", "voice message", "send a voice",
-                        "voice memo", "can you send a voice", "send me a voice"
-                    ]
-                )
-                should_send_voice = user_asked_for_voice or (random.random() < 0.40)
-
-                if should_send_voice:
-                    n_voices = 2 if (user_asked_for_voice or random.random() < 0.30) else 1
-                    assistant_text = " ".join(bubbles)
-                    used_scripts = []
-
-                    for i in range(n_voices):
-                        avoid_block = "\n".join(
-                            f"- {s}" for s in ([assistant_text] + used_scripts) if s
-                        )[:900]
-
-                        voice_only_prompt = f"""You are Isabella sending a voice note in a text chat.
-
-                        Write ONLY the spoken words for voice note #{i + 1} of {n_voices}.
-                        
-                        Hard rules:
-                        - This is NOT a reread or paraphrase of her text reply.
-                        - This is NOT a reread of any previous voice note this turn.
-                        - Add a NEW beat that moves the conversation forward
-                          (a small extra thought, feeling, question, or what she's about to do).
-                        - 1–8 spoken sentences max.
-                        - Warm, feminine, natural out-loud speech.
-                        - No quotes, labels, stage directions, or "voice note:".
-                        
-                        His message:
-                        {(user_message or '')[:300]}
-                        
-                        Her text reply this turn (do NOT repeat or rephrase this):
-                        {assistant_text[:400]}
-                        
-                        Already used voice scripts this turn (do NOT repeat or rephrase):
-                        {avoid_block if avoid_block else "(none)"}
-                        
-                        New spoken voice note:"""
-
-                        voice_script = ""
-                        try:
-                            voice_resp = requests.post(
-                                XAI_API_BASE,
-                                headers={
-                                    "Authorization": f"Bearer {XAI_API_KEY}",
-                                    "Content-Type": "application/json"
-                                },
-                                json={
-                                    "model": XAI_MODEL,
-                                    "messages": [{"role": "user", "content": voice_only_prompt}],
-                                    "temperature": 0.95,
-                                    "max_tokens": 90
-                                },
-                                timeout=60
-                            )
-                            if voice_resp.status_code == 200:
-                                rewritten = voice_resp.json()["choices"][0]["message"]["content"].strip()
-                                rewritten = (
-                                    rewritten
-                                    .replace("Spoken voice note:", "")
-                                    .replace("Voice note:", "")
-                                    .replace("New spoken voice note:", "")
-                                    .strip()
-                                    .strip('"')
-                                )
-                                if 12 < len(rewritten) < 320:
-                                    voice_script = rewritten
-                        except Exception as e:
-                            logger.warning(f"Voice script failed: {e}")
-
-                        if not voice_script:
-                            continue
-
-                        # Skip if too similar to text / prior scripts
-                        blob = (assistant_text + " " + " ".join(used_scripts)).lower()
-                        overlap = sum(
-                            1 for w in voice_script.lower().split()
-                            if len(w) > 3 and w in blob
-                        )
-                        if overlap >= max(4, len(voice_script.split()) // 2):
-                            logger.info("🎙️ Skipped voice script (too similar)")
-                            continue
-
-                        url = generate_voice_note(voice_script[:1400], tier=tier)
-                        if url:
-                            voice_notes.append(url)
-                            used_scripts.append(voice_script)
-                            logger.info(f"🎙️ Voice note {i + 1}: {voice_script[:100]}")
-                            # Persist URL so refresh keeps the player
-                            save_message(
-                                convo_id,
-                                {
-                                    "role": "assistant",
-                                    "content": f"[voice_note]|{url}|Voice note"
-                                },
-                                user_id=user.get("id")
-                            )
-            except Exception as e:
-                logger.error(f"Voice generation error: {e}")
-
-        # Save text bubbles
-        for bubble in bubbles:
-            save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user.get("id"))
-
-        # Response: text + optional multi voice
-        response = {"replies": bubbles}
-        if voice_notes:
-            response["voice_notes"] = voice_notes
-            response["voice_message"] = {"voice_url": voice_notes[0]}
-
-         # ============================================================
-        # FACT MEMORY — user facts ranked first
         # Sticky / activity ONLY if he asked about her day
         # ============================================================
         known_facts = ""
         try:
             known_facts = get_facts_for_prompt(convo_id, limit=12) or ""
 
-            # Strip activity-style lines unless he asked about her day
             asks_about_her_day = any(
                 p in (user_message or "").lower()
                 for p in [
@@ -613,6 +417,213 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         except Exception as e:
             logger.warning(f"Fact retrieval error: {e}")
             known_facts = ""
+
+        # ============================================================
+        # PROMPT + SHORT-TERM CONTINUITY (not full history dump)
+        # ============================================================
+        personality = get_system_prompt(
+            user_name=user.get("full_name"),
+            nyc_time=nyc_time_str,
+            known_facts=known_facts
+        )
+        hard_rules = get_hard_rules()
+
+        recent = get_recent_text_messages(convo_id, limit=8)
+        last_voice = get_last_voice_script(convo_id)
+
+        continuity_notes = []
+        if last_voice:
+            continuity_notes.append(
+                f"Your last voice note said (verbatim spoken words): \"{last_voice[:300]}\". "
+                f"If he refers to it, you already said this — do not act confused or ask why he's asking."
+            )
+        continuity_notes.append(
+            "Use the recent messages for continuity. Do not repeat or rephrase lines already present. "
+            "Do not ask him to repeat something he already said in recent messages."
+        )
+
+        system_prompt = (
+            f"{personality}\n\n"
+            f"Current New York time (use this exact value if asked): {nyc_time_str}\n\n"
+            f"{hard_rules}\n\n"
+            + "\n".join(continuity_notes)
+        )
+
+        messages = [{"role": "system", "content": system_prompt}]
+        for m in recent:
+            if m["role"] == "user" and m["content"] == (user_message or ""):
+                continue
+            messages.append({"role": m["role"], "content": m["content"]})
+        messages.append({"role": "user", "content": user_message or "hi"})
+
+        # ============================================================
+        # GENERATE TEXT REPLY
+        # ============================================================
+        bubbles = []
+        try:
+            resp = requests.post(
+                XAI_API_BASE,
+                headers={
+                    "Authorization": f"Bearer {XAI_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": XAI_MODEL,
+                    "messages": messages,
+                    "temperature": XAI_TEMPERATURE,
+                    "max_tokens": XAI_MAX_TOKENS,
+                },
+                timeout=60
+            )
+            resp.raise_for_status()
+            raw_reply = resp.json()["choices"][0]["message"]["content"].strip()
+            bubbles = split_into_bubbles(clean_reply(raw_reply))
+        except Exception as e:
+            logger.error(f"Generation error: {e}")
+            bubbles = ["Hey... give me a second to think about that."]
+
+        bubbles = [b.strip() for b in bubbles if b and b.strip()]
+        if not bubbles:
+            bubbles = ["Hmm... give me a second."]
+
+        # ============================================================
+        # VOICE NOTES (Premium) — ONE note max, voice-only turn
+        # ============================================================
+        voice_notes = []
+        voice_script_used = ""
+
+        if is_premium:
+            try:
+                user_asked_for_voice = any(
+                    phrase in (user_message or "").lower()
+                    for phrase in [
+                        "voice note", "voice message", "send a voice",
+                        "voice memo", "can you send a voice", "send me a voice"
+                    ]
+                )
+                should_send_voice = user_asked_for_voice or (random.random() < 0.40)
+
+                if should_send_voice:
+                    assistant_text = " ".join(bubbles)
+                    avoid_block = assistant_text[:900]
+
+                    voice_only_prompt = f"""You are Isabella sending a voice note in a text chat.
+Write ONLY the spoken words for this voice note.
+
+Hard rules:
+- This is NOT a reread or paraphrase of her text reply.
+- Add a NEW beat that moves the conversation forward
+  (a small extra thought, feeling, or what she's about to do).
+- 1–8 spoken sentences max.
+- Warm, feminine, natural out-loud speech.
+- No quotes, labels, stage directions, or "voice note:".
+- No asterisks or brackets.
+
+His message:
+{(user_message or '')[:300]}
+
+Her draft text reply this turn (do NOT repeat or rephrase this):
+{assistant_text[:400]}
+
+Do not repeat this content:
+{avoid_block if avoid_block else "(none)"}
+
+New spoken voice note:"""
+
+                    voice_script = ""
+                    try:
+                        voice_resp = requests.post(
+                            XAI_API_BASE,
+                            headers={
+                                "Authorization": f"Bearer {XAI_API_KEY}",
+                                "Content-Type": "application/json"
+                            },
+                            json={
+                                "model": XAI_MODEL,
+                                "messages": [{"role": "user", "content": voice_only_prompt}],
+                                "temperature": 0.95,
+                                "max_tokens": 90
+                            },
+                            timeout=60
+                        )
+                        if voice_resp.status_code == 200:
+                            rewritten = voice_resp.json()["choices"][0]["message"]["content"].strip()
+                            rewritten = (
+                                rewritten
+                                .replace("Spoken voice note:", "")
+                                .replace("Voice note:", "")
+                                .replace("New spoken voice note:", "")
+                                .strip()
+                                .strip('"')
+                            )
+                            if 12 < len(rewritten) < 320:
+                                voice_script = rewritten
+                    except Exception as e:
+                        logger.warning(f"Voice script failed: {e}")
+
+                    if voice_script:
+                        # Skip if too similar to draft text
+                        blob = assistant_text.lower()
+                        overlap = sum(
+                            1 for w in voice_script.lower().split()
+                            if len(w) > 3 and w in blob
+                        )
+                        if overlap >= max(4, len(voice_script.split()) // 2):
+                            logger.info("🎙️ Skipped voice script (too similar to text)")
+                        else:
+                            url = generate_voice_note(voice_script[:1400], tier=tier)
+                            if url:
+                                voice_notes.append(url)
+                                voice_script_used = voice_script
+                                set_last_voice_script(convo_id, voice_script, user_id=user.get("id"))
+                                save_message(
+                                    convo_id,
+                                    {
+                                        "role": "assistant",
+                                        "content": f"[voice_note]|{url}|Voice note"
+                                    },
+                                    user_id=user.get("id")
+                                )
+                                logger.info(f"🎙️ Voice note: {voice_script[:100]}")
+            except Exception as e:
+                logger.error(f"Voice generation error: {e}")
+
+        # ============================================================
+        # RESPONSE: voice-only OR text-only (never both)
+        # ============================================================
+        if voice_notes:
+            response = {
+                "replies": [],
+                "voice_notes": [voice_notes[0]],
+                "voice_message": {"voice_url": voice_notes[0]},
+            }
+            # Continuity for facts: use spoken script as what she said
+            assistant_text_for_memory = voice_script_used
+        else:
+            for bubble in bubbles:
+                save_message(
+                    convo_id,
+                    {"role": "assistant", "content": bubble},
+                    user_id=user.get("id")
+                )
+            response = {"replies": bubbles}
+            assistant_text_for_memory = " ".join(bubbles)
+
+        # ============================================================
+        # FACT MEMORY + STICKY UPDATE (after reply)
+        # ============================================================
+        try:
+            if user_message or assistant_text_for_memory:
+                extract_facts_from_exchange(convo_id, user_message, assistant_text_for_memory)
+            sticky = get_or_set_sticky_activity(
+                convo_id,
+                assistant_text_for_memory if assistant_text_for_memory else None
+            )
+            if sticky:
+                logger.info(f"📌 Sticky activity: {sticky}")
+        except Exception as e:
+            logger.warning(f"Fact/sticky memory skipped: {e}")
+
         # ============================================================
         # SECOND BRAIN REFLECTION
         # ============================================================
@@ -646,7 +657,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
     except Exception as e:
         logger.error(f"💥 Unexpected error in /api/reply: {e}", exc_info=True)
         return {"replies": []}
-
+        
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

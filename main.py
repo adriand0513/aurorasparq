@@ -419,7 +419,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
             known_facts = ""
 
         # ============================================================
-        # PROMPT + SHORT-TERM CONTINUITY (not full history dump)
+        # SHORT-TERM CONTINUITY + SHARED MEMORY (text + voice)
         # ============================================================
         personality = get_system_prompt(
             user_name=user.get("full_name"),
@@ -430,6 +430,22 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         recent = get_recent_text_messages(convo_id, limit=8)
         last_voice = get_last_voice_script(convo_id)
+
+        # Same world for text continuity notes + voice script
+        shared_memory = []
+        if known_facts:
+            shared_memory.append(f"Known facts:\n{known_facts}")
+        if recent:
+            shared_memory.append(
+                "Recent messages:\n" + "\n".join(
+                    f"{m['role']}: {m['content'][:200]}" for m in recent[-6:]
+                )
+            )
+        if last_voice:
+            shared_memory.append(
+                f"Your last voice note said: \"{last_voice[:250]}\""
+            )
+        shared_memory_block = "\n\n".join(shared_memory)
 
         continuity_notes = []
         if last_voice:
@@ -488,6 +504,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
         # ============================================================
         # VOICE NOTES (Premium) — ONE note max, voice-only turn
+        # Uses SAME shared_memory_block as text
         # ============================================================
         voice_notes = []
         voice_script_used = ""
@@ -505,28 +522,26 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
                 if should_send_voice:
                     assistant_text = " ".join(bubbles)
-                    avoid_block = assistant_text[:900]
 
                     voice_only_prompt = f"""You are Isabella sending a voice note in a text chat.
 Write ONLY the spoken words for this voice note.
 
+{shared_memory_block}
+
 Hard rules:
-- This is NOT a reread or paraphrase of her text reply.
-- Add a NEW beat that moves the conversation forward
-  (a small extra thought, feeling, or what she's about to do).
+- Stay consistent with the known facts and recent messages above.
+- Do not contradict anything you already said (people, place, bath, relationship status, etc.).
+- This is NOT a reread or paraphrase of her text reply this turn.
+- Add a NEW beat that still fits the same scene and memory.
 - 1–8 spoken sentences max.
 - Warm, feminine, natural out-loud speech.
-- No quotes, labels, stage directions, or "voice note:".
-- No asterisks or brackets.
+- No quotes, labels, stage directions, asterisks, or brackets.
 
 His message:
 {(user_message or '')[:300]}
 
 Her draft text reply this turn (do NOT repeat or rephrase this):
 {assistant_text[:400]}
-
-Do not repeat this content:
-{avoid_block if avoid_block else "(none)"}
 
 New spoken voice note:"""
 
@@ -562,7 +577,6 @@ New spoken voice note:"""
                         logger.warning(f"Voice script failed: {e}")
 
                     if voice_script:
-                        # Skip if too similar to draft text
                         blob = assistant_text.lower()
                         overlap = sum(
                             1 for w in voice_script.lower().split()
@@ -597,7 +611,6 @@ New spoken voice note:"""
                 "voice_notes": [voice_notes[0]],
                 "voice_message": {"voice_url": voice_notes[0]},
             }
-            # Continuity for facts: use spoken script as what she said
             assistant_text_for_memory = voice_script_used
         else:
             for bubble in bubbles:

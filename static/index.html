@@ -7,15 +7,15 @@
   <meta name="description" content="A quieter place for real conversation. Register to start chatting." />
   <style>
     :root {
-      --bg: #f4f5f7;
+      --bg: #f3f5f9;
       --surface: #ffffff;
-      --text: #14161a;
-      --text-muted: #5c6570;
-      --border: #e4e7ec;
-      --teal: #0d9488;
-      --teal-dark: #0f766e;
-      --teal-soft: #ccfbf1;
-      --shadow: 0 10px 40px rgba(15, 23, 42, 0.06);
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --blue: #1d4ed8;
+      --blue-dark: #1e3a8a;
+      --blue-soft: #dbeafe;
+      --shadow: 0 12px 40px rgba(15, 23, 42, 0.07);
       --radius: 16px;
     }
 
@@ -34,14 +34,51 @@
     .container {
       width: min(1080px, calc(100% - 40px));
       margin: 0 auto;
+      position: relative;
+      z-index: 1;
     }
 
-    /* Nav */
+    /* Subtle galaxy wash behind hero only */
+    .hero-wrap {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-wrap::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 60% at 50% -10%, rgba(29, 78, 216, 0.18), transparent 55%),
+        radial-gradient(ellipse 50% 40% at 85% 30%, rgba(30, 58, 138, 0.12), transparent 50%),
+        radial-gradient(ellipse 40% 35% at 10% 40%, rgba(99, 102, 241, 0.10), transparent 50%),
+        linear-gradient(180deg, #eef2ff 0%, #f3f5f9 70%);
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* Soft star specks */
+    .hero-wrap::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        radial-gradient(1.5px 1.5px at 12% 25%, rgba(255,255,255,0.9), transparent),
+        radial-gradient(1px 1px at 28% 18%, rgba(255,255,255,0.7), transparent),
+        radial-gradient(1.5px 1.5px at 70% 22%, rgba(255,255,255,0.85), transparent),
+        radial-gradient(1px 1px at 82% 35%, rgba(255,255,255,0.6), transparent),
+        radial-gradient(1px 1px at 45% 12%, rgba(255,255,255,0.75), transparent),
+        radial-gradient(1.5px 1.5px at 90% 15%, rgba(255,255,255,0.5), transparent);
+      opacity: 0.55;
+      z-index: 0;
+      pointer-events: none;
+    }
+
     header {
       position: sticky;
       top: 0;
       z-index: 50;
-      background: rgba(244, 245, 247, 0.9);
+      background: rgba(243, 245, 249, 0.92);
       backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--border);
     }
@@ -59,7 +96,7 @@
       letter-spacing: -0.02em;
     }
 
-    .logo span { color: var(--teal); }
+    .logo span { color: var(--blue); }
 
     .nav-actions {
       display: flex;
@@ -81,12 +118,12 @@
     }
 
     .btn-primary {
-      background: var(--teal);
+      background: var(--blue);
       color: white;
     }
 
     .btn-primary:hover {
-      background: var(--teal-dark);
+      background: var(--blue-dark);
       transform: translateY(-1px);
     }
 
@@ -103,9 +140,10 @@
       font-size: 1rem;
     }
 
-    /* Hero */
     .hero {
-      padding: 88px 0 72px;
+      position: relative;
+      z-index: 1;
+      padding: 96px 0 80px;
       text-align: center;
     }
 
@@ -132,9 +170,8 @@
       flex-wrap: wrap;
     }
 
-    /* Features */
     .section {
-      padding: 28px 0 80px;
+      padding: 20px 0 80px;
     }
 
     .section-title {
@@ -143,7 +180,7 @@
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: var(--teal);
+      color: var(--blue);
       margin-bottom: 28px;
     }
 
@@ -176,7 +213,6 @@
       font-size: 0.98rem;
     }
 
-    /* Featured */
     .featured {
       padding-bottom: 88px;
     }
@@ -204,18 +240,18 @@
       width: 64px;
       height: 64px;
       border-radius: 50%;
-      background: var(--teal-soft);
-      border: 2px solid #99f6e4;
+      background: var(--blue-soft);
+      border: 2px solid #bfdbfe;
       object-fit: cover;
       flex-shrink: 0;
     }
 
     .avatar-fallback {
-      display: flex;
+      display: none;
       align-items: center;
       justify-content: center;
       font-weight: 700;
-      color: var(--teal-dark);
+      color: var(--blue-dark);
       font-size: 1.2rem;
     }
 
@@ -227,6 +263,7 @@
     .featured-text p {
       color: var(--text-muted);
       font-size: 0.95rem;
+      max-width: 420px;
     }
 
     .badge {
@@ -235,14 +272,13 @@
       font-weight: 700;
       letter-spacing: 0.04em;
       text-transform: uppercase;
-      color: var(--teal-dark);
-      background: var(--teal-soft);
+      color: var(--blue-dark);
+      background: var(--blue-soft);
       padding: 4px 10px;
       border-radius: 999px;
       margin-bottom: 8px;
     }
 
-    /* Bottom CTA */
     .bottom-cta {
       text-align: center;
       padding: 20px 0 100px;
@@ -259,7 +295,6 @@
       margin-bottom: 24px;
     }
 
-    /* Footer */
     footer {
       border-top: 1px solid var(--border);
       padding: 28px 0 40px;
@@ -295,31 +330,33 @@
   </header>
 
   <main>
-    <section class="hero">
-      <div class="container">
-        <h1>Chat that actually goes somewhere</h1>
-        <p>Register to start.</p>
-        <div class="hero-actions">
-          <a class="btn btn-primary btn-large" href="/chat">Start chatting</a>
+    <div class="hero-wrap">
+      <section class="hero">
+        <div class="container">
+          <h1>Chat that actually goes somewhere</h1>
+          <p>Register to start.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary btn-large" href="/chat">Start chatting</a>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+    </div>
 
     <section class="section">
       <div class="container">
         <div class="section-title">Why people stay</div>
         <div class="cards">
           <div class="card">
-            <h3>Conversations with continuity</h3>
-            <p>What you said earlier still matters later. The thread doesn’t reset every time you open the chat.</p>
+            <h3>Someone still knows the thread</h3>
+            <p>You don’t have to re-explain yourself every time. What you shared before is still part of the conversation.</p>
           </div>
           <div class="card">
-            <h3>Natural back-and-forth</h3>
-            <p>Built for real pacing — short replies, longer ones when it fits, without feeling scripted.</p>
+            <h3>It doesn’t feel empty when you leave</h3>
+            <p>There’s a reason to open it again tomorrow — not because of a feed, but because the talk wasn’t finished.</p>
           </div>
           <div class="card">
-            <h3>A quieter space</h3>
-            <p>Private messaging without the noise of a public feed. Just the conversation.</p>
+            <h3>A place that’s actually yours</h3>
+            <p>No audience. No performance. Just a private back-and-forth when you want one.</p>
           </div>
         </div>
       </div>
@@ -336,11 +373,11 @@
               alt="Isabella"
               onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
             />
-            <div class="avatar avatar-fallback" style="display:none;">IA</div>
+            <div class="avatar avatar-fallback">IA</div>
             <div class="featured-text">
               <div class="badge">Available to message</div>
               <h3>Isabella</h3>
-              <p>Thoughtful, warm, and present in the conversation.</p>
+              <p>Queens nights, long texts, and a habit of remembering the small things you didn’t think mattered.</p>
             </div>
           </div>
           <a class="btn btn-primary" href="/chat">Message</a>

@@ -322,9 +322,8 @@
   <header>
     <div class="container nav">
       <a href="/" class="logo">Aurora <span>Sparq</span></a>
-      <div class="nav-actions">
-        <a class="btn btn-ghost" href="/chat">Log in</a>
-        <a class="btn btn-primary" href="/chat">Start chatting</a>
+      <div class="nav-actions" id="nav-actions">
+        <!-- Filled by script based on login state -->
       </div>
     </div>
   </header>
@@ -404,5 +403,36 @@
       </div>
     </div>
   </footer>
+
+  <script>
+    (function () {
+      const nav = document.getElementById('nav-actions');
+      if (!nav) return;
+
+      const token = localStorage.getItem('token');
+
+      function logout() {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/';
+      }
+
+      if (token) {
+        nav.innerHTML = `
+          <a class="btn btn-ghost" href="/chat">Open chat</a>
+          <button type="button" class="btn btn-primary" id="logout-btn">Log out</button>
+        `;
+        const logoutBtn = document.getElementById('logout-btn');
+        if (logoutBtn) {
+          logoutBtn.addEventListener('click', logout);
+        }
+      } else {
+        nav.innerHTML = `
+          <a class="btn btn-ghost" href="/chat">Log in</a>
+          <a class="btn btn-primary" href="/chat">Start chatting</a>
+        `;
+      }
+    })();
+  </script>
 </body>
 </html>

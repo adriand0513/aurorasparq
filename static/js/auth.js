@@ -1,4 +1,4 @@
-// static/js/auth.js — login, register, post-register offer
+// static/js/auth.js
 
 function showAuthError(msg) {
   const el = document.getElementById('auth-error');
@@ -31,18 +31,40 @@ function showRegister() {
 }
 
 function hideAllAuthScreens() {
-  const auth = document.getElementById('auth-screen');
-  const offer = document.getElementById('post-register-offer');
-  const created = document.getElementById('account-created');
-  if (auth) auth.style.display = 'none';
-  if (offer) offer.style.display = 'none';
-  if (created) created.style.display = 'none';
+  ['auth-screen', 'post-register-offer', 'account-created'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+}
+
+function syncAuthToPage(accessToken, user) {
+  localStorage.setItem('token', accessToken);
+  if (user) localStorage.setItem('user', JSON.stringify(user));
+
+  // Keep chat.html globals in sync
+  window.token = accessToken;
+  window.currentUser = user || null;
+
+  try {
+    // These exist in the inline chat script
+    if (typeof token !== 'undefined') token = accessToken;
+    if (typeof currentUser !== 'undefined') currentUser = user || null;
+    if (user && user.id && typeof convoId !== 'undefined') {
+      convoId = `user_${user.id}`;
+      localStorage.setItem('convo_id', convoId);
+    }
+  } catch (e) {
+    // ignore scope issues; window.* is the backup
+  }
 }
 
 function showChatShell() {
   hideAllAuthScreens();
   const chat = document.getElementById('chat-wrapper');
-  if (chat) chat.classList.add('visible');
+  if (chat) {
+    chat.classList.add('visible');
+    chat.style.display = 'flex';
+  }
 }
 
 function showPostRegisterOffer(name) {
@@ -53,16 +75,7 @@ function showPostRegisterOffer(name) {
   if (offer) offer.style.display = 'flex';
 }
 
-function showAccountCreated(name) {
-  hideAllAuthScreens();
-  const created = document.getElementById('account-created');
-  const suffix = document.getElementById('created-name-suffix');
-  if (suffix) suffix.textContent = name ? `, ${name}` : '';
-  if (created) created.style.display = 'flex';
-}
-
 function continueWithFree() {
-  // Prefer going straight into chat after free path
   goToChatAfterAuth();
 }
 
@@ -73,12 +86,36 @@ function goToChatAfterRegister() {
 function goToChatAfterAuth() {
   showChatShell();
 
-  // Prefer existing chat helpers if present (still in chat.html for now)
-  if (typeof loadUserHistory === 'function') loadUserHistory();
+  const user = window.currentUser || JSON.parse(localStorage.getItem('user') || '{}');
+  const userInfo = document.getElementById('user-info');
+  if (userInfo) {
+    userInfo.textContent = `Hi, ${user.full_name || user.email || 'User'}`;
+  }
+
   if (typeof updateSubscriptionDisplay === 'function') updateSubscriptionDisplay();
   if (typeof updateUsageCounter === 'function') updateUsageCounter();
+  if (typeof loadUserHistory === 'function') loadUserHistory();
   if (typeof refreshUserData === 'function') refreshUserData();
   if (typeof updateAvailability === 'function') updateAvailability();
+}
+
+function readRegisterFields() {
+  const form = document.getElementById('register-form');
+  const nameInput =
+    document.getElementById('reg-name') ||
+    form?.querySelector('input[type="text"]');
+  const emailInput =
+    document.getElementById('reg-email') ||
+    form?.querySelector('input[type="email"]');
+  const passInput =
+    document.getElementById('reg-password') ||
+    form?.querySelector('input[type="password"]');
+
+  return {
+    fullName: (nameInput?.value || '').trim(),
+    email: (emailInput?.value || '').trim(),
+    password: passInput?.value || ''
+  };
 }
 
 async function login() {
@@ -93,7 +130,6 @@ async function login() {
   }
 
   try {
-    // OAuth2-style form login (common with your FastAPI setup)
     const body = new URLSearchParams();
     body.append('username', email);
     body.append('password', password);
@@ -105,37 +141,25 @@ async function login() {
     });
 
     const data = await res.json().catch(() => ({}));
-
     if (!res.ok) {
       showAuthError(data.detail || 'Login failed');
       return;
     }
 
-    const token = data.access_token || data.token;
-    if (!token) {
+    const accessToken = data.access_token || data.token;
+    if (!accessToken) {
       showAuthError('Login failed — no token returned');
       return;
     }
 
-    localStorage.setItem('token', token);
+    const user = data.user || {
+      id: data.id,
+      email: data.email || email,
+      full_name: data.full_name,
+      subscription_tier: data.subscription_tier || 'free'
+    };
 
-    // Optional user payload from login response
-    if (data.user) {
-      localStorage.setItem('user', JSON.stringify(data.user));
-    } else if (data.full_name || data.email) {
-      localStorage.setItem('user', JSON.stringify({
-        id: data.id,
-        email: data.email,
-        full_name: data.full_name,
-        subscription_tier: data.subscription_tier || 'free'
-      }));
-    }
-
-    // Refresh user display fields if chat helpers exist
-    if (typeof refreshUserData === 'function') {
-      await refreshUserData();
-    }
-
+    syncAuthToPage(accessToken, user);
     goToChatAfterAuth();
   } catch (err) {
     console.error('login error:', err);
@@ -146,9 +170,9 @@ async function login() {
 async function register() {
   clearAuthError();
 
-  const fullName = (document.getElementById('reg-name')?.value || '').trim();
-  const email = (document.getElementById('reg-email')?.value || '').trim();
-  const password = document.getElementById('reg-password')?.value || '';
+  const { fullName, email, password } = readRegisterFields();
+
+  console.log('register fields:', { fullName, email, passwordLength: password.length });
 
   if (!fullName || !email || !password) {
     showAuthError('Fill in name, email, and password.');
@@ -167,7 +191,6 @@ async function register() {
     });
 
     const data = await res.json().catch(() => ({}));
-
     if (!res.ok) {
       const detail = data.detail;
       const msg = typeof detail === 'string'
@@ -177,7 +200,7 @@ async function register() {
       return;
     }
 
-    // Auto-login after register (same form login)
+    // Auto-login
     const body = new URLSearchParams();
     body.append('username', email);
     body.append('password', password);
@@ -187,7 +210,6 @@ async function register() {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body
     });
-
     const loginData = await loginRes.json().catch(() => ({}));
 
     if (!loginRes.ok || !(loginData.access_token || loginData.token)) {
@@ -196,15 +218,14 @@ async function register() {
       return;
     }
 
-    const token = loginData.access_token || loginData.token;
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify({
+    const accessToken = loginData.access_token || loginData.token;
+    const user = loginData.user || {
       email,
       full_name: fullName,
       subscription_tier: 'free'
-    }));
+    };
 
-    // Show premium offer after register
+    syncAuthToPage(accessToken, user);
     showPostRegisterOffer(fullName);
   } catch (err) {
     console.error('register error:', err);
@@ -212,25 +233,17 @@ async function register() {
   }
 }
 
-// Enter key on auth inputs
 document.addEventListener('DOMContentLoaded', () => {
-  const loginPass = document.getElementById('login-password');
-  const regPass = document.getElementById('reg-password');
-
-  if (loginPass) {
-    loginPass.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        login();
-      }
-    });
-  }
-  if (regPass) {
-    regPass.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        register();
-      }
-    });
-  }
+  document.getElementById('login-password')?.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      login();
+    }
+  });
+  document.getElementById('reg-password')?.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      register();
+    }
+  });
 });

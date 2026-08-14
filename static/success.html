@@ -131,7 +131,7 @@
         <p class="subtitle">Your account has been successfully upgraded.<br>
             All features are now active.</p>
 
-        <a href="/" class="btn">Return to Isabella</a>
+        <a href="/" class="btn">Continue to speak with Isabella</a>
 
         <div class="redirect-text">
             Redirecting automatically in <span class="countdown" id="countdown">6</span> seconds
@@ -148,7 +148,7 @@
 
             if (timeLeft <= 0) {
                 clearInterval(timer);
-                window.location.href = '/';
+                window.location.href = '/chat';
             }
         }, 1000);
     </script>

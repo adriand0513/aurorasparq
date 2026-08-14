@@ -160,7 +160,7 @@ async function login() {
     };
 
     syncAuthToPage(accessToken, user);
-    goToChatAfterAuth();
+    window.location.href = '/';
   } catch (err) {
     console.error('login error:', err);
     showAuthError('Something went wrong. Try again.');
@@ -226,7 +226,7 @@ async function register() {
     };
 
     syncAuthToPage(accessToken, user);
-    showPostRegisterOffer(fullName);
+    window.location.href = '/';
   } catch (err) {
     console.error('register error:', err);
     showAuthError('Something went wrong. Try again.');

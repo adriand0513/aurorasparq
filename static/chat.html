@@ -4,66 +4,53 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Aurora Sparq • Isabella</title>
-    
+
     <link rel="stylesheet" href="/static/css/shared.css">
     <link rel="stylesheet" href="/static/css/chat.css">
-    
+
     <script src="/static/js/payments.js" defer></script>
     <script src="/static/js/auth.js?v=2" defer></script>
 </head>
 <body>
-    <!-- Auth Screen (homepage-matched) -->
+    <!-- Auth Screen -->
     <div id="auth-screen">
         <div class="auth-brand">
             <a href="/">Aurora <span>Sparq</span></a>
             <p>Chat that actually goes somewhere</p>
         </div>
-
         <div class="auth-card">
             <div id="auth-error" class="auth-error"></div>
 
-            <!-- LOGIN -->
             <div id="login-form">
                 <h2>Log in</h2>
                 <p class="auth-sub">Welcome back. Continue where you left off.</p>
-
                 <label for="login-email">Email</label>
                 <input id="login-email" type="email" autocomplete="email" placeholder="you@email.com" />
-
                 <label for="login-password">Password</label>
                 <input id="login-password" type="password" autocomplete="current-password" placeholder="••••••••" />
-
                 <button type="button" class="btn-auth" onclick="login()">Log in</button>
-
                 <div class="auth-switch">
                     Don’t have an account?
                     <button type="button" onclick="showRegister()">Register</button>
                 </div>
             </div>
 
-            <!-- REGISTER -->
             <div id="register-form" style="display:none;">
                 <h2>Create account</h2>
                 <p class="auth-sub">Register to start chatting.</p>
-
-                <label for="reg-fullname">Name</label>
-                <input id="reg-fullname" type="text" autocomplete="name" placeholder="Your name" />
-
+                <label for="reg-name">Name</label>
+                <input id="reg-name" type="text" autocomplete="name" placeholder="Your name" />
                 <label for="reg-email">Email</label>
                 <input id="reg-email" type="email" autocomplete="email" placeholder="you@email.com" />
-
                 <label for="reg-password">Password</label>
                 <input id="reg-password" type="password" autocomplete="new-password" placeholder="••••••••" />
-
                 <button type="button" class="btn-auth" onclick="register()">Create account</button>
-
                 <div class="auth-switch">
                     Already have an account?
                     <button type="button" onclick="showLogin()">Log in</button>
                 </div>
             </div>
         </div>
-
         <a class="auth-back" href="/">← Back to home</a>
     </div>
 
@@ -73,11 +60,9 @@
             <a href="/">Aurora <span>Sparq</span></a>
             <p>Chat that actually goes somewhere</p>
         </div>
-
         <div class="offer-card">
             <h2>Welcome, <span id="offer-name">there</span>!</h2>
             <p class="offer-sub">Want the full experience with Isabella?</p>
-
             <div class="offer-box">
                 <div class="offer-box-title">Premium includes</div>
                 <ul>
@@ -87,7 +72,6 @@
                     <li>Priority access as more people join</li>
                 </ul>
             </div>
-
             <button type="button" class="btn-offer-primary" onclick="upgradePlan('premium_monthly')">
                 Upgrade to Premium — $14.99/mo
             </button>
@@ -95,17 +79,15 @@
                 No thanks, continue with Free
             </button>
         </div>
-
         <a class="auth-back" href="/">← Back to home</a>
     </div>
 
-    <!-- Account created confirmation -->
+    <!-- Account created -->
     <div id="account-created" class="offer-screen" style="display:none;">
         <div class="offer-brand">
             <a href="/">Aurora <span>Sparq</span></a>
             <p>Chat that actually goes somewhere</p>
         </div>
-
         <div class="offer-card" style="text-align:center;">
             <div class="success-icon" aria-hidden="true">✓</div>
             <h2 style="margin-top:8px;">Account created</h2>
@@ -116,7 +98,6 @@
                 Start chatting
             </button>
         </div>
-
         <a class="auth-back" href="/">← Back to home</a>
     </div>
 
@@ -156,12 +137,11 @@
         </div>
     </div>
 
-    <!-- Pricing Modal (homepage-matched) -->
+    <!-- Pricing Modal -->
     <div id="pricing-modal">
         <div class="pricing-card">
             <h2>Choose your plan</h2>
             <p class="pricing-sub">Unlock the full conversation with Isabella.</p>
-
             <div class="pricing-plan">
                 <div class="pricing-plan-name">Premium</div>
                 <div class="pricing-plan-price">$14.99<span>/mo</span></div>
@@ -175,16 +155,20 @@
                     Upgrade to Premium
                 </button>
             </div>
-
             <button type="button" class="btn-offer-secondary" onclick="hidePricingModal()">
                 Maybe later
             </button>
         </div>
     </div>
-   <script>
+
+    <script>
         let token = localStorage.getItem('token');
         let currentUser = null;
         let convoId = null;
+
+        // Keep globals available for auth.js sync
+        window.token = token;
+        window.currentUser = currentUser;
 
         const messagesContainer = document.getElementById('messages');
         const typingContainer = document.getElementById('typing-container');
@@ -193,21 +177,32 @@
         const authScreen = document.getElementById('auth-screen');
         const chatWrapper = document.getElementById('chat-wrapper');
         const userInfo = document.getElementById('user-info');
-        const offlineMessage = document.getElementById('offline-message');
 
-        let isSending = false;
         let pendingMessages = [];
         let debounceTimer = null;
         let readingTimer = null;
         let isProcessingQueue = false;
         let phase = 'idle'; // idle | waiting | reading | processing
 
-        // Timing
         const READING_DELAY_MS = 5000;
         const TYPING_DELAY_MS = 1800;
         const BETWEEN_BUBBLES_MS = 1200;
         const USER_DONE_MS = 1800;
         const BETWEEN_VOICE_MS = 600;
+
+        function getToken() {
+            return localStorage.getItem('token') || window.token || token || '';
+        }
+
+        function getCurrentUser() {
+            if (currentUser && currentUser.id) return currentUser;
+            if (window.currentUser && window.currentUser.id) return window.currentUser;
+            try {
+                return JSON.parse(localStorage.getItem('user') || '{}');
+            } catch {
+                return {};
+            }
+        }
 
         // ==================== AVAILABILITY ====================
         function isIsabellaAvailable() {
@@ -215,94 +210,66 @@
         }
 
         function updateAvailability() {
-            offlineMessage.style.display = 'none';
-            chatWrapper.style.opacity = '1';
+            const offlineMessage = document.getElementById('offline-message');
+            if (offlineMessage) offlineMessage.style.display = 'none';
+            if (chatWrapper) chatWrapper.style.opacity = '1';
             if (input) input.disabled = false;
             if (sendBtn) sendBtn.disabled = false;
         }
 
-        // ==================== AUTH ====================
+        // ==================== AUTH HELPERS ====================
         async function authFetch(url, options = {}) {
+            const authToken = getToken();
             const res = await fetch(url, {
                 ...options,
                 headers: {
                     ...(options.headers || {}),
-                    'Authorization': `Bearer ${token}`
+                    'Authorization': `Bearer ${authToken}`
                 }
             });
 
             if (res.status === 401) {
                 localStorage.removeItem('token');
                 localStorage.removeItem('user');
-                alert("Your session has expired. Please log in again.");
+                localStorage.removeItem('convo_id');
+                window.token = null;
+                window.currentUser = null;
+                token = null;
+                currentUser = null;
+                alert('Your session has expired. Please log in again.');
                 window.location.reload();
                 return null;
             }
             return res;
         }
 
-        async function upgradeAfterRegister(email, password) {
-            try {
-                const formData = new FormData();
-                formData.append('username', email);
-                formData.append('password', password);
-
-                const loginRes = await fetch('/auth/login', { method: 'POST', body: formData });
-                const loginData = await loginRes.json();
-
-                if (!loginRes.ok) {
-                    alert("Something went wrong during auto-login. Please try logging in manually.");
-                    showLogin();
-                    return;
-                }
-
-                token = loginData.access_token;
-                currentUser = loginData.user;
-                localStorage.setItem('token', token);
-                localStorage.setItem('user', JSON.stringify(currentUser));
-                convoId = `user_${currentUser.id}`;
-                localStorage.setItem('convo_id', convoId);
-
-                await upgradePlan('premium_monthly');
-            } catch (error) {
-                console.error(error);
-                alert("Something went wrong. Please try logging in and upgrading manually.");
-                showLogin();
-            }
-        }
-
-        function showLoginAfterRegister() {
-            showLogin();
-            alert("Account created! You can upgrade to Premium anytime from the Upgrade button.");
-        }
-
-        
         async function refreshUserData() {
-            if (!token) return;
+            const authToken = getToken();
+            if (!authToken) return;
+
             try {
                 const res = await authFetch('/auth/me');
                 if (!res) return;
 
                 const freshUser = await res.json();
                 currentUser = freshUser;
+                window.currentUser = freshUser;
                 localStorage.setItem('user', JSON.stringify(freshUser));
 
-                if (currentUser && currentUser.id) {
-                    convoId = `user_${currentUser.id}`;
+                if (freshUser && freshUser.id) {
+                    convoId = `user_${freshUser.id}`;
                     localStorage.setItem('convo_id', convoId);
                 }
 
                 if (userInfo) {
-                    userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email || 'User'}`;
+                    userInfo.textContent = `Hi, ${freshUser.full_name || freshUser.email || 'User'}`;
                 }
 
-                // Keep header in sync with real tier
                 updateSubscriptionDisplay();
                 await updateUsageCounter();
-
-                console.log("✅ User data refreshed - Tier:", freshUser.subscription_tier);
+                console.log('✅ User data refreshed - Tier:', freshUser.subscription_tier);
             } catch (e) {
-                console.error("Failed to refresh user data", e);
+                console.error('Failed to refresh user data', e);
             }
         }
 
@@ -310,6 +277,8 @@
             localStorage.removeItem('token');
             localStorage.removeItem('user');
             localStorage.removeItem('convo_id');
+            window.token = null;
+            window.currentUser = null;
             window.location.reload();
         }
 
@@ -325,9 +294,13 @@
         }
 
         async function loadUserHistory() {
-            if (!token || !currentUser) return;
+            const authToken = getToken();
+            const user = getCurrentUser();
+            if (!authToken || !user || !user.id) return;
 
-            convoId = `user_${currentUser.id}`;
+            currentUser = user;
+            window.currentUser = user;
+            convoId = `user_${user.id}`;
             localStorage.setItem('convo_id', convoId);
 
             try {
@@ -339,7 +312,7 @@
 
                 if (data.messages && data.messages.length > 0) {
                     data.messages.forEach(m => {
-                        const content = (m.content || "").trim();
+                        const content = (m.content || '').trim();
                         if (!content) return;
 
                         const voice = parseVoiceContent(content);
@@ -348,7 +321,6 @@
                             return;
                         }
 
-                        // Skip legacy dumped voice scripts
                         if (m.role === 'assistant' && content.toLowerCase().startsWith('[voice note]')) {
                             return;
                         }
@@ -359,12 +331,12 @@
                 }
                 scrollToBottom();
             } catch (e) {
-                console.error("Failed to load history", e);
+                console.error('Failed to load history', e);
             }
         }
 
         function addMessage(text, type) {
-            const content = (text || "").trim();
+            const content = (text || '').trim();
             if (!content) return;
             const div = document.createElement('div');
             div.className = `message ${type}`;
@@ -407,7 +379,6 @@
 
             const audio = new Audio(voiceUrl);
             audio.preload = 'metadata';
-
             let playing = false;
 
             div.innerHTML = `
@@ -437,7 +408,6 @@
                 if (playing) {
                     audio.pause();
                 } else {
-                    // Pause any other playing voice notes
                     document.querySelectorAll('.voice-card audio').forEach(a => {
                         if (a !== audio) a.pause();
                     });
@@ -470,7 +440,6 @@
 
             audio.style.display = 'none';
             div.appendChild(audio);
-
             messagesContainer.appendChild(div);
             scrollToBottom();
         }
@@ -496,15 +465,13 @@
             }
         }
 
-        // ==================== MESSAGE QUEUE + DELAYS ====================
+        // ==================== MESSAGE QUEUE ====================
         function cancelReading() {
             if (readingTimer) {
                 clearTimeout(readingTimer);
                 readingTimer = null;
             }
-            if (phase === 'reading') {
-                phase = 'waiting';
-            }
+            if (phase === 'reading') phase = 'waiting';
         }
 
         function sendMessage() {
@@ -519,9 +486,7 @@
             phase = 'waiting';
 
             if (debounceTimer) clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(() => {
-                startReadingPhase();
-            }, USER_DONE_MS);
+            debounceTimer = setTimeout(() => startReadingPhase(), USER_DONE_MS);
         }
 
         function startReadingPhase() {
@@ -550,6 +515,12 @@
             pendingMessages = [];
             const combinedMessage = messagesToSend.join('\n');
 
+            const authToken = getToken();
+            const user = getCurrentUser();
+            if (!convoId && user && user.id) {
+                convoId = `user_${user.id}`;
+            }
+
             showTyping();
             await sleep(TYPING_DELAY_MS);
 
@@ -558,7 +529,7 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
+                        'Authorization': `Bearer ${authToken}`
                     },
                     body: JSON.stringify({
                         convo_id: convoId,
@@ -571,7 +542,7 @@
 
                 if (data.replies && Array.isArray(data.replies)) {
                     const cleanReplies = data.replies
-                        .map(b => (b || "").trim())
+                        .map(b => (b || '').trim())
                         .filter(b => b.length > 0);
 
                     for (let i = 0; i < cleanReplies.length; i++) {
@@ -589,7 +560,7 @@
                     await playVoiceNotes(voiceUrls);
                 }
             } catch (err) {
-                console.error("Send error:", err);
+                console.error('Send error:', err);
                 hideTyping();
             } finally {
                 isProcessingQueue = false;
@@ -604,19 +575,21 @@
             }
         }
 
-        // ==================== PAYMENTS & USAGE ====================
-
+        // ==================== USAGE / TIER ====================
         function updateSubscriptionDisplay() {
-            if (!currentUser) return;
+            const user = getCurrentUser();
+            if (!user) return;
+
+            currentUser = user;
+            window.currentUser = user;
 
             const statusEl = document.getElementById('subscription-status');
             const tierEl = document.getElementById('current-tier');
-            // Support both id and class so header markup can't miss
             const upgradeBtn =
                 document.getElementById('upgrade-btn') ||
                 document.querySelector('.btn-upgrade');
 
-            const tier = (currentUser.subscription_tier || 'free').toLowerCase();
+            const tier = (user.subscription_tier || 'free').toLowerCase();
 
             if (tier === 'premium') {
                 if (tierEl) tierEl.textContent = 'PREMIUM PLAN';
@@ -630,19 +603,20 @@
 
         async function updateUsageCounter() {
             const counterEl = document.getElementById('usage-counter');
-            if (!counterEl || !currentUser || !token) return;
+            const user = getCurrentUser();
+            const authToken = getToken();
+            if (!counterEl || !user || !authToken) return;
 
             try {
                 const res = await authFetch('/api/usage');
                 if (!res) return;
-
                 if (!res.ok) {
                     counterEl.innerHTML = '—';
                     return;
                 }
 
                 const data = await res.json();
-                const tier = (currentUser.subscription_tier || 'free').toLowerCase();
+                const tier = (user.subscription_tier || 'free').toLowerCase();
 
                 if (tier === 'premium') {
                     counterEl.innerHTML = 'Unlimited ✨';
@@ -651,7 +625,6 @@
                 } else {
                     const remaining = Math.max(0, 10 - (data.daily_count || 0));
                     counterEl.innerHTML = `${remaining} / 10 today`;
-
                     if (remaining < 5) {
                         counterEl.style.background = 'rgba(255, 100, 100, 0.2)';
                         counterEl.style.border = '1px solid #ff6464';
@@ -667,10 +640,18 @@
 
         // ==================== INIT ====================
         window.addEventListener('load', () => {
+            token = getToken();
+            window.token = token;
+
             if (token) {
-                currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-                authScreen.style.display = 'none';
-                chatWrapper.style.display = 'flex';
+                currentUser = getCurrentUser();
+                window.currentUser = currentUser;
+
+                if (authScreen) authScreen.style.display = 'none';
+                if (chatWrapper) {
+                    chatWrapper.classList.add('visible');
+                    chatWrapper.style.display = 'flex';
+                }
 
                 if (userInfo) {
                     userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email || 'User'}`;
@@ -681,16 +662,16 @@
                     localStorage.setItem('convo_id', convoId);
                 }
 
-                // Show cached tier immediately, then refresh from server
                 updateSubscriptionDisplay();
                 updateUsageCounter();
                 loadUserHistory();
                 refreshUserData();
             }
+
             updateAvailability();
         });
 
-        // ==================== EVENT LISTENERS ====================
+        // ==================== EVENTS ====================
         if (input) {
             input.addEventListener('keypress', function (e) {
                 if (e.key === 'Enter') {

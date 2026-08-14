@@ -642,32 +642,50 @@
         window.addEventListener('load', () => {
             token = getToken();
             window.token = token;
-
+        
             if (token) {
                 currentUser = getCurrentUser();
                 window.currentUser = currentUser;
-
+        
                 if (authScreen) authScreen.style.display = 'none';
                 if (chatWrapper) {
                     chatWrapper.classList.add('visible');
                     chatWrapper.style.display = 'flex';
                 }
-
+        
                 if (userInfo) {
                     userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email || 'User'}`;
                 }
-
+        
                 if (currentUser && currentUser.id) {
                     convoId = `user_${currentUser.id}`;
                     localStorage.setItem('convo_id', convoId);
                 }
-
+        
+                // Returning from Stripe upgrade → refresh tier, clean URL
+                const params = new URLSearchParams(window.location.search);
+                const fromUpgrade =
+                    params.get('upgraded') === '1' ||
+                    params.get('success') === 'true' ||
+                    params.has('session_id');
+        
                 updateSubscriptionDisplay();
                 updateUsageCounter();
                 loadUserHistory();
-                refreshUserData();
+        
+                // Always refresh from server (especially important after payment)
+                refreshUserData().then(() => {
+                    if (fromUpgrade) {
+                        updateSubscriptionDisplay();
+                        updateUsageCounter();
+                    }
+                }).catch(() => {});
+        
+                if (fromUpgrade) {
+                    window.history.replaceState({}, '', '/chat');
+                }
             }
-
+        
             updateAvailability();
         });
 

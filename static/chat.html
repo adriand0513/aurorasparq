@@ -734,39 +734,6 @@
         }
 
         // ==================== PAYMENTS & USAGE ====================
-        function showPricingModal() {
-            const modal = document.getElementById('pricing-modal');
-            if (modal) modal.style.display = 'flex';
-        }
-
-        function hidePricingModal() {
-            const modal = document.getElementById('pricing-modal');
-            if (modal) modal.style.display = 'none';
-        }
-
-        async function upgradePlan(priceType) {
-            if (!token) {
-                alert("Please login first");
-                return;
-            }
-            try {
-                const res = await authFetch('/payments/create-checkout-session', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ price_type: priceType })
-                });
-                if (!res) return;
-
-                const data = await res.json();
-                if (data.url) {
-                    window.location.href = data.url;
-                } else {
-                    alert(data.detail || "Payment error");
-                }
-            } catch (error) {
-                alert("Payment error. Please try again.");
-            }
-        }
 
         function updateSubscriptionDisplay() {
             if (!currentUser) return;

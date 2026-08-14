@@ -550,7 +550,218 @@
             #user-info { display: none; }
             .auth-card { padding: 26px 20px; }
         }
-</style>
+
+        /* ===== Offer / Account-created screens ===== */
+        .offer-screen {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px 16px;
+            min-height: 0;
+            background: #f3f5f9;
+            color: #0f172a;
+            font-family: var(--font);
+        }
+        .offer-brand {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        .offer-brand a {
+            font-weight: 700;
+            font-size: 1.35rem;
+            letter-spacing: -0.02em;
+            color: #0f172a;
+            text-decoration: none;
+        }
+        .offer-brand a span { color: #1d4ed8; }
+        .offer-brand p {
+            margin-top: 8px;
+            color: #64748b;
+            font-size: 0.98rem;
+        }
+        .offer-card {
+            width: 100%;
+            max-width: 420px;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 20px;
+            padding: 32px 28px;
+            box-shadow: 0 12px 40px rgba(15, 23, 42, 0.07);
+        }
+        .offer-card h2 {
+            font-size: 1.5rem;
+            letter-spacing: -0.02em;
+            margin-bottom: 8px;
+            color: #0f172a;
+        }
+        .offer-sub {
+            color: #64748b;
+            margin-bottom: 20px;
+            font-size: 1rem;
+        }
+        .offer-box {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 16px;
+            padding: 18px 18px 14px;
+            margin-bottom: 22px;
+        }
+        .offer-box-title {
+            font-weight: 700;
+            color: #1e3a8a;
+            margin-bottom: 10px;
+            font-size: 0.95rem;
+        }
+        .offer-box ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .offer-box li {
+            position: relative;
+            padding-left: 18px;
+            margin-bottom: 8px;
+            color: #334155;
+            font-size: 0.95rem;
+        }
+        .offer-box li::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 0.55em;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #1d4ed8;
+        }
+        .btn-offer-primary {
+            width: 100%;
+            border: none;
+            border-radius: 999px;
+            padding: 15px 18px;
+            background: #1d4ed8;
+            color: #fff;
+            font-weight: 650;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-bottom: 12px;
+            box-shadow: 0 8px 24px rgba(29, 78, 216, 0.25);
+        }
+        .btn-offer-primary:hover { background: #1e3a8a; }
+        .btn-offer-secondary {
+            width: 100%;
+            border: 1px solid #e2e8f0;
+            border-radius: 999px;
+            padding: 13px 18px;
+            background: #fff;
+            color: #64748b;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+        }
+        .btn-offer-secondary:hover {
+            border-color: #cbd5e1;
+            color: #0f172a;
+        }
+        .success-icon {
+            width: 56px;
+            height: 56px;
+            margin: 0 auto 12px;
+            border-radius: 14px;
+            background: #16a34a;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.6rem;
+            font-weight: 700;
+            box-shadow: 0 8px 24px rgba(22, 163, 74, 0.25);
+        }
+        
+        /* ===== Pricing modal ===== */
+        #pricing-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.45);
+            backdrop-filter: blur(6px);
+            z-index: 9999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .pricing-card {
+            width: 100%;
+            max-width: 400px;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 20px;
+            padding: 32px 28px;
+            box-shadow: 0 16px 50px rgba(15, 23, 42, 0.18);
+            text-align: left;
+            color: #0f172a;
+        }
+        .pricing-card h2 {
+            font-size: 1.35rem;
+            letter-spacing: -0.02em;
+            margin-bottom: 6px;
+        }
+        .pricing-sub {
+            color: #64748b;
+            margin-bottom: 20px;
+            font-size: 0.95rem;
+        }
+        .pricing-plan {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 16px;
+            padding: 18px;
+            margin-bottom: 14px;
+        }
+        .pricing-plan-name {
+            font-weight: 700;
+            color: #1e3a8a;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .pricing-plan-price {
+            font-size: 1.75rem;
+            font-weight: 750;
+            letter-spacing: -0.03em;
+            margin: 6px 0 12px;
+            color: #0f172a;
+        }
+        .pricing-plan-price span {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #64748b;
+        }
+        .pricing-plan ul {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 16px;
+        }
+        .pricing-plan li {
+            padding-left: 18px;
+            position: relative;
+            margin-bottom: 7px;
+            color: #334155;
+            font-size: 0.95rem;
+        }
+        .pricing-plan li::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 0.55em;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #1d4ed8;
+        }
+    </style>
 </head>
 <body>
     <!-- Auth Screen (homepage-matched) -->
@@ -608,6 +819,59 @@
         <a class="auth-back" href="/">← Back to home</a>
     </div>
 
+    <!-- Post-register Premium offer -->
+    <div id="post-register-offer" class="offer-screen" style="display:none;">
+        <div class="offer-brand">
+            <a href="/">Aurora <span>Sparq</span></a>
+            <p>Chat that actually goes somewhere</p>
+        </div>
+
+        <div class="offer-card">
+            <h2>Welcome, <span id="offer-name">there</span>!</h2>
+            <p class="offer-sub">Want the full experience with Isabella?</p>
+
+            <div class="offer-box">
+                <div class="offer-box-title">Premium includes</div>
+                <ul>
+                    <li>Unlimited messages</li>
+                    <li>Voice notes</li>
+                    <li>Stronger memory &amp; longer conversations</li>
+                    <li>Priority access as more people join</li>
+                </ul>
+            </div>
+
+            <button type="button" class="btn-offer-primary" onclick="upgradePlan('premium_monthly')">
+                Upgrade to Premium — $14.99/mo
+            </button>
+            <button type="button" class="btn-offer-secondary" onclick="continueWithFree()">
+                No thanks, continue with Free
+            </button>
+        </div>
+
+        <a class="auth-back" href="/">← Back to home</a>
+    </div>
+
+    <!-- Account created confirmation -->
+    <div id="account-created" class="offer-screen" style="display:none;">
+        <div class="offer-brand">
+            <a href="/">Aurora <span>Sparq</span></a>
+            <p>Chat that actually goes somewhere</p>
+        </div>
+
+        <div class="offer-card" style="text-align:center;">
+            <div class="success-icon" aria-hidden="true">✓</div>
+            <h2 style="margin-top:8px;">Account created</h2>
+            <p class="offer-sub" style="margin-bottom:24px;">
+                You’re all set<span id="created-name-suffix"></span>.
+            </p>
+            <button type="button" class="btn-offer-primary" onclick="goToChatAfterRegister()">
+                Start chatting
+            </button>
+        </div>
+
+        <a class="auth-back" href="/">← Back to home</a>
+    </div>
+
     <!-- Chat Screen -->
     <div id="chat-wrapper">
         <div class="header">
@@ -644,18 +908,28 @@
         </div>
     </div>
 
-    <!-- Pricing Modal -->
+    <!-- Pricing Modal (homepage-matched) -->
     <div id="pricing-modal">
-        <div style="background:#1a0033; padding:40px 30px; border-radius:24px; border:3px solid #c300ff; max-width:420px; text-align:center; box-shadow:0 0 60px rgba(195,0,255,0.6);">
-            <h2 style="color:#c300ff; margin-bottom:30px;">Choose Your Experience</h2>
-            <button onclick="upgradePlan('premium_monthly')"
-                    style="width:100%; padding:20px; margin:12px 0; background:#6b00b3; border:none; border-radius:16px; color:white; font-size:1.15rem; cursor:pointer;">
-                <strong>Premium — $14.99/mo</strong><br>
-                <small style="opacity:0.9;">Unlimited messages • Voice Notes • Better Memory</small>
-            </button>
-            <button onclick="hidePricingModal()"
-                    style="margin-top:25px; background:transparent; border:1px solid #666; color:#ccc; padding:12px 50px; border-radius:50px; cursor:pointer;">
-                Maybe Later
+        <div class="pricing-card">
+            <h2>Choose your plan</h2>
+            <p class="pricing-sub">Unlock the full conversation with Isabella.</p>
+
+            <div class="pricing-plan">
+                <div class="pricing-plan-name">Premium</div>
+                <div class="pricing-plan-price">$14.99<span>/mo</span></div>
+                <ul>
+                    <li>Unlimited messages</li>
+                    <li>Voice notes</li>
+                    <li>Stronger memory</li>
+                    <li>Better long conversations</li>
+                </ul>
+                <button type="button" class="btn-offer-primary" onclick="upgradePlan('premium_monthly')">
+                    Upgrade to Premium
+                </button>
+            </div>
+
+            <button type="button" class="btn-offer-secondary" onclick="hidePricingModal()">
+                Maybe later
             </button>
         </div>
     </div>

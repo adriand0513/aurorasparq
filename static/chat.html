@@ -4,9 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Aurora Sparq • Isabella</title>
+    
    <link rel="stylesheet" href="/static/css/shared.css">
    <link rel="stylesheet" href="/static/css/chat.css">
+    
    <script src="/static/js/payments.js" defer></script>
+   <script src="/static/js/payments.js" defer></script>
+   <script src="/static/js/auth.js" defer></script>
 </head>
 <body>
     <!-- Auth Screen (homepage-matched) -->
@@ -238,95 +242,6 @@
             return res;
         }
 
-        function showLogin() {
-            document.getElementById('login-form').style.display = 'block';
-            document.getElementById('register-form').style.display = 'none';
-        }
-
-        function showRegister() {
-            document.getElementById('login-form').style.display = 'none';
-            document.getElementById('register-form').style.display = 'block';
-        }
-
-        async function register() {
-            const fullName = document.getElementById('reg-fullname').value.trim();
-            const email = document.getElementById('reg-email').value.trim();
-            const password = document.getElementById('reg-password').value.trim();
-            if (!email || !password) return alert("Email and password required");
-
-            try {
-                const res = await fetch('/auth/register', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, password, full_name: fullName })
-                });
-                const data = await res.json();
-
-                if (res.ok) {
-                    document.getElementById('register-form').style.display = 'none';
-                    document.getElementById('login-form').style.display = 'none';
-                    const authCard = document.querySelector('.auth-card');
-
-                    authCard.innerHTML = `
-                        <div style="text-align: center; padding: 30px 10px;">
-                            <div style="font-size: 60px; margin-bottom: 15px;">✅</div>
-                            <h2 style="color:#c300ff; margin-bottom:10px; font-size:1.6rem;">Account Created!</h2>
-                            <p style="color:#e0d4ff; font-size:1.05rem;">You're all set, ${fullName.split(" ")[0]}.</p>
-                        </div>
-                    `;
-
-                    setTimeout(() => {
-                        authCard.innerHTML = `
-                            <div style="text-align: center; padding: 10px 0;">
-                                <h2 style="color:#c300ff; margin-bottom:12px; font-size:1.85rem;">Welcome, ${fullName.split(" ")[0]}!</h2>
-                                <p style="margin-bottom:24px; line-height:1.6; color:#e0d4ff; font-size:1.05rem;">
-                                    Want the <strong>best experience</strong> with Isabella?
-                                </p>
-                                <div style="background: rgba(107, 0, 179, 0.12); border: 1px solid #6b00b3; border-radius: 16px; padding: 18px 20px; margin-bottom: 26px; text-align: left;">
-                                    <div style="color:#c300ff; font-weight:600; margin-bottom:10px; font-size:1rem;">Premium includes:</div>
-                                    <ul style="margin:0; padding-left:18px; color:#e0d4ff; line-height:1.75; font-size:0.95rem;">
-                                        <li>Unlimited messages with Isabella</li>
-                                        <li>Voice notes from her</li>
-                                        <li>Smarter memory &amp; better conversations</li>
-                                        <li>Priority access</li>
-                                    </ul>
-                                </div>
-                                <button id="post-reg-upgrade-btn"
-                                        style="width:100%; padding:18px 20px; background: linear-gradient(135deg, #6b00b3, #c300ff); border:none; border-radius:16px; color:white; font-size:1.1rem; font-weight:600; margin-bottom:14px; cursor:pointer; box-shadow: 0 4px 20px rgba(195, 0, 255, 0.5);">
-                                    Yes, Upgrade to Premium — $14.99/mo
-                                </button>
-                                <button id="skip-btn"
-                                        style="width:100%; padding:13px 20px; background:transparent; border:1px solid #555; color:#aaa; border-radius:50px; cursor:pointer; font-size:0.95rem;">
-                                    No thanks, continue with Free
-                                </button>
-                            </div>
-                        `;
-
-                        const upgradeBtn = document.getElementById('post-reg-upgrade-btn');
-                        const skipBtn = document.getElementById('skip-btn');
-
-                        upgradeBtn.onclick = async () => {
-                            upgradeBtn.disabled = true;
-                            upgradeBtn.style.opacity = '0.7';
-                            upgradeBtn.innerHTML = 'Processing... Please wait';
-                            await upgradeAfterRegister(email, password);
-                        };
-
-                        skipBtn.onclick = () => {
-                            skipBtn.disabled = true;
-                            skipBtn.style.opacity = '0.6';
-                            skipBtn.innerHTML = 'Continuing with Free...';
-                            setTimeout(() => showLoginAfterRegister(), 500);
-                        };
-                    }, 1400);
-                } else {
-                    alert(data.detail || "Registration failed");
-                }
-            } catch (e) {
-                alert("Error during registration");
-            }
-        }
-
         async function upgradeAfterRegister(email, password) {
             try {
                 const formData = new FormData();
@@ -362,50 +277,7 @@
             alert("Account created! You can upgrade to Premium anytime from the Upgrade button.");
         }
 
-        async function login() {
-            const email = document.getElementById('login-email').value.trim();
-            const password = document.getElementById('login-password').value.trim();
-            if (!email || !password) {
-                alert("Please enter email and password");
-                return;
-            }
-
-            try {
-                const formData = new FormData();
-                formData.append('username', email);
-                formData.append('password', password);
-
-                const res = await fetch('/auth/login', { method: 'POST', body: formData });
-                const data = await res.json();
-
-                if (res.ok) {
-                    token = data.access_token;
-                    currentUser = data.user;
-                    localStorage.setItem('token', token);
-                    localStorage.setItem('user', JSON.stringify(currentUser));
-                    convoId = `user_${currentUser.id}`;
-                    localStorage.setItem('convo_id', convoId);
-
-                    authScreen.style.display = 'none';
-                    chatWrapper.style.display = 'flex';
-                    if (userInfo) {
-                        userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email}`;
-                    }
-
-                    updateSubscriptionDisplay();
-                    await loadUserHistory();
-                    updateAvailability();
-                    await updateUsageCounter();
-                    await refreshUserData();
-                } else {
-                    alert(data.detail || "Login failed. Please check your credentials.");
-                }
-            } catch (e) {
-                console.error("Login error:", e);
-                alert("Login error. Please try again.");
-            }
-        }
-
+        
         async function refreshUserData() {
             if (!token) return;
             try {

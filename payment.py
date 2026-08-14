@@ -45,8 +45,8 @@ async def create_checkout_session(
             payment_method_types=["card"],
             line_items=[{"price": price_id, "quantity": 1}],
             mode="subscription" if is_subscription else "payment",
-            success_url="https://www.aurorasparq.com/success?session_id={CHECKOUT_SESSION_ID}",
-            cancel_url="https://www.aurorasparq.com/",
+            success_url = "https://www.aurorasparq.com/success?session_id={CHECKOUT_SESSION_ID}",
+            cancel_url = "https://www.aurorasparq.com/chat",
             client_reference_id=f"{current_user['id']}:{price_type}",
             metadata={
                 "price_type": price_type,

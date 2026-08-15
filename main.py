@@ -241,6 +241,22 @@ async def chat_page():
         logger.error(f"Chat page error: {e}")
         return HTMLResponse("<h1>Chat unavailable</h1>", status_code=500)
 
+@app.get("/privacy")
+async def privacy_page():
+    try:
+        with open("static/privacy.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+    except Exception:
+        raise HTTPException(404, "Privacy page not found")
+
+@app.get("/terms")
+async def terms_page():
+    try:
+        with open("static/terms.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+    except Exception:
+        raise HTTPException(404, "Terms page not found")
+
 # ── Auth Routes ─────────────────────────────────────
 @app.post("/auth/register")
 async def register(body: dict = Body(...)):

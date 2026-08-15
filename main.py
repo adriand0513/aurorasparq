@@ -546,7 +546,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                         "voice memo", "can you send a voice", "send me a voice"
                     ]
                 )
-                should_send_voice = user_asked_for_voice or (random.random() < 0.08)
+                should_send_voice = user_asked_for_voice or (random.random() < 0.2)
 
                 if should_send_voice:
                     assistant_text = " ".join(bubbles)

@@ -221,6 +221,7 @@
         const BETWEEN_BUBBLES_MS = 1200;
         const USER_DONE_MS = 1800;
         const BETWEEN_VOICE_MS = 600;
+        const DAILY_FREE_LIMIT = 5;
 
         function getToken() {
             return localStorage.getItem('token') || window.token || token || '';
@@ -706,7 +707,7 @@
             const user = getCurrentUser();
             const authToken = getToken();
             if (!counterEl || !user || !authToken) return;
-
+        
             try {
                 const res = await authFetch('/api/usage');
                 if (!res) return;
@@ -714,35 +715,36 @@
                     counterEl.innerHTML = '—';
                     return;
                 }
-
+        
                 const data = await res.json();
                 const tier = (user.subscription_tier || 'free').toLowerCase();
-
+        
                 if (tier === 'premium') {
                     counterEl.innerHTML = 'Unlimited ✨';
                     counterEl.style.background = 'rgba(0, 200, 100, 0.15)';
                     counterEl.style.border = '1px solid #00c864';
                     setChatLocked(false);
                 } else {
-                    const remaining = Math.max(0, 10 - (data.daily_count || 0));
-                    counterEl.innerHTML = `${remaining} / 5 today`;
-
-                    if (remaining < 5) {
+                    const remaining = Math.max(0, DAILY_FREE_LIMIT - (data.daily_count || 0));
+                    counterEl.innerHTML = `${remaining} / ${DAILY_FREE_LIMIT} today`;
+        
+                    if (remaining <= 2) {
                         counterEl.style.background = 'rgba(255, 100, 100, 0.2)';
                         counterEl.style.border = '1px solid #ff6464';
                     } else {
                         counterEl.style.background = 'rgba(195,0,255,0.15)';
                         counterEl.style.border = '1px solid var(--accent)';
                     }
-
+        
                     if (remaining <= 0) {
                         setChatLocked(true);
+                    } else {
+                        setChatLocked(false);
                     }
                 }
             } catch (e) {
                 counterEl.innerHTML = '—';
             }
-        }
 
         // ==================== INIT ====================
         window.addEventListener('load', () => {

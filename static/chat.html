@@ -170,7 +170,7 @@
         <div class="limit-modal-emoji">💬</div>
         <h2 id="limit-title">You’ve used today’s free messages</h2>
         <p class="limit-modal-sub">
-          Isabella’s free plan includes <strong>10 messages per day</strong>.
+          Isabella’s free plan includes <strong>5 messages per day</strong>.
           Upgrade to keep the conversation going now — or come back tomorrow.
         </p>
     
@@ -725,7 +725,7 @@
                     setChatLocked(false);
                 } else {
                     const remaining = Math.max(0, 10 - (data.daily_count || 0));
-                    counterEl.innerHTML = `${remaining} / 10 today`;
+                    counterEl.innerHTML = `${remaining} / 5 today`;
 
                     if (remaining < 5) {
                         counterEl.style.background = 'rgba(255, 100, 100, 0.2)';

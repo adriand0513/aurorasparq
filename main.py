@@ -377,11 +377,14 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         if daily_count >= daily_limit:
             return {
                 "replies": [
-                    "Hey... you've reached your daily free message limit (10 messages). "
-                    "Upgrade to Premium if you want to keep talking to me today ✨"
-                ]
+                    "Hey... you've hit today's free limit (10 messages). "
+                    "I'd still like to keep talking — upgrade if you want more of me today, "
+                    "or come back tomorrow and we'll pick up again."
+                ],
+                "limit_reached": True,
+                "daily_limit": 10
             }
-
+            
     # Cooldown
     now = time.time()
     if now - last_reply_time.get(convo_id, 0) < REPLY_COOLDOWN_SECONDS:

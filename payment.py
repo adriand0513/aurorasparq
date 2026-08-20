@@ -14,12 +14,11 @@ logger = logging.getLogger(__name__)
 # ============== PRICE CONFIG ==============
 PRICE_IDS = {
     "pic_tease": "price_1T1f1cF49k4gEmVBLQ7Mu5xd",
-    "premium_monthly": "price_1TgVcyF49k4gEmVBM7p27KwH",
+    "premium_monthly": "price_1U6bkIF49k4gEmVB1tm8Vrq0",
     "ultimate_monthly": "price_1TgVcYF49k4gEmVBkfUe13d6",
 }
 
 router = APIRouter(prefix="/payments", tags=["payments"])
-
 
 @router.post("/create-checkout-session")
 async def create_checkout_session(

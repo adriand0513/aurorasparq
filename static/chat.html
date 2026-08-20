@@ -4,12 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Aurora Sparq • Isabella</title>
-
     <link rel="stylesheet" href="/static/css/shared.css">
     <link rel="stylesheet" href="/static/css/chat.css">
-
     <script src="/static/js/payments.js" defer></script>
-    <script src="/static/js/auth.js?v=2" defer></script>
+    <script src="/static/js/auth.js?v=3" defer></script>
 </head>
 <body>
     <!-- Auth Screen -->
@@ -20,7 +18,6 @@
         </div>
         <div class="auth-card">
             <div id="auth-error" class="auth-error"></div>
-
             <div id="login-form">
                 <h2>Log in</h2>
                 <p class="auth-sub">Welcome back. Continue where you left off.</p>
@@ -34,7 +31,6 @@
                     <button type="button" onclick="showRegister()">Register</button>
                 </div>
             </div>
-
             <div id="register-form" style="display:none;">
                 <h2>Create account</h2>
                 <p class="auth-sub">Register to start chatting.</p>
@@ -119,9 +115,7 @@
                 <a href="/" id="home-btn" class="btn-home">Home</a>
             </div>
         </div>
-
         <div id="messages"></div>
-
         <div id="typing-container" style="display:none;">
             <div class="typing-indicator">
                 <div class="typing-dot"></div>
@@ -130,7 +124,6 @@
                 <span>Isabella is typing...</span>
             </div>
         </div>
-
         <div class="input-area">
             <input id="user-input" placeholder="Message Isabella..." autocomplete="off" />
             <button id="send-btn">➤</button>
@@ -163,34 +156,31 @@
 
     <!-- Daily free-limit upgrade modal -->
     <div id="limit-modal" class="limit-modal" style="display:none;" aria-hidden="true">
-      <div class="limit-modal-backdrop" onclick="hideLimitModal()"></div>
-      <div class="limit-modal-card" role="dialog" aria-labelledby="limit-title">
-        <button type="button" class="limit-modal-close" onclick="hideLimitModal()" aria-label="Close">×</button>
-    
-        <div class="limit-modal-emoji">💬</div>
-        <h2 id="limit-title">You’ve used today’s free messages</h2>
-        <p class="limit-modal-sub">
-          Isabella’s free plan includes <strong>5 messages per day</strong>.
-          Upgrade to keep the conversation going now — or come back tomorrow.
-        </p>
-    
-        <div class="limit-perks">
-          <div class="limit-perks-title">Premium unlocks</div>
-          <ul>
-            <li>Unlimited messages</li>
-            <li>Voice notes from Isabella</li>
-            <li>Stronger memory &amp; longer conversations</li>
-            <li>Deeper, more open replies</li>
-          </ul>
+        <div class="limit-modal-backdrop" onclick="hideLimitModal()"></div>
+        <div class="limit-modal-card" role="dialog" aria-labelledby="limit-title">
+            <button type="button" class="limit-modal-close" onclick="hideLimitModal()" aria-label="Close">×</button>
+            <div class="limit-modal-emoji">💬</div>
+            <h2 id="limit-title">You’ve used today’s free messages</h2>
+            <p class="limit-modal-sub">
+                Isabella’s free plan includes <strong>5 messages per day</strong>.
+                Upgrade to keep the conversation going now — or come back tomorrow.
+            </p>
+            <div class="limit-perks">
+                <div class="limit-perks-title">Premium unlocks</div>
+                <ul>
+                    <li>Unlimited messages</li>
+                    <li>Voice notes from Isabella</li>
+                    <li>Stronger memory &amp; longer conversations</li>
+                    <li>Deeper, more open replies</li>
+                </ul>
+            </div>
+            <button type="button" class="limit-btn-primary" onclick="upgradeFromLimitModal()">
+                Upgrade to Premium — $4.99/mo
+            </button>
+            <button type="button" class="limit-btn-secondary" onclick="hideLimitModal()">
+                Wait until tomorrow
+            </button>
         </div>
-    
-        <button type="button" class="limit-btn-primary" onclick="upgradeFromLimitModal()">
-          Upgrade to Premium — $4.99/mo
-        </button>
-        <button type="button" class="limit-btn-secondary" onclick="hideLimitModal()">
-          Wait until tomorrow
-        </button>
-      </div>
     </div>
 
     <script>
@@ -213,7 +203,7 @@
         let debounceTimer = null;
         let readingTimer = null;
         let isProcessingQueue = false;
-        let phase = 'idle'; // idle | waiting | reading | processing
+        let phase = 'idle';
         let dailyLimitReached = false;
 
         const READING_DELAY_MS = 5000;
@@ -237,7 +227,6 @@
             }
         }
 
-        // ==================== AVAILABILITY ====================
         function isIsabellaAvailable() {
             return true;
         }
@@ -261,7 +250,6 @@
             if (sendBtn) sendBtn.disabled = locked;
         }
 
-        // ==================== AUTH HELPERS ====================
         async function authFetch(url, options = {}) {
             const authToken = getToken();
             const res = await fetch(url, {
@@ -317,7 +305,6 @@
 
                 updateSubscriptionDisplay();
                 await updateUsageCounter();
-                console.log('✅ User data refreshed - Tier:', freshUser.subscription_tier);
             } catch (e) {
                 console.error('Failed to refresh user data', e);
             }
@@ -332,7 +319,6 @@
             window.location.reload();
         }
 
-        // ==================== CHAT CORE ====================
         function parseVoiceContent(content) {
             if (!content || !content.startsWith('[voice_note]|')) return null;
             const parts = content.split('|');
@@ -370,13 +356,11 @@
                             addVoiceMessageOnly(voice.url, voice.label);
                             return;
                         }
-
                         if (m.role === 'assistant' && content.toLowerCase().startsWith('[voice note]')) {
                             return;
                         }
 
-                        const type = m.role === 'user' ? 'sent' : 'received';
-                        addMessage(content, type);
+                        addMessage(content, m.role === 'user' ? 'sent' : 'received');
                     });
                 }
                 scrollToBottom();
@@ -426,7 +410,6 @@
 
             const div = document.createElement('div');
             div.className = 'message received voice-card';
-
             const audio = new Audio(voiceUrl);
             audio.preload = 'metadata';
             let playing = false;
@@ -515,7 +498,6 @@
             }
         }
 
-        // ==================== LIMIT MODAL ====================
         function showLimitModal() {
             const modal = document.getElementById('limit-modal');
             if (!modal) return;
@@ -550,7 +532,6 @@
                    text.includes("today's free");
         }
 
-        // ==================== MESSAGE QUEUE ====================
         function cancelReading() {
             if (readingTimer) {
                 clearTimeout(readingTimer);
@@ -675,7 +656,6 @@
             }
         }
 
-        // ==================== USAGE / TIER ====================
         function updateSubscriptionDisplay() {
             const user = getCurrentUser();
             if (!user) return;
@@ -707,7 +687,7 @@
             const user = getCurrentUser();
             const authToken = getToken();
             if (!counterEl || !user || !authToken) return;
-        
+
             try {
                 const res = await authFetch('/api/usage');
                 if (!res) return;
@@ -715,10 +695,10 @@
                     counterEl.innerHTML = '—';
                     return;
                 }
-        
+
                 const data = await res.json();
                 const tier = (user.subscription_tier || 'free').toLowerCase();
-        
+
                 if (tier === 'premium') {
                     counterEl.innerHTML = 'Unlimited ✨';
                     counterEl.style.background = 'rgba(0, 200, 100, 0.15)';
@@ -727,7 +707,7 @@
                 } else {
                     const remaining = Math.max(0, DAILY_FREE_LIMIT - (data.daily_count || 0));
                     counterEl.innerHTML = `${remaining} / ${DAILY_FREE_LIMIT} today`;
-        
+
                     if (remaining <= 2) {
                         counterEl.style.background = 'rgba(255, 100, 100, 0.2)';
                         counterEl.style.border = '1px solid #ff6464';
@@ -735,7 +715,7 @@
                         counterEl.style.background = 'rgba(195,0,255,0.15)';
                         counterEl.style.border = '1px solid var(--accent)';
                     }
-        
+
                     if (remaining <= 0) {
                         setChatLocked(true);
                     } else {
@@ -745,8 +725,8 @@
             } catch (e) {
                 counterEl.innerHTML = '—';
             }
+        }
 
-        // ==================== INIT ====================
         window.addEventListener('load', () => {
             token = getToken();
             window.token = token;
@@ -797,7 +777,6 @@
             updateAvailability();
         });
 
-        // ==================== EVENTS ====================
         if (input) {
             input.addEventListener('keypress', function (e) {
                 if (e.key === 'Enter') {

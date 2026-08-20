@@ -161,6 +161,38 @@
         </div>
     </div>
 
+    <!-- Daily free-limit upgrade modal -->
+    <div id="limit-modal" class="limit-modal" style="display:none;" aria-hidden="true">
+      <div class="limit-modal-backdrop" onclick="hideLimitModal()"></div>
+      <div class="limit-modal-card" role="dialog" aria-labelledby="limit-title">
+        <button type="button" class="limit-modal-close" onclick="hideLimitModal()" aria-label="Close">×</button>
+    
+        <div class="limit-modal-emoji">💬</div>
+        <h2 id="limit-title">You’ve used today’s free messages</h2>
+        <p class="limit-modal-sub">
+          Isabella’s free plan includes <strong>10 messages per day</strong>.
+          Upgrade to keep the conversation going now — or come back tomorrow.
+        </p>
+    
+        <div class="limit-perks">
+          <div class="limit-perks-title">Premium unlocks</div>
+          <ul>
+            <li>Unlimited messages</li>
+            <li>Voice notes from Isabella</li>
+            <li>Stronger memory &amp; longer conversations</li>
+            <li>Deeper, more open replies</li>
+          </ul>
+        </div>
+    
+        <button type="button" class="limit-btn-primary" onclick="upgradeFromLimitModal()">
+          Upgrade to Premium — $14.99/mo
+        </button>
+        <button type="button" class="limit-btn-secondary" onclick="hideLimitModal()">
+          Wait until tomorrow
+        </button>
+      </div>
+    </div>
+
     <script>
         let token = localStorage.getItem('token');
         let currentUser = null;
@@ -636,6 +668,37 @@
             } catch (e) {
                 counterEl.innerHTML = '—';
             }
+        }
+
+        function showLimitModal() {
+          const modal = document.getElementById('limit-modal');
+          if (!modal) return;
+          modal.style.display = 'flex';
+          modal.setAttribute('aria-hidden', 'false');
+        }
+        
+        function hideLimitModal() {
+          const modal = document.getElementById('limit-modal');
+          if (!modal) return;
+          modal.style.display = 'none';
+          modal.setAttribute('aria-hidden', 'true');
+        }
+        
+        function upgradeFromLimitModal() {
+          hideLimitModal();
+          if (typeof upgradePlan === 'function') {
+            upgradePlan('premium_monthly');
+          } else if (typeof showPricingModal === 'function') {
+            showPricingModal();
+          }
+        }
+        
+        function isLimitResponse(data) {
+          if (!data) return false;
+          if (data.limit_reached === true) return true;
+          const replies = data.replies || [];
+          const text = replies.join(' ').toLowerCase();
+          return text.includes('daily free') || text.includes('message limit') || text.includes('free limit');
         }
 
         // ==================== INIT ====================

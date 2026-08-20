@@ -198,7 +198,6 @@
         let currentUser = null;
         let convoId = null;
 
-        // Keep globals available for auth.js sync
         window.token = token;
         window.currentUser = currentUser;
 
@@ -215,6 +214,7 @@
         let readingTimer = null;
         let isProcessingQueue = false;
         let phase = 'idle'; // idle | waiting | reading | processing
+        let dailyLimitReached = false;
 
         const READING_DELAY_MS = 5000;
         const TYPING_DELAY_MS = 1800;
@@ -245,8 +245,19 @@
             const offlineMessage = document.getElementById('offline-message');
             if (offlineMessage) offlineMessage.style.display = 'none';
             if (chatWrapper) chatWrapper.style.opacity = '1';
-            if (input) input.disabled = false;
-            if (sendBtn) sendBtn.disabled = false;
+
+            const user = getCurrentUser();
+            const tier = (user.subscription_tier || 'free').toLowerCase();
+            const blocked = dailyLimitReached && tier !== 'premium';
+
+            if (input) input.disabled = blocked;
+            if (sendBtn) sendBtn.disabled = blocked;
+        }
+
+        function setChatLocked(locked) {
+            dailyLimitReached = locked;
+            if (input) input.disabled = locked;
+            if (sendBtn) sendBtn.disabled = locked;
         }
 
         // ==================== AUTH HELPERS ====================
@@ -295,6 +306,12 @@
 
                 if (userInfo) {
                     userInfo.textContent = `Hi, ${freshUser.full_name || freshUser.email || 'User'}`;
+                }
+
+                const tier = (freshUser.subscription_tier || 'free').toLowerCase();
+                if (tier === 'premium') {
+                    setChatLocked(false);
+                    hideLimitModal();
                 }
 
                 updateSubscriptionDisplay();
@@ -497,6 +514,41 @@
             }
         }
 
+        // ==================== LIMIT MODAL ====================
+        function showLimitModal() {
+            const modal = document.getElementById('limit-modal');
+            if (!modal) return;
+            modal.style.display = 'flex';
+            modal.setAttribute('aria-hidden', 'false');
+        }
+
+        function hideLimitModal() {
+            const modal = document.getElementById('limit-modal');
+            if (!modal) return;
+            modal.style.display = 'none';
+            modal.setAttribute('aria-hidden', 'true');
+        }
+
+        function upgradeFromLimitModal() {
+            hideLimitModal();
+            if (typeof upgradePlan === 'function') {
+                upgradePlan('premium_monthly');
+            } else if (typeof showPricingModal === 'function') {
+                showPricingModal();
+            }
+        }
+
+        function isLimitResponse(data) {
+            if (!data) return false;
+            if (data.limit_reached === true) return true;
+            const replies = data.replies || [];
+            const text = replies.join(' ').toLowerCase();
+            return text.includes('daily free') ||
+                   text.includes('message limit') ||
+                   text.includes('free limit') ||
+                   text.includes("today's free");
+        }
+
         // ==================== MESSAGE QUEUE ====================
         function cancelReading() {
             if (readingTimer) {
@@ -507,6 +559,14 @@
         }
 
         function sendMessage() {
+            const user = getCurrentUser();
+            const tier = (user.subscription_tier || 'free').toLowerCase();
+
+            if (dailyLimitReached && tier !== 'premium') {
+                showLimitModal();
+                return;
+            }
+
             const msg = input.value.trim();
             if (!msg) return;
             if (phase === 'processing') return;
@@ -591,6 +651,13 @@
                 if (voiceUrls.length > 0) {
                     await playVoiceNotes(voiceUrls);
                 }
+
+                if (isLimitResponse(data)) {
+                    setChatLocked(true);
+                    await updateUsageCounter();
+                    await sleep(600);
+                    showLimitModal();
+                }
             } catch (err) {
                 console.error('Send error:', err);
                 hideTyping();
@@ -599,7 +666,7 @@
                 phase = 'idle';
                 await updateUsageCounter();
 
-                if (pendingMessages.length > 0) {
+                if (pendingMessages.length > 0 && !dailyLimitReached) {
                     phase = 'waiting';
                     if (debounceTimer) clearTimeout(debounceTimer);
                     debounceTimer = setTimeout(() => startReadingPhase(), USER_DONE_MS);
@@ -627,6 +694,7 @@
                 if (tierEl) tierEl.textContent = 'PREMIUM PLAN';
                 if (statusEl) statusEl.style.display = 'block';
                 if (upgradeBtn) upgradeBtn.style.display = 'none';
+                setChatLocked(false);
             } else {
                 if (statusEl) statusEl.style.display = 'none';
                 if (upgradeBtn) upgradeBtn.style.display = '';
@@ -654,9 +722,11 @@
                     counterEl.innerHTML = 'Unlimited ✨';
                     counterEl.style.background = 'rgba(0, 200, 100, 0.15)';
                     counterEl.style.border = '1px solid #00c864';
+                    setChatLocked(false);
                 } else {
                     const remaining = Math.max(0, 10 - (data.daily_count || 0));
                     counterEl.innerHTML = `${remaining} / 10 today`;
+
                     if (remaining < 5) {
                         counterEl.style.background = 'rgba(255, 100, 100, 0.2)';
                         counterEl.style.border = '1px solid #ff6464';
@@ -664,91 +734,64 @@
                         counterEl.style.background = 'rgba(195,0,255,0.15)';
                         counterEl.style.border = '1px solid var(--accent)';
                     }
+
+                    if (remaining <= 0) {
+                        setChatLocked(true);
+                    }
                 }
             } catch (e) {
                 counterEl.innerHTML = '—';
             }
         }
 
-        function showLimitModal() {
-          const modal = document.getElementById('limit-modal');
-          if (!modal) return;
-          modal.style.display = 'flex';
-          modal.setAttribute('aria-hidden', 'false');
-        }
-        
-        function hideLimitModal() {
-          const modal = document.getElementById('limit-modal');
-          if (!modal) return;
-          modal.style.display = 'none';
-          modal.setAttribute('aria-hidden', 'true');
-        }
-        
-        function upgradeFromLimitModal() {
-          hideLimitModal();
-          if (typeof upgradePlan === 'function') {
-            upgradePlan('premium_monthly');
-          } else if (typeof showPricingModal === 'function') {
-            showPricingModal();
-          }
-        }
-        
-        function isLimitResponse(data) {
-          if (!data) return false;
-          if (data.limit_reached === true) return true;
-          const replies = data.replies || [];
-          const text = replies.join(' ').toLowerCase();
-          return text.includes('daily free') || text.includes('message limit') || text.includes('free limit');
-        }
-
         // ==================== INIT ====================
         window.addEventListener('load', () => {
             token = getToken();
             window.token = token;
-        
+
             if (token) {
                 currentUser = getCurrentUser();
                 window.currentUser = currentUser;
-        
+
                 if (authScreen) authScreen.style.display = 'none';
                 if (chatWrapper) {
                     chatWrapper.classList.add('visible');
                     chatWrapper.style.display = 'flex';
                 }
-        
+
                 if (userInfo) {
                     userInfo.textContent = `Hi, ${currentUser.full_name || currentUser.email || 'User'}`;
                 }
-        
+
                 if (currentUser && currentUser.id) {
                     convoId = `user_${currentUser.id}`;
                     localStorage.setItem('convo_id', convoId);
                 }
-        
-                // Returning from Stripe upgrade → refresh tier, clean URL
+
                 const params = new URLSearchParams(window.location.search);
                 const fromUpgrade =
                     params.get('upgraded') === '1' ||
                     params.get('success') === 'true' ||
                     params.has('session_id');
-        
+
                 updateSubscriptionDisplay();
                 updateUsageCounter();
                 loadUserHistory();
-        
-                // Always refresh from server (especially important after payment)
+
                 refreshUserData().then(() => {
                     if (fromUpgrade) {
+                        setChatLocked(false);
+                        hideLimitModal();
                         updateSubscriptionDisplay();
                         updateUsageCounter();
                     }
                 }).catch(() => {});
-        
+
                 if (fromUpgrade) {
                     window.history.replaceState({}, '', '/chat');
                 }
             }
-        
+
             updateAvailability();
         });
 

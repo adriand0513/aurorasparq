@@ -301,15 +301,15 @@ async def get_usage(user: dict = Depends(get_current_user)):
         cur.close()
         conn.close()
         tier = user.get("subscription_tier", "free").lower()
-        daily_limit = 10 if tier == "free" else 9999
+        daily_limit = 5 if tier == "free" else 9999
         return {
             "daily_count": daily_count,
             "daily_limit": daily_limit,
-            "remaining": max(0, 10 - daily_count) if tier == "free" else "unlimited"
+            "remaining": max(0, 5 - daily_count) if tier == "free" else "unlimited"
         }
     except Exception as e:
         logger.error(f"Usage endpoint error: {e}")
-        return {"daily_count": 0, "daily_limit": 10, "remaining": 10}
+        return {"daily_count": 0, "daily_limit": 5, "remaining": 5}
 
 @app.get("/auth/me")
 async def get_current_user_info(user: dict = Depends(get_current_user)):
@@ -359,7 +359,7 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
 
     # Daily limit for free users
     if not is_premium:
-        daily_limit = 10
+        daily_limit = 5
         conn = get_db_connection()
         cur = conn.cursor()
         try:
@@ -377,12 +377,12 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
         if daily_count >= daily_limit:
             return {
                 "replies": [
-                    "Hey... you've hit today's free limit (10 messages). "
+                    "Hey... you've hit today's free limit (5 messages). "
                     "I'd still like to keep talking — upgrade if you want more of me today, "
                     "or come back tomorrow and we'll pick up again."
                 ],
                 "limit_reached": True,
-                "daily_limit": 10
+                "daily_limit": 5
             }
             
     # Cooldown
@@ -555,26 +555,26 @@ async def generate_reply(body: dict = Body(...), user: dict = Depends(get_curren
                     assistant_text = " ".join(bubbles)
 
                     voice_only_prompt = f"""You are Isabella sending a voice note in a text chat.
-Write ONLY the spoken words for this voice note.
-
-{shared_memory_block}
-
-Hard rules:
-- Stay consistent with the known facts and recent messages above.
-- Do not contradict anything you already said (people, place, bath, relationship status, etc.).
-- This is NOT a reread or paraphrase of her text reply this turn.
-- Add a NEW beat that still fits the same scene and memory.
-- 1–8 spoken sentences max.
-- Warm, feminine, natural out-loud speech.
-- No quotes, labels, stage directions, asterisks, or brackets.
-
-His message:
-{(user_message or '')[:300]}
-
-Her draft text reply this turn (do NOT repeat or rephrase this):
-{assistant_text[:400]}
-
-New spoken voice note:"""
+                                    Write ONLY the spoken words for this voice note.
+                                    
+                                    {shared_memory_block}
+                                    
+                                    Hard rules:
+                                    - Stay consistent with the known facts and recent messages above.
+                                    - Do not contradict anything you already said (people, place, bath, relationship status, etc.).
+                                    - This is NOT a reread or paraphrase of her text reply this turn.
+                                    - Add a NEW beat that still fits the same scene and memory.
+                                    - 1–8 spoken sentences max.
+                                    - Warm, feminine, natural out-loud speech.
+                                    - No quotes, labels, stage directions, asterisks, or brackets.
+                                    
+                                    His message:
+                                    {(user_message or '')[:300]}
+                                    
+                                    Her draft text reply this turn (do NOT repeat or rephrase this):
+                                    {assistant_text[:400]}
+                                    
+                                    New spoken voice note:"""
 
                     voice_script = ""
                     try:

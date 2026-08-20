@@ -14,6 +14,10 @@ function clearAuthError() {
   el.style.display = 'none';
 }
 
+function hideAuthError() {
+  clearAuthError();
+}
+
 function showLogin() {
   clearAuthError();
   const loginForm = document.getElementById('login-form');
@@ -41,12 +45,10 @@ function syncAuthToPage(accessToken, user) {
   localStorage.setItem('token', accessToken);
   if (user) localStorage.setItem('user', JSON.stringify(user));
 
-  // Keep chat.html globals in sync
   window.token = accessToken;
   window.currentUser = user || null;
 
   try {
-    // These exist in the inline chat script
     if (typeof token !== 'undefined') token = accessToken;
     if (typeof currentUser !== 'undefined') currentUser = user || null;
     if (user && user.id && typeof convoId !== 'undefined') {
@@ -54,7 +56,7 @@ function syncAuthToPage(accessToken, user) {
       localStorage.setItem('convo_id', convoId);
     }
   } catch (e) {
-    // ignore scope issues; window.* is the backup
+    // ignore scope issues
   }
 }
 
@@ -85,13 +87,11 @@ function goToChatAfterRegister() {
 
 function goToChatAfterAuth() {
   showChatShell();
-
   const user = window.currentUser || JSON.parse(localStorage.getItem('user') || '{}');
   const userInfo = document.getElementById('user-info');
   if (userInfo) {
     userInfo.textContent = `Hi, ${user.full_name || user.email || 'User'}`;
   }
-
   if (typeof updateSubscriptionDisplay === 'function') updateSubscriptionDisplay();
   if (typeof updateUsageCounter === 'function') updateUsageCounter();
   if (typeof loadUserHistory === 'function') loadUserHistory();
@@ -118,6 +118,20 @@ function readRegisterFields() {
   };
 }
 
+async function fetchCurrentUser(accessToken, fallback) {
+  try {
+    const meRes = await fetch('/auth/me', {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    if (meRes.ok) {
+      return await meRes.json();
+    }
+  } catch (e) {
+    console.error('fetchCurrentUser error:', e);
+  }
+  return fallback;
+}
+
 async function login() {
   clearAuthError();
 
@@ -141,8 +155,12 @@ async function login() {
     });
 
     const data = await res.json().catch(() => ({}));
+    console.log('LOGIN RESPONSE', res.status, data);
+
     if (!res.ok) {
-      showAuthError(data.detail || 'Login failed');
+      const detail = data.detail;
+      const msg = typeof detail === 'string' ? detail : 'Login failed';
+      showAuthError(msg);
       return;
     }
 
@@ -152,15 +170,19 @@ async function login() {
       return;
     }
 
-    const user = data.user || {
+    let user = data.user || {
       id: data.id,
       email: data.email || email,
       full_name: data.full_name,
       subscription_tier: data.subscription_tier || 'free'
     };
 
+    if (!user.id) {
+      user = await fetchCurrentUser(accessToken, user);
+    }
+
     syncAuthToPage(accessToken, user);
-    window.location.href = '/';
+    window.location.href = '/chat';
   } catch (err) {
     console.error('login error:', err);
     showAuthError('Something went wrong. Try again.');
@@ -171,9 +193,6 @@ async function register() {
   clearAuthError();
 
   const { fullName, email, password } = readRegisterFields();
-
-  console.log('register fields:', { fullName, email, passwordLength: password.length });
-
   if (!fullName || !email || !password) {
     showAuthError('Fill in name, email, and password.');
     return;
@@ -200,7 +219,6 @@ async function register() {
       return;
     }
 
-    // Auto-login
     const body = new URLSearchParams();
     body.append('username', email);
     body.append('password', password);
@@ -210,8 +228,8 @@ async function register() {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body
     });
-    const loginData = await loginRes.json().catch(() => ({}));
 
+    const loginData = await loginRes.json().catch(() => ({}));
     if (!loginRes.ok || !(loginData.access_token || loginData.token)) {
       showAuthError('Account created, but login failed. Try logging in.');
       showLogin();
@@ -219,14 +237,18 @@ async function register() {
     }
 
     const accessToken = loginData.access_token || loginData.token;
-    const user = loginData.user || {
+    let user = loginData.user || {
       email,
       full_name: fullName,
       subscription_tier: 'free'
     };
 
+    if (!user.id) {
+      user = await fetchCurrentUser(accessToken, user);
+    }
+
     syncAuthToPage(accessToken, user);
-    window.location.href = '/';
+    showPostRegisterOffer(fullName);
   } catch (err) {
     console.error('register error:', err);
     showAuthError('Something went wrong. Try again.');
@@ -240,6 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
       login();
     }
   });
+
   document.getElementById('reg-password')?.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();

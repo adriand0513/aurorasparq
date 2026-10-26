@@ -3,103 +3,19 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Privacy Policy • Aurora Sparq</title>
-  <style>
-    :root {
-      --bg: #f3f5f9;
-      --surface: #ffffff;
-      --text: #0f172a;
-      --muted: #64748b;
-      --border: #e2e8f0;
-      --blue: #1d4ed8;
-      --blue-dark: #1e3a8a;
-      --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: var(--font);
-      background: var(--bg);
-      color: var(--text);
-      line-height: 1.65;
-      -webkit-font-smoothing: antialiased;
-    }
-    .nav {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 20px 24px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .logo {
-      font-weight: 700;
-      font-size: 1.2rem;
-      letter-spacing: -0.02em;
-      color: var(--text);
-      text-decoration: none;
-    }
-    .logo span { color: var(--blue); }
-    .nav a.back {
-      color: var(--muted);
-      text-decoration: none;
-      font-size: 0.95rem;
-      font-weight: 500;
-    }
-    .nav a.back:hover { color: var(--text); }
-    .wrap {
-      max-width: 760px;
-      margin: 0 auto 64px;
-      padding: 8px 24px 48px;
-    }
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 40px 36px;
-      box-shadow: 0 12px 40px rgba(15, 23, 42, 0.06);
-    }
-    h1 {
-      font-size: clamp(1.75rem, 4vw, 2.1rem);
-      letter-spacing: -0.03em;
-      margin-bottom: 8px;
-    }
-    .updated {
-      color: var(--muted);
-      font-size: 0.92rem;
-      margin-bottom: 28px;
-    }
-    h2 {
-      font-size: 1.15rem;
-      margin: 28px 0 10px;
-      letter-spacing: -0.02em;
-    }
-    p, li { color: #334155; font-size: 0.98rem; }
-    p { margin-bottom: 12px; }
-    ul { padding-left: 1.2rem; margin-bottom: 12px; }
-    li { margin-bottom: 6px; }
-    a { color: var(--blue); }
-    a:hover { color: var(--blue-dark); }
-    .footer {
-      text-align: center;
-      padding: 24px;
-      color: var(--muted);
-      font-size: 0.88rem;
-    }
-    .footer a { color: var(--muted); text-decoration: none; margin: 0 8px; }
-    .footer a:hover { color: var(--text); }
-    @media (max-width: 600px) {
-      .card { padding: 28px 20px; }
-    }
-  </style>
+  <title>Privacy Policy | Aurora Sparq</title>
+  <meta name="theme-color" content="#1a1020" />
+  <link rel="stylesheet" href="/static/css/base.css" />
+  <link rel="stylesheet" href="/static/css/legal.css" />
 </head>
 <body>
-  <nav class="nav">
-    <a class="logo" href="/">Aurora <span>Sparq</span></a>
-    <a class="back" href="/">← Home</a>
+  <nav class="legal-nav">
+    <a class="wordmark" href="/">Aurora Sparq</a>
+    <a class="btn-text" href="/chat">Open chat</a>
   </nav>
 
-  <main class="wrap">
-    <article class="card">
+  <main class="legal">
+    <article>
       <h1>Privacy Policy</h1>
       <p class="updated">Last updated: August 14, 2026</p>
 
@@ -197,7 +113,7 @@
     </article>
   </main>
 
-  <footer class="footer">
+  <footer class="legal-footer">
     <a href="/">Home</a>
     <a href="/privacy">Privacy</a>
     <a href="/terms">Terms</a>

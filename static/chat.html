@@ -2,182 +2,169 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Aurora Sparq • Isabella</title>
-    <link rel="stylesheet" href="/static/css/shared.css">
-    <link rel="stylesheet" href="/static/css/chat.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Isabella | Aurora Sparq</title>
+    <meta name="theme-color" content="#1a1020" />
+    <link rel="preload" href="/static/fonts/bodoni-moda-latin-opsz-italic.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/chat.css?v=2">
     <script src="/static/js/payments.js" defer></script>
-    <script src="/static/js/auth.js?v=3" defer></script>
+    <script src="/static/js/auth.js?v=4" defer></script>
 </head>
 <body>
-    <!-- Auth Screen -->
-    <div id="auth-screen">
-        <div class="auth-brand">
-            <a href="/">Aurora <span>Sparq</span></a>
-            <p>Chat that actually goes somewhere</p>
-        </div>
-        <div class="auth-card">
-            <div id="auth-error" class="auth-error"></div>
+    <!-- Log in / create account -->
+    <div id="auth-screen" class="gate">
+        <a class="wordmark gate-mark" href="/">Aurora Sparq</a>
+        <div class="gate-card">
+            <span class="gate-portrait face" aria-hidden="true"></span>
+            <div id="auth-error" class="auth-error" role="alert"></div>
             <div id="login-form">
-                <h2>Log in</h2>
-                <p class="auth-sub">Welcome back. Continue where you left off.</p>
+                <h1 class="gate-title">Welcome back</h1>
+                <p class="gate-sub">Log in to pick up where you and Isabella left off.</p>
                 <label for="login-email">Email</label>
                 <input id="login-email" type="email" autocomplete="email" placeholder="you@email.com" />
                 <label for="login-password">Password</label>
-                <input id="login-password" type="password" autocomplete="current-password" placeholder="••••••••" />
-                <button type="button" class="btn-auth" onclick="login()">Log in</button>
-                <div class="auth-switch">
-                    Don’t have an account?
-                    <button type="button" onclick="showRegister()">Register</button>
-                </div>
+                <input id="login-password" type="password" autocomplete="current-password" placeholder="Your password" />
+                <button type="button" class="btn btn-primary btn-block" onclick="login()">Log in</button>
+                <p class="gate-switch">
+                    New here?
+                    <button type="button" class="btn-link" onclick="showRegister()">Create an account</button>
+                </p>
             </div>
             <div id="register-form" style="display:none;">
-                <h2>Create account</h2>
-                <p class="auth-sub">Register to start chatting.</p>
-                <label for="reg-name">Name</label>
-                <input id="reg-name" type="text" autocomplete="name" placeholder="Your name" />
+                <h1 class="gate-title">Meet Isabella</h1>
+                <p class="gate-sub">Create a free account. Five messages a day, no card needed.</p>
+                <label for="reg-name">What should she call you?</label>
+                <input id="reg-name" type="text" autocomplete="given-name" placeholder="Your first name" />
                 <label for="reg-email">Email</label>
                 <input id="reg-email" type="email" autocomplete="email" placeholder="you@email.com" />
                 <label for="reg-password">Password</label>
-                <input id="reg-password" type="password" autocomplete="new-password" placeholder="••••••••" />
-                <button type="button" class="btn-auth" onclick="register()">Create account</button>
-                <div class="auth-switch">
+                <input id="reg-password" type="password" autocomplete="new-password" placeholder="At least 8 characters" minlength="8" />
+                <button type="button" class="btn btn-primary btn-block" onclick="register()">Create account</button>
+                <p class="gate-legal">
+                    By creating an account you confirm you're 18 or older and agree to the
+                    <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.
+                    Isabella is an AI companion, not a real person.
+                </p>
+                <p class="gate-switch">
                     Already have an account?
-                    <button type="button" onclick="showLogin()">Log in</button>
-                </div>
+                    <button type="button" class="btn-link" onclick="showLogin()">Log in</button>
+                </p>
             </div>
         </div>
-        <a class="auth-back" href="/">← Back to home</a>
+        <a class="gate-back btn-text" href="/">Back to home</a>
     </div>
 
-    <!-- Post-register Premium offer -->
-    <div id="post-register-offer" class="offer-screen" style="display:none;">
-        <div class="offer-brand">
-            <a href="/">Aurora <span>Sparq</span></a>
-            <p>Chat that actually goes somewhere</p>
-        </div>
-        <div class="offer-card">
-            <h2>Welcome, <span id="offer-name">there</span>!</h2>
-            <p class="offer-sub">Want the full experience with Isabella?</p>
-            <div class="offer-box">
-                <div class="offer-box-title">Premium includes</div>
-                <ul>
-                    <li>Unlimited messages</li>
-                    <li>Voice notes</li>
-                    <li>Stronger memory &amp; longer conversations</li>
-                    <li>Priority access as more people join</li>
-                </ul>
-            </div>
-            <button type="button" class="btn-offer-primary" onclick="upgradePlan('premium_monthly')">
-                Upgrade to Premium — $19.99/mo
+    <!-- Right after sign-up -->
+    <div id="post-register-offer" class="gate" style="display:none;">
+        <a class="wordmark gate-mark" href="/">Aurora Sparq</a>
+        <div class="gate-card">
+            <span class="gate-portrait face" aria-hidden="true"></span>
+            <h1 class="gate-title">You're in, <span id="offer-name">there</span></h1>
+            <p class="gate-sub">You have 5 free messages a day. Premium removes the limit.</p>
+            <ul class="perk-list">
+                <li>Unlimited messages</li>
+                <li>Voice notes from Isabella</li>
+                <li>Cancel any time</li>
+            </ul>
+            <button type="button" class="btn btn-primary btn-block" onclick="upgradePlan('premium_monthly')">
+                Get Premium for $19.99/month
             </button>
-            <button type="button" class="btn-offer-secondary" onclick="continueWithFree()">
-                No thanks, continue with Free
+            <button type="button" class="btn btn-quiet btn-block" onclick="continueWithFree()">
+                Start with the free plan
             </button>
         </div>
-        <a class="auth-back" href="/">← Back to home</a>
     </div>
 
-    <!-- Account created -->
-    <div id="account-created" class="offer-screen" style="display:none;">
-        <div class="offer-brand">
-            <a href="/">Aurora <span>Sparq</span></a>
-            <p>Chat that actually goes somewhere</p>
-        </div>
-        <div class="offer-card" style="text-align:center;">
-            <div class="success-icon" aria-hidden="true">✓</div>
-            <h2 style="margin-top:8px;">Account created</h2>
-            <p class="offer-sub" style="margin-bottom:24px;">
-                You’re all set<span id="created-name-suffix"></span>.
-            </p>
-            <button type="button" class="btn-offer-primary" onclick="goToChatAfterRegister()">
-                Start chatting
-            </button>
-        </div>
-        <a class="auth-back" href="/">← Back to home</a>
-    </div>
-
-    <!-- Chat Screen -->
+    <!-- Chat -->
     <div id="chat-wrapper">
-        <div class="header">
-            <div class="avatar"></div>
+        <header class="header">
+            <div class="avatar face" aria-hidden="true"></div>
             <div class="header-info">
                 <div class="header-name">Isabella</div>
-                <div class="header-status"><span class="status-dot"></span> Online · Queens, NY</div>
+                <div class="header-status"><span class="status-dot" aria-hidden="true"></span>Online now</div>
             </div>
             <div class="header-actions">
-                <div id="user-info"></div>
-                <div id="usage-counter"></div>
-                <div id="subscription-status" style="display:none;" onclick="showPricingModal()">
-                    <span id="current-tier"></span>
+                <span id="user-info" hidden></span>
+                <div id="usage-counter" class="usage-pill" aria-live="polite"></div>
+                <div id="subscription-status" class="plan-pill" style="display:none;">
+                    <span id="current-tier">Premium</span>
                 </div>
-                <button id="upgrade-btn" class="btn-upgrade" onclick="showPricingModal()">Upgrade</button>
-                <a href="/" id="home-btn" class="btn-home">Home</a>
+                <button id="upgrade-btn" class="btn btn-primary btn-upgrade" type="button" onclick="showPricingModal()">Upgrade</button>
+                <div class="menu">
+                    <button type="button" class="menu-btn" id="menu-btn" aria-haspopup="true" aria-expanded="false" aria-label="Menu">
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><circle cx="4" cy="10" r="1.8"/><circle cx="10" cy="10" r="1.8"/><circle cx="16" cy="10" r="1.8"/></svg>
+                    </button>
+                    <div class="menu-list" id="menu-list" role="menu" hidden>
+                        <a role="menuitem" href="/">Home</a>
+                        <a role="menuitem" href="/terms">Terms</a>
+                        <a role="menuitem" href="/privacy">Privacy</a>
+                        <button role="menuitem" type="button" onclick="logout()">Log out</button>
+                    </div>
+                </div>
+            </div>
+        </header>
+        <main id="messages" aria-live="polite"></main>
+        <div id="empty-state" class="empty-state" hidden>
+            <span class="empty-portrait face" aria-hidden="true"></span>
+            <h2 class="empty-title">Say hi to Isabella</h2>
+            <p class="empty-sub">She'll remember what you tell her, so start wherever you like.</p>
+            <div class="starters">
+                <button type="button" class="starter">How was your day?</button>
+                <button type="button" class="starter">What are you shooting this week?</button>
+                <button type="button" class="starter">Tell me about Medellín</button>
             </div>
         </div>
-        <div id="messages"></div>
-        <div id="typing-container" style="display:none;">
-            <div class="typing-indicator">
-                <div class="typing-dot"></div>
-                <div class="typing-dot"></div>
-                <div class="typing-dot"></div>
-                <span>Isabella is typing...</span>
-            </div>
-        </div>
-        <div class="input-area">
-            <input id="user-input" placeholder="Message Isabella..." autocomplete="off" />
-            <button id="send-btn">➤</button>
-        </div>
-    </div>
-
-    <!-- Pricing Modal -->
-    <div id="pricing-modal">
-        <div class="pricing-card">
-            <h2>Choose your plan</h2>
-            <p class="pricing-sub">Unlock the full conversation with Isabella.</p>
-            <div class="pricing-plan">
-                <div class="pricing-plan-name">Premium</div>
-                <div class="pricing-plan-price">$19.99<span>/mo</span></div>
-                <ul>
-                    <li>Unlimited messages</li>
-                    <li>Voice notes</li>
-                    <li>Stronger memory</li>
-                    <li>Better long conversations</li>
-                </ul>
-                <button type="button" class="btn-offer-primary" onclick="upgradePlan('premium_monthly')">
-                    Upgrade to Premium
+        <div id="typing-container" style="display:none;"></div>
+        <footer class="input-area">
+            <div class="composer">
+                <label for="user-input" class="sr-only">Message Isabella</label>
+                <input id="user-input" placeholder="Message Isabella" autocomplete="off" enterkeyhint="send" />
+                <button id="send-btn" type="button" aria-label="Send" disabled>
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 16V4M4.5 9.5 10 4l5.5 5.5"/></svg>
                 </button>
             </div>
-            <button type="button" class="btn-offer-secondary" onclick="hidePricingModal()">
-                Maybe later
+        </footer>
+    </div>
+
+    <!-- Plans -->
+    <div id="pricing-modal" class="modal">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="pricing-title">
+            <h2 id="pricing-title" class="modal-title">Premium</h2>
+            <p class="modal-price">$19.99<small>/ month</small></p>
+            <ul class="perk-list">
+                <li>Unlimited messages, any time of day</li>
+                <li>Voice notes from Isabella</li>
+                <li>Cancel any time</li>
+            </ul>
+            <button type="button" class="btn btn-primary btn-block" onclick="upgradePlan('premium_monthly')">
+                Get Premium
+            </button>
+            <button type="button" class="btn btn-quiet btn-block" onclick="hidePricingModal()">
+                Not now
             </button>
         </div>
     </div>
 
-    <!-- Daily free-limit upgrade modal -->
-    <div id="limit-modal" class="limit-modal" style="display:none;" aria-hidden="true">
-        <div class="limit-modal-backdrop" onclick="hideLimitModal()"></div>
-        <div class="limit-modal-card" role="dialog" aria-labelledby="limit-title">
-            <button type="button" class="limit-modal-close" onclick="hideLimitModal()" aria-label="Close">×</button>
-            <div class="limit-modal-emoji">💬</div>
-            <h2 id="limit-title">You’ve used today’s free messages</h2>
-            <p class="limit-modal-sub">
-                Isabella’s free plan includes <strong>5 messages per day</strong>.
-                Upgrade to keep the conversation going now — or come back tomorrow.
-            </p>
-            <div class="limit-perks">
-                <div class="limit-perks-title">Premium unlocks</div>
-                <ul>
-                    <li>Unlimited messages</li>
-                    <li>Voice notes from Isabella</li>
-                    <li>Stronger memory &amp; longer conversations</li>
-                    <li>Deeper, more open replies</li>
-                </ul>
-            </div>
-            <button type="button" class="limit-btn-primary" onclick="upgradeFromLimitModal()">
-                Upgrade to Premium — $19.99/mo
+    <!-- Daily free limit reached -->
+    <div id="limit-modal" class="modal" style="display:none;" aria-hidden="true">
+        <div class="modal-backdrop" onclick="hideLimitModal()"></div>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="limit-title">
+            <button type="button" class="modal-close" onclick="hideLimitModal()" aria-label="Close">
+                <svg width="18" height="18" viewBox="0 0 18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 4l10 10M14 4 4 14"/></svg>
             </button>
-            <button type="button" class="limit-btn-secondary" onclick="hideLimitModal()">
+            <span class="gate-portrait face" aria-hidden="true"></span>
+            <h2 id="limit-title" class="modal-title">That's today's 5 free messages</h2>
+            <p class="modal-sub">Your free messages reset at midnight. Premium lets you keep talking now, with no daily limit.</p>
+            <ul class="perk-list">
+                <li>Unlimited messages</li>
+                <li>Voice notes from Isabella</li>
+                <li>Cancel any time</li>
+            </ul>
+            <button type="button" class="btn btn-primary btn-block" onclick="upgradeFromLimitModal()">
+                Get Premium for $19.99/month
+            </button>
+            <button type="button" class="btn btn-quiet btn-block" onclick="hideLimitModal()">
                 Wait until tomorrow
             </button>
         </div>
@@ -242,13 +229,16 @@
             const blocked = dailyLimitReached && !PAID_TIERS.includes(tier);
 
             if (input) input.disabled = blocked;
-            if (sendBtn) sendBtn.disabled = blocked;
+            if (sendBtn) sendBtn.disabled = blocked || !(input && input.value.trim());
         }
 
         function setChatLocked(locked) {
             dailyLimitReached = locked;
-            if (input) input.disabled = locked;
-            if (sendBtn) sendBtn.disabled = locked;
+            if (input) {
+                input.disabled = locked;
+                input.placeholder = locked ? 'Free messages reset at midnight' : 'Message Isabella';
+            }
+            if (sendBtn) sendBtn.disabled = locked || !(input && input.value.trim());
         }
 
         async function authFetch(url, options = {}) {
@@ -346,6 +336,7 @@
 
                 const data = await res.json();
                 messagesContainer.innerHTML = '';
+                const hasMessages = Array.isArray(data.messages) && data.messages.length > 0;
 
                 if (data.messages && data.messages.length > 0) {
                     data.messages.forEach(m => {
@@ -365,6 +356,7 @@
                     });
                 }
                 showAiNotice();
+                if (!hasMessages) showEmptyState();
                 scrollToBottom();
             } catch (e) {
                 console.error('Failed to load history', e);
@@ -399,10 +391,31 @@
         function addMessage(text, type) {
             const content = (text || '').trim();
             if (!content) return;
+            hideEmptyState();
+            clearSeen();
             const div = document.createElement('div');
             div.className = `message ${type}`;
             div.textContent = content;
             messagesContainer.appendChild(div);
+            scrollToBottom();
+        }
+
+        const emptyState = document.getElementById('empty-state');
+        function showEmptyState() { if (emptyState) emptyState.hidden = false; }
+        function hideEmptyState() { if (emptyState) emptyState.hidden = true; }
+
+        function clearSeen() {
+            document.querySelectorAll('.seen-receipt').forEach(el => el.remove());
+        }
+        function markSeen() {
+            clearSeen();
+            const sent = messagesContainer.querySelectorAll('.message.sent');
+            const last = sent[sent.length - 1];
+            if (!last) return;
+            const seen = document.createElement('div');
+            seen.className = 'seen-receipt';
+            seen.textContent = 'Seen';
+            last.after(seen);
             scrollToBottom();
         }
 
@@ -411,12 +424,10 @@
         }
 
         function showTyping() {
+            hideEmptyState();
             typingContainer.innerHTML = `
-                <div class="typing-indicator">
-                    <div class="typing-dot"></div>
-                    <div class="typing-dot"></div>
-                    <div class="typing-dot"></div>
-                    <span>Isabella is typing...</span>
+                <div class="typing-indicator" role="status" aria-label="Isabella is typing">
+                    <span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>
                 </div>
             `;
             typingContainer.style.display = 'block';
@@ -441,16 +452,14 @@
             audio.preload = 'metadata';
             let playing = false;
 
+            hideEmptyState();
+            const PLAY_ICON = '<svg width="14" height="16" viewBox="0 0 12 14" fill="currentColor" aria-hidden="true"><path d="M1 1.2v11.6c0 .8.9 1.3 1.5.8l8.7-5.8c.6-.4.6-1.2 0-1.6L2.5.4C1.9 0 1 .4 1 1.2z"/></svg>';
+            const PAUSE_ICON = '<svg width="14" height="16" viewBox="0 0 12 14" fill="currentColor" aria-hidden="true"><rect x="1" y="1" width="3.5" height="12" rx="1"/><rect x="7.5" y="1" width="3.5" height="12" rx="1"/></svg>';
+            div.setAttribute('aria-label', 'Voice note from Isabella');
             div.innerHTML = `
-                <div class="voice-top">
-                    <span class="voice-icon">🎙️</span>
-                    <span class="voice-label">${label}</span>
-                    <span class="voice-time">0:00</span>
-                </div>
-                <div class="voice-row">
-                    <button type="button" class="voice-play" aria-label="Play">▶</button>
-                    <div class="voice-track"><div class="voice-fill"></div></div>
-                </div>
+                <button type="button" class="voice-play" aria-label="Play voice note">${PLAY_ICON}</button>
+                <div class="voice-track"><div class="voice-fill"></div></div>
+                <span class="voice-time">0:00</span>
             `;
 
             const playBtn = div.querySelector('.voice-play');
@@ -477,15 +486,18 @@
 
             audio.addEventListener('play', () => {
                 playing = true;
-                playBtn.textContent = '❚❚';
+                playBtn.innerHTML = PAUSE_ICON;
+                playBtn.setAttribute('aria-label', 'Pause voice note');
             });
             audio.addEventListener('pause', () => {
                 playing = false;
-                playBtn.textContent = '▶';
+                playBtn.innerHTML = PLAY_ICON;
+                playBtn.setAttribute('aria-label', 'Play voice note');
             });
             audio.addEventListener('ended', () => {
                 playing = false;
-                playBtn.textContent = '▶';
+                playBtn.innerHTML = PLAY_ICON;
+                playBtn.setAttribute('aria-label', 'Play voice note');
                 fill.style.width = '0%';
             });
             audio.addEventListener('timeupdate', () => {
@@ -598,6 +610,7 @@
             if (phase === 'processing') return;
 
             phase = 'reading';
+            markSeen();
             readingTimer = setTimeout(() => {
                 readingTimer = null;
                 if (phase === 'reading' && pendingMessages.length > 0) {
@@ -703,7 +716,7 @@
             const tier = (user.subscription_tier || 'free').toLowerCase();
 
             if (PAID_TIERS.includes(tier)) {
-                if (tierEl) tierEl.textContent = 'PREMIUM PLAN';
+                if (tierEl) tierEl.textContent = 'Premium';
                 if (statusEl) statusEl.style.display = 'block';
                 if (upgradeBtn) upgradeBtn.style.display = 'none';
                 setChatLocked(false);
@@ -723,38 +736,28 @@
                 const res = await authFetch('/api/usage');
                 if (!res) return;
                 if (!res.ok) {
-                    counterEl.innerHTML = '—';
+                    counterEl.textContent = '';
                     return;
                 }
 
                 const data = await res.json();
                 const tier = (user.subscription_tier || 'free').toLowerCase();
 
+                counterEl.classList.remove('low', 'empty');
                 if (PAID_TIERS.includes(tier)) {
-                    counterEl.innerHTML = 'Unlimited ✨';
-                    counterEl.style.background = 'rgba(0, 200, 100, 0.15)';
-                    counterEl.style.border = '1px solid #00c864';
+                    counterEl.hidden = true;
                     setChatLocked(false);
                 } else {
                     const remaining = Math.max(0, DAILY_FREE_LIMIT - (data.daily_count || 0));
-                    counterEl.innerHTML = `${remaining} / ${DAILY_FREE_LIMIT} today`;
-
-                    if (remaining <= 2) {
-                        counterEl.style.background = 'rgba(255, 100, 100, 0.2)';
-                        counterEl.style.border = '1px solid #ff6464';
-                    } else {
-                        counterEl.style.background = 'rgba(195,0,255,0.15)';
-                        counterEl.style.border = '1px solid var(--accent)';
-                    }
-
-                    if (remaining <= 0) {
-                        setChatLocked(true);
-                    } else {
-                        setChatLocked(false);
-                    }
+                    counterEl.hidden = false;
+                    counterEl.textContent = `${remaining} free left`;
+                    counterEl.title = `${remaining} of ${DAILY_FREE_LIMIT} free messages left today`;
+                    if (remaining === 0) counterEl.classList.add('empty');
+                    else if (remaining <= 2) counterEl.classList.add('low');
+                    setChatLocked(remaining <= 0);
                 }
             } catch (e) {
-                counterEl.innerHTML = '—';
+                counterEl.textContent = '';
             }
         }
 
@@ -805,8 +808,43 @@
                 }
             }
 
+            if (!token && new URLSearchParams(window.location.search).get('signup') === '1') {
+                if (typeof showRegister === 'function') showRegister();
+            }
+
             updateAvailability();
         });
+
+        function syncSendButton() {
+            if (sendBtn) sendBtn.disabled = !input.value.trim() || input.disabled;
+        }
+
+        document.querySelectorAll('.starter').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (input.disabled) { showLimitModal(); return; }
+                input.value = btn.textContent.trim();
+                sendMessage();
+                syncSendButton();
+            });
+        });
+
+        const menuBtn = document.getElementById('menu-btn');
+        const menuList = document.getElementById('menu-list');
+        function closeMenu() {
+            if (!menuList) return;
+            menuList.hidden = true;
+            menuBtn.setAttribute('aria-expanded', 'false');
+        }
+        if (menuBtn && menuList) {
+            menuBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const open = menuList.hidden;
+                menuList.hidden = !open;
+                menuBtn.setAttribute('aria-expanded', String(open));
+            });
+            document.addEventListener('click', (e) => { if (!menuList.contains(e.target)) closeMenu(); });
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeMenu(); hideLimitModal(); if (typeof hidePricingModal === 'function') hidePricingModal(); } });
+        }
 
         if (input) {
             input.addEventListener('keypress', function (e) {
@@ -816,6 +854,7 @@
                 }
             });
             input.addEventListener('input', function () {
+                syncSendButton();
                 if (phase === 'reading') {
                     cancelReading();
                     phase = 'waiting';
@@ -824,7 +863,7 @@
         }
 
         if (sendBtn) {
-            sendBtn.addEventListener('click', sendMessage);
+            sendBtn.addEventListener('click', () => { sendMessage(); syncSendButton(); });
         }
     </script>
 </body>

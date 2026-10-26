@@ -1,94 +1,79 @@
 # memory.py
-#
-# Core chat history layer.
-# This file is being phased down in favor of the new memory system
-# located in: aurorasparq_brain/brain/memory/
-#
-# Only core functions remain here for now:
-# - Chat history (save + retrieve)
-# - Database connection helper
+"""
+Chat history (short-term memory).
+Long-term memory (facts, relationship state) lives in aurorasparq_brain/.
+"""
 
-import psycopg2
 import logging
-from typing import List, Dict, Optional
-from config import DATABASE_URL
+from typing import Optional
+
+from database import db_cursor
 
 logger = logging.getLogger(__name__)
 
-
-def get_db_connection():
-    """Create PostgreSQL connection."""
-    try:
-        return psycopg2.connect(DATABASE_URL)
-    except Exception as e:
-        logger.warning(f"PostgreSQL connection failed: {e}")
-        return None
+VOICE_NOTE_PREFIX = "[voice_note]|"
+VOICE_SCRIPT_PREFIX = "[voice_script]|"
 
 
-# ==================== CHAT HISTORY ====================
-
-def get_history(convo_id: str, limit: int = None) -> list:
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
+def get_history(convo_id: str, limit: Optional[int] = None) -> list:
+    """Messages for a conversation, oldest first. limit=None returns all."""
+    with db_cursor() as cur:
         if limit is None:
-            cur.execute("""
-                SELECT role, content, timestamp
-                FROM chat_history
-                WHERE convo_id = %s
-                ORDER BY timestamp ASC
-            """, (convo_id,))
-        else:
-            cur.execute("""
-                SELECT role, content, timestamp
-                FROM chat_history
-                WHERE convo_id = %s
-                ORDER BY timestamp DESC
-                LIMIT %s
-            """, (convo_id, limit))
-            # reverse so oldest is first
+            cur.execute(
+                """
+                SELECT role, content, timestamp FROM chat_history
+                WHERE convo_id = %s ORDER BY timestamp ASC, id ASC
+                """,
+                (convo_id,),
+            )
             rows = cur.fetchall()
-            rows = list(reversed(rows))
-            return [{"role": r[0], "content": r[1], "timestamp": r[2]} for r in rows]
+        else:
+            cur.execute(
+                """
+                SELECT role, content, timestamp FROM chat_history
+                WHERE convo_id = %s ORDER BY timestamp DESC, id DESC LIMIT %s
+                """,
+                (convo_id, limit),
+            )
+            rows = list(reversed(cur.fetchall()))
+    return [{"role": r[0], "content": r[1], "timestamp": r[2]} for r in rows]
 
-        rows = cur.fetchall()
-        return [{"role": r[0], "content": r[1], "timestamp": r[2]} for r in rows]
-    finally:
-        cur.close()
-        conn.close()
+
+def count_user_messages_today(user_id: int) -> int:
+    with db_cursor() as cur:
+        cur.execute(
+            """
+            SELECT COUNT(*) FROM chat_history
+            WHERE user_id = %s AND role = 'user' AND timestamp >= CURRENT_DATE
+            """,
+            (user_id,),
+        )
+        return cur.fetchone()[0]
 
 
-def save_message(convo_id: str, message: dict, user_id: int = None):
-    conn = get_db_connection()
-    cur = conn.cursor()
+def save_message(convo_id: str, message: dict, user_id: Optional[int] = None) -> None:
     try:
-        cur.execute("""
-            INSERT INTO chat_history (convo_id, user_id, role, content)
-            VALUES (%s, %s, %s, %s)
-        """, (convo_id, user_id, message["role"], message["content"]))
-        conn.commit()
+        with db_cursor(commit=True) as cur:
+            cur.execute(
+                "INSERT INTO chat_history (convo_id, user_id, role, content) VALUES (%s, %s, %s, %s)",
+                (convo_id, user_id, message["role"], message["content"]),
+            )
     except Exception as e:
         logger.error(f"save_message error: {e}")
-        conn.rollback()
-    finally:
-        cur.close()
-        conn.close()
 
 
-def get_recent_text_messages(convo_id: str, limit: int = 8) -> list:
-    """Last N user/assistant text messages only (no voice_note URL rows)."""
-    history = get_history(convo_id, limit=40) or []
+def get_recent_text_messages(convo_id: str, limit: int = 30) -> list:
+    """Last N user/assistant text messages. Voice scripts appear as what she said out loud."""
     out = []
-    for m in history:
+    for m in get_history(convo_id, limit=limit * 3):
         role = m.get("role")
         content = (m.get("content") or "").strip()
         if not content or role not in ("user", "assistant"):
             continue
-        if content.startswith("[voice_note]|"):
+        if content.startswith(VOICE_NOTE_PREFIX):
             continue
-        if content.startswith("[voice_script]|"):
-            # expose as what she said out loud
-            script = content.split("|", 1)[-1].strip()
+        if content.startswith(VOICE_SCRIPT_PREFIX):
+            script = content[len(VOICE_SCRIPT_PREFIX):].strip()
             if script:
                 out.append({"role": "assistant", "content": script})
             continue
@@ -96,53 +81,16 @@ def get_recent_text_messages(convo_id: str, limit: int = 8) -> list:
     return out[-limit:]
 
 
-def set_last_voice_script(convo_id: str, script: str, user_id: int = None):
+def set_last_voice_script(convo_id: str, script: str, user_id: Optional[int] = None) -> None:
     """Persist what she actually said in the last voice note."""
     if not script or len(script) < 8:
         return
-    save_message(
-        convo_id,
-        {"role": "assistant", "content": f"[voice_script]|{script[:500]}"},
-        user_id=user_id,
-    )
+    save_message(convo_id, {"role": "assistant", "content": f"{VOICE_SCRIPT_PREFIX}{script[:500]}"}, user_id=user_id)
 
 
 def get_last_voice_script(convo_id: str) -> str:
-    history = get_history(convo_id, limit=30) or []
-    for m in reversed(history):
-        content = (m.get("content") or "")
-        if content.startswith("[voice_script]|"):
-            return content.split("|", 1)[-1].strip()
+    for m in reversed(get_history(convo_id, limit=30)):
+        content = m.get("content") or ""
+        if content.startswith(VOICE_SCRIPT_PREFIX):
+            return content[len(VOICE_SCRIPT_PREFIX):].strip()
     return ""
-
-# ==================== INITIALIZE TABLES ====================
-
-def init_db():
-    """Ensure chat_history table exists."""
-    conn = get_db_connection()
-    if conn is None:
-        return
-
-    cur = conn.cursor()
-    try:
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS chat_history (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER,
-                convo_id TEXT,
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        conn.commit()
-    except Exception as e:
-        logger.error(f"init_db error: {e}")
-        conn.rollback()
-    finally:
-        cur.close()
-        conn.close()
-
-
-# Initialize on import
-init_db()

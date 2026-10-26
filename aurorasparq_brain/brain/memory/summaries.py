@@ -1,114 +1,119 @@
 # brain/memory/summaries.py
 """
-Conversation summarization module.
-Creates and stores summaries of conversations for long-term memory.
+Long-range memory: a running "story so far" for each conversation.
+
+The prompt always carries the most recent messages word for word. Everything
+older than that is folded, in batches, into one summary that keeps the
+details a person would remember: names, events, plans, promises, inside
+jokes, what he likes and dislikes, and how things between them went.
 """
 
 import logging
-import requests
-from config import XAI_API_KEY, XAI_API_BASE, XAI_MODEL
-from db.schema import get_db_connection
+
+from database import db_cursor
+from llm import complete_prompt
 
 logger = logging.getLogger(__name__)
 
+RECENT_WINDOW = 30        # newest messages that stay verbatim in the prompt (never summarized yet)
+SUMMARY_BATCH = 20        # fold older messages in once at least this many are waiting
+MAX_SUMMARY_WORDS = 900
 
-def generate_and_save_summary(convo_id: str, tier: str = "free"):
-    """
-    Generate a summary of the recent conversation and store it.
-    This helps with long-term memory.
-    """
-    conn = get_db_connection()
-    cur = conn.cursor()
+SUMMARY_PROMPT = """You keep the long-term memory for Isabella, a companion character, about one man she talks to.
 
-    # Get recent messages
-    cur.execute("""
-        SELECT role, content 
-        FROM chat_history 
-        WHERE convo_id = %s 
-        ORDER BY timestamp DESC 
-        LIMIT 40
-    """, (convo_id,))
+Below is her current memory of their conversations so far, then newer messages that happened after it.
+Rewrite the memory so it includes everything important from both.
 
-    messages = cur.fetchall()
-    cur.close()
-    conn.close()
+Keep, in order of importance:
+- Facts about him: name, job, city, family, friends, pets, goals, health, routines, likes and dislikes
+- Events and plans he mentioned (with dates or days when given) and how they turned out
+- Promises either of them made, things she said she would do, questions left open
+- Inside jokes, nicknames, recurring topics, things that made him happy or upset
+- What Isabella told him about her own life, so she never contradicts herself
+- How the connection between them has developed
 
-    if len(messages) < 10:
-        return  # Not enough messages to summarize
+Rules:
+- Plain sentences grouped under short headings. No quotes from the chat.
+- Never drop an older detail unless the new messages correct it.
+- At most {max_words} words.
 
-    # Format conversation
-    conversation_text = "\n".join([
-        f"{role}: {content}" for role, content in reversed(messages)
-    ])
+CURRENT MEMORY:
+{summary}
 
-    prompt = f"""Summarize the key points, emotional tone, and important details from this conversation.
-Focus on what the user shared about themselves, how the relationship is developing, and any recurring topics.
+NEWER MESSAGES:
+{messages}
 
-Keep the summary concise but informative (5-8 sentences max).
+UPDATED MEMORY:"""
 
-Conversation:
-{conversation_text}
 
-Summary:"""
-
+def get_conversation_summary(convo_id: str) -> str:
     try:
-        resp = requests.post(
-            XAI_API_BASE,
-            headers={
-                "Authorization": f"Bearer {XAI_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": XAI_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.4,
-                "max_tokens": 500
-            },
-            timeout=35
-        )
-
-        if resp.status_code != 200:
-            return
-
-        summary = resp.json()["choices"][0]["message"]["content"].strip()
-
-        if len(summary) < 30:
-            return
-
-        # Save summary to database
-        conn = get_db_connection()
-        cur = conn.cursor()
-
-        cur.execute("""
-            INSERT INTO conversation_summaries 
-            (convo_id, summary, created_at)
-            VALUES (%s, %s, CURRENT_TIMESTAMP)
-        """, (convo_id, summary))
-
-        conn.commit()
-        cur.close()
-        conn.close()
-
-        logger.info(f"✅ Summary saved for convo {convo_id}")
-
+        with db_cursor() as cur:
+            cur.execute("SELECT summary FROM conversation_memory WHERE convo_id = %s", (convo_id,))
+            row = cur.fetchone()
+        return (row[0] or "").strip() if row else ""
     except Exception as e:
-        logger.error(f"Summary generation error: {e}")
+        logger.warning(f"Could not load conversation memory: {e}")
+        return ""
 
 
-def get_recent_summaries(convo_id: str, limit: int = 3) -> list:
-    """Retrieve recent conversation summaries."""
-    conn = get_db_connection()
-    cur = conn.cursor()
+def update_conversation_summary(convo_id: str) -> bool:
+    """Fold older messages into the summary when a full batch is waiting. Returns True if updated."""
+    with db_cursor() as cur:
+        cur.execute(
+            "SELECT summary, last_message_id FROM conversation_memory WHERE convo_id = %s",
+            (convo_id,),
+        )
+        row = cur.fetchone()
+        summary, last_id = (row[0], row[1]) if row else ("", 0)
 
-    cur.execute("""
-        SELECT summary 
-        FROM conversation_summaries 
-        WHERE convo_id = %s 
-        ORDER BY created_at DESC 
-        LIMIT %s
-    """, (convo_id, limit))
+        # Messages after the last summarized one, excluding the newest RECENT_WINDOW
+        cur.execute(
+            """
+            SELECT id, role, content FROM chat_history
+            WHERE convo_id = %s AND id > %s
+            ORDER BY id ASC
+            """,
+            (convo_id, last_id),
+        )
+        older = cur.fetchall()[:-RECENT_WINDOW]
 
-    summaries = [row[0] for row in cur.fetchall()]
-    cur.close()
-    conn.close()
-    return summaries
+    # Voice-note URL rows carry no meaning; voice scripts are what she said out loud
+    pending = [r for r in older if not r[2].startswith("[voice_note]|")]
+    if len(pending) < SUMMARY_BATCH:
+        return False
+
+    lines = []
+    for _id, role, content in pending:
+        if content.startswith("[voice_script]|"):
+            content = "(voice note) " + content.split("|", 1)[1]
+        speaker = "Him" if role == "user" else "Isabella"
+        lines.append(f"{speaker}: {content[:600]}")
+
+    new_summary = complete_prompt(
+        SUMMARY_PROMPT.format(
+            summary=summary or "(nothing yet)",
+            messages="\n".join(lines),
+            max_words=MAX_SUMMARY_WORDS,
+        ),
+        temperature=0.2,
+        max_tokens=1600,
+    ).strip()
+    if not new_summary:
+        return False  # LLM failed; try again next turn, nothing is lost
+
+    newest_id = older[-1][0]
+    with db_cursor(commit=True) as cur:
+        cur.execute(
+            """
+            INSERT INTO conversation_memory (convo_id, summary, last_message_id, updated_at)
+            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (convo_id) DO UPDATE SET
+                summary = EXCLUDED.summary,
+                last_message_id = EXCLUDED.last_message_id,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (convo_id, new_summary, newest_id),
+        )
+    logger.info(f"🧠 Conversation memory updated | convo={convo_id} | folded={len(pending)} msgs")
+    return True

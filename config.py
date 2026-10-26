@@ -1,60 +1,66 @@
 # config.py
-from dotenv import load_dotenv
-import os
-load_dotenv()  # Always load first
+"""All settings come from environment variables (.env locally, Render dashboard in production)."""
 
-# ── Database (PostgreSQL) ─────────────────────────────────────────────────────
+import logging
+import os
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+# ── Database (PostgreSQL only) ──────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Fallback for local development (SQLite)
-DB_PATH = os.getenv("DB_PATH", "users.db")
-
-# ── ElevenLabs ──────────────────────────────────────────────────────────────
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
-
-# ── xAI ─────────────────────────────────────────────────────────────────────
+# ── xAI (chat + memory) ────────────────────────
 XAI_API_KEY = os.getenv("XAI_API_KEY")
 XAI_API_BASE = os.getenv("XAI_API_BASE", "https://api.x.ai/v1/chat/completions")
 XAI_MODEL = os.getenv("XAI_MODEL", "grok-4.20")
 XAI_TEMPERATURE = float(os.getenv("XAI_TEMPERATURE", "0.84"))
 XAI_MAX_TOKENS = int(os.getenv("XAI_MAX_TOKENS", "1024"))
 
-# ── OpenAI (for embeddings) ─────────────────────────────────────────────────
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# ── ElevenLabs (voice notes) ────────────────────────────────
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
+# Render persistent disk. Falls back to a local folder when the disk is not mounted.
+AUDIO_DIR = os.getenv("AUDIO_DIR", "/var/data/audio")
 
-# ── Auth / JWT / Email ──────────────────────────────────────────────────────
-ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "change-this-in-production-please")
+# ── Auth ────────────────────────────────────────────────────
 JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 
-# Email verification (Resend recommended)
-RESEND_API_KEY = os.getenv("RESEND_API_KEY")
-PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://www.aurorasparq.com")
+# ── Stripe ──────────────────────────────────────────────────
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
-# ── Critical checks ─────────────────────────────────────────────────────────
-missing = []
+# ── Site ────────────────────────────────────────────────────
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://www.aurorasparq.com").rstrip("/")
 
-if not XAI_API_KEY:
-    missing.append("XAI_API_KEY")
-if not JWT_SECRET:
-    missing.append("JWT_SECRET")
-if not DATABASE_URL:
-    print("⚠️ DATABASE_URL is missing - using SQLite fallback")
-else:
-    print("✅ PostgreSQL DATABASE_URL loaded")
+# ── Plans ───────────────────────────────────────────────────
+FREE_DAILY_MESSAGE_LIMIT = int(os.getenv("FREE_DAILY_MESSAGE_LIMIT", "5"))
+PAID_TIERS = {"premium", "ultimate"}
 
-if not OPENAI_API_KEY:
-    missing.append("OPENAI_API_KEY")
+# ── Required settings ───────────────────────────────────────
+_missing = [
+    name for name, value in {
+        "DATABASE_URL": DATABASE_URL,
+        "XAI_API_KEY": XAI_API_KEY,
+        "JWT_SECRET": JWT_SECRET,
+    }.items() if not value
+]
+if _missing:
+    raise ValueError(
+        f"Missing required environment variables: {', '.join(_missing)}. "
+        "Login and chat will not work without them."
+    )
 
-if missing:
-    raise ValueError(f"Missing required environment variables: {', '.join(missing)}. "
-                     "Login and chat will fail without these.")
-
-print("Config loaded successfully.")
-print(f"JWT_SECRET present: {bool(JWT_SECRET)}")
-print(f"RESEND_API_KEY present: {bool(RESEND_API_KEY)}")
-print(f"OPENAI_API_KEY present: {bool(OPENAI_API_KEY)}")
-print(f"PUBLIC_BASE_URL: {PUBLIC_BASE_URL}")
-print(f"Using Database: {'PostgreSQL' if DATABASE_URL else 'SQLite (fallback)'}")
+for _name, _value in {
+    "STRIPE_SECRET_KEY": STRIPE_SECRET_KEY,
+    "STRIPE_WEBHOOK_SECRET": STRIPE_WEBHOOK_SECRET,
+    "ELEVENLABS_API_KEY": ELEVENLABS_API_KEY,
+    "ELEVENLABS_VOICE_ID": ELEVENLABS_VOICE_ID,
+}.items():
+    if not _value:
+        logger.warning(f"{_name} is not set; the feature that needs it is disabled")

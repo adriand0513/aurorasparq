@@ -50,3 +50,9 @@ Thumbs.db
 
 # Render / Deployment
 .render/
+# Generated / local data (never commit)
+static/audio_notes/
+*.exe
+*.csv
+*.mp3
+tests/.audio/

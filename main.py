@@ -1,277 +1,171 @@
-# main.py - Isabella Chatbot (Premium Only Version)
-import os
-import re
-import time
+# main.py - Aurora Sparq (Isabella chatbot)
 import logging
-import psycopg2
-from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
-import requests
-import numpy as np
-from dotenv import load_dotenv
-from typing import Dict, List
-from collections import defaultdict
-import json
-import sys
 import random
-import stripe
-
+import time
+from collections import defaultdict
+from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Body, WebSocket, WebSocketDisconnect, Depends, status
-from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.security import OAuth2PasswordRequestForm
+from zoneinfo import ZoneInfo
 
 import uvicorn
-import asyncio
-from apscheduler.schedulers.background import BackgroundScheduler
-from psycopg2.extras import RealDictCursor
-from config import OPENAI_API_KEY, DATABASE_URL
+from fastapi import BackgroundTasks, Body, Depends, FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.staticfiles import StaticFiles
 
-# ============================================================
-# === EMBEDDING MODEL (for deduplication)
-# ============================================================
-from sentence_transformers import SentenceTransformer
-
-_embedding_model = None
-
-def get_embedding_model():
-    global _embedding_model
-    if _embedding_model is None:
-        from sentence_transformers import SentenceTransformer
-        logger.info("Loading SentenceTransformer model...")
-        _embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-        logger.info("✅ SentenceTransformer model loaded")
-    return _embedding_model
-
-def get_embedding(text: str):
-    """Generate embedding for repetition detection."""
-    if not text or not isinstance(text, str):
-        return np.zeros(384)
-    try:
-        model = get_embedding_model()
-        return model.encode(text, convert_to_numpy=True)
-    except Exception as e:
-        logger.error(f"get_embedding error: {e}")
-        return np.zeros(384)
-
-# ============================================================
-# === SECOND BRAIN INTEGRATION
-# ============================================================
-BRAIN_DIR = Path(__file__).parent / "aurorasparq_brain"
-sys.path.insert(0, str(BRAIN_DIR))
-
-from brain.reflection.graph import run_reflection
-from brain.relationship.state import load_relationship_state
-from aurorasparq_brain.prompts.personality import get_system_prompt
-from aurorasparq_brain.prompts.hard_rules import get_hard_rules
-from aurorasparq_brain.prompts.character_context import get_character_context
-from memory import get_history, save_message, get_recent_text_messages, set_last_voice_script, get_last_voice_script
-
-from brain.memory.facts import (
-    get_facts_for_prompt,
-    extract_facts_from_exchange,
-    get_or_set_sticky_activity,
-)
-
-# ==================== PERMANENT GLOBAL FIX ====================
-class DateTimeJSONResponse(JSONResponse):
-    def render(self, content: any) -> bytes:
-        def custom_serializer(obj):
-            if isinstance(obj, datetime):
-                return obj.isoformat()
-            raise TypeError(f"Type {type(obj)} not serializable")
-        return json.dumps(
-            content,
-            default=custom_serializer,
-            ensure_ascii=False
-        ).encode("utf-8")
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
-load_dotenv()
 
-from config import (
-    XAI_API_KEY, XAI_API_BASE, XAI_MODEL,
-    XAI_TEMPERATURE, XAI_MAX_TOKENS, ADMIN_TOKEN
-)
-from postprocess import clean_reply, split_into_bubbles
+from config import FREE_DAILY_MESSAGE_LIMIT, PAID_TIERS, XAI_MAX_TOKENS, XAI_TEMPERATURE
+from database import init_db
 from analytics import log_event
-from auth import (
-    register_user, authenticate_user, create_access_token,
-    get_current_user, get_db_connection, ensure_users_table,
-    update_user_subscription
+from auth import authenticate_user, create_access_token, get_current_user, register_user, MIN_PASSWORD_LENGTH
+from llm import chat_completion
+from memory import (
+    count_user_messages_today,
+    get_history,
+    get_last_voice_script,
+    get_recent_text_messages,
+    save_message,
+    set_last_voice_script,
+    VOICE_NOTE_PREFIX,
 )
 from payment import router as payment_router
-from voice import generate_voice_note
+from postprocess import clean_reply, split_into_bubbles
+from voice import AUDIO_DIR, LOCAL_AUDIO_DIR, generate_voice_note, is_valid_audio_filename
+from aurorasparq_brain.brain.memory.facts import (
+    extract_facts_from_exchange,
+    get_facts_for_prompt,
+    get_or_set_sticky_activity,
+)
+from aurorasparq_brain.brain.memory.summaries import (
+    RECENT_WINDOW,
+    get_conversation_summary,
+    update_conversation_summary,
+)
+from aurorasparq_brain.prompts.hard_rules import CRISIS_RULES, get_hard_rules
+from aurorasparq_brain.prompts.personality import get_system_prompt
 
-AUDIO_DIR = Path("static/audio_notes")
-AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+STATIC_DIR = Path(__file__).parent / "static"
+MAX_MESSAGE_CHARS = 2000
+VOICE_NOTE_CHANCE = 0.2          # premium: chance of an unprompted voice note per reply
 
-scheduler = BackgroundScheduler()
+# Crisis protocol (required by NY GBL Art. 47 and California SB 243)
+CRISIS_PHRASES = (
+    "kill myself", "killing myself", "end my life", "ending my life", "take my own life",
+    "suicide", "suicidal", "want to die", "wanna die", "better off dead", "don't want to live",
+    "dont want to live", "don't want to be alive", "dont want to be alive", "no reason to live",
+    "hurt myself", "hurting myself", "self harm", "self-harm", "cut myself", "cutting myself",
+    "overdose", "end it all",
+)
+SAFETY_NOTICE = (
+    "If you're thinking about suicide or hurting yourself, you deserve support from a real person "
+    "right now. In the US, call or text 988 (Suicide & Crisis Lifeline), any time, free and confidential. "
+    "If you're in immediate danger, call 911. Outside the US: findahelpline.com"
+)
 
-app = FastAPI(title="Isabella Chatbot", default_response_class=DateTimeJSONResponse)
-app.mount("/static", StaticFiles(directory="static"), name="static")
+
+def mentions_self_harm(text: str) -> bool:
+    low = text.lower()
+    return any(p in low for p in CRISIS_PHRASES)
+
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="Aurora Sparq", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(payment_router)
 
-try:
-    ensure_users_table()
-except Exception as e:
-    logger.warning(f"⚠️ Skipping ensure_users_table() — PostgreSQL not available: {e}")
-
-from aurorasparq_brain.db.schema import init_db
-
-@app.on_event("startup")
-async def startup_event():
-    logger.info("🧠 [Second Brain] Running startup initialization...")
-    try:
-        init_db()
-        logger.info("✅ [Second Brain] Tables initialized successfully")
-    except Exception as e:
-        logger.error(f"❌ [Second Brain] Failed to initialize tables: {e}", exc_info=True)
 
 # ── Guards ─────────────────────────────────────
-last_reply_time = defaultdict(float)
 REPLY_COOLDOWN_SECONDS = 4.5
+MAX_REPLIES_PER_MINUTE = 20
+last_reply_time = defaultdict(float)
 convo_rate_limits = defaultdict(list)
 
-def is_rate_limited(convo_id: str, max_per_minute: int = 20) -> bool:
+
+def is_rate_limited(convo_id: str) -> bool:
     now = time.time()
     convo_rate_limits[convo_id] = [t for t in convo_rate_limits[convo_id] if now - t < 60]
     convo_rate_limits[convo_id].append(now)
-    return len(convo_rate_limits[convo_id]) > max_per_minute
+    return len(convo_rate_limits[convo_id]) > MAX_REPLIES_PER_MINUTE
 
-# ============================================================
-# === SECOND BRAIN CONTEXT
-# ============================================================
-def build_premium_emotional_context(state, message_count: int = 0) -> str:
-    """
-    Second Brain → Premium tone.
-    Biased toward soft open early so Premium feels rewarding.
-    Quiet only after clear negative pattern.
-    """
-    if not state or not getattr(state, "emotional_state", None):
-        return (
-            "You feel glad he's here. Be warm, present, and easy to talk to. "
-            "Show quiet interest without overdoing it. Have your own energy — "
-            "don't just mirror him."
-        )
 
-    es = state.emotional_state
-    affection = getattr(es, "affection", 5)
-    trust = getattr(es, "trust", 5)
-    disappointment = getattr(es, "disappointment", 0)
-    safety = getattr(es, "emotional_safety", 5)
-    level = getattr(state, "relationship_level", 1) or 1
-    early = level <= 3 or message_count < 40
+def is_paid(user: dict) -> bool:
+    return (user.get("subscription_tier") or "free").lower() in PAID_TIERS
 
-    if disappointment >= 7 and trust <= 3:
-        return (
-            "You feel more reserved because of how he's been showing up. "
-            "Stay soft and polite, but give less. Do not punish or go cold. "
-            "Shorter replies. No forced enthusiasm."
-        )
-    elif early and disappointment <= 5:
-        return (
-            "You're in an early connection with him and feel open. "
-            "Be warm, present, and easy to talk to. "
-            "Make him feel quietly wanted through attention and softness — not big declarations. "
-            "Have your own thoughts and energy. Don't just mirror him."
-        )
-    elif trust >= 5 and affection >= 5 and disappointment <= 4:
-        return (
-            "You feel more open and glad he's here. "
-            "Show it through attention and softness, not big declarations. "
-            "Be a little more personal. Share small pieces of your own life when it fits."
-        )
-    else:
-        return (
-            "You feel comfortable and present. "
-            "Be warm and natural. Don't force intensity. Stay easy to talk to. "
-            "Have your own energy in the conversation."
-        )
 
-def cosine_similarity(vec1, vec2):
-    if not vec1 or not vec2:
-        return 0.0
-    vec1 = np.array(vec1)
-    vec2 = np.array(vec2)
-    dot_product = np.dot(vec1, vec2)
-    norm1 = np.linalg.norm(vec1)
-    norm2 = np.linalg.norm(vec2)
-    if norm1 == 0 or norm2 == 0:
-        return 0.0
-    return float(dot_product / (norm1 * norm2))
+# ── Pages ─────────────────────────────────────
+NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate"}
 
-def get_current_emotional_state(convo_id: str) -> str:
-    try:
-        state = load_relationship_state(convo_id)
-        if state and state.emotional_state:
-            es = state.emotional_state
-            return (
-                f"disappointment={getattr(es, 'disappointment', 0)}, "
-                f"trust={getattr(es, 'trust', 0)}, "
-                f"affection={getattr(es, 'affection', 0)}"
-            )
-    except Exception:
-        pass
-    return ""
+
+def _page(name: str, headers: dict = None) -> FileResponse:
+    path = STATIC_DIR / name
+    if not path.exists():
+        raise HTTPException(404, "Page not found")
+    return FileResponse(path, media_type="text/html", headers=headers)
+
 
 @app.get("/")
-async def home():
-    try:
-        with open("static/index.html", "r", encoding="utf-8") as f:
-            content = f.read()
-        response = HTMLResponse(content)
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        return response
-    except Exception as e:
-        logger.error(f"Homepage error: {e}")
-        return HTMLResponse("<h1>Aurora Sparq</h1><p><a href='/chat'>Start chatting</a></p>", status_code=500)
+def home():
+    return _page("index.html", NO_CACHE)
+
 
 @app.get("/chat")
-async def chat_page():
-    try:
-        with open("static/chat.html", "r", encoding="utf-8") as f:
-            content = f.read()
-        response = HTMLResponse(content)
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        return response
-    except Exception as e:
-        logger.error(f"Chat page error: {e}")
-        return HTMLResponse("<h1>Chat unavailable</h1>", status_code=500)
+def chat_page():
+    return _page("chat.html", NO_CACHE)
+
 
 @app.get("/privacy")
-async def privacy_page():
-    try:
-        with open("static/privacy.html", "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
-    except Exception:
-        raise HTTPException(404, "Privacy page not found")
+def privacy_page():
+    return _page("privacy.html")
+
 
 @app.get("/terms")
-async def terms_page():
-    try:
-        with open("static/terms.html", "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
-    except Exception:
-        raise HTTPException(404, "Terms page not found")
+def terms_page():
+    return _page("terms.html")
+
+
+@app.get("/success")
+def payment_success():
+    return _page("success.html")
+
+
+@app.get("/audio/{filename}")
+def get_audio(filename: str):
+    if not is_valid_audio_filename(filename):
+        raise HTTPException(status_code=404, detail="Audio not found")
+    for folder in (AUDIO_DIR, LOCAL_AUDIO_DIR):
+        file_path = folder / filename
+        if file_path.is_file():
+            return FileResponse(file_path, media_type="audio/mpeg")
+    raise HTTPException(status_code=404, detail="Audio not found")
+
 
 # ── Auth Routes ─────────────────────────────────────
 @app.post("/auth/register")
-async def register(body: dict = Body(...)):
-    email = body.get("email")
-    password = body.get("password")
-    full_name = body.get("full_name", "")
-    if not email or not password:
+def register(body: dict = Body(...)):
+    email = (body.get("email") or "").strip()
+    password = body.get("password") or ""
+    full_name = (body.get("full_name") or "").strip()
+    if not email or "@" not in email or not password:
         raise HTTPException(400, "Email and password required")
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(400, f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
     if register_user(email, password, full_name):
         log_event("user_registered", metadata={"email": email})
         return {"message": "Registered successfully"}
     raise HTTPException(409, "Email already exists")
 
+
 @app.post("/auth/login")
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = authenticate_user(form_data.username, form_data.password)
     if not user:
         raise HTTPException(401, "Invalid credentials")
@@ -279,429 +173,252 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     log_event("user_login", user_id=user["id"])
     return {"access_token": token, "token_type": "bearer", "user": user}
 
-@app.get("/api/history")
-async def get_chat_history(user: dict = Depends(get_current_user)):
-    default_convo_id = f"user_{user['id']}"
-    history = get_history(default_convo_id, limit=None)
-    return {"convo_id": default_convo_id, "messages": history}
-
-@app.get("/api/usage")
-async def get_usage(user: dict = Depends(get_current_user)):
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT COUNT(*)
-            FROM chat_history
-            WHERE user_id = %s
-              AND DATE(timestamp) = CURRENT_DATE
-              AND role = 'user'
-        """, (user["id"],))
-        daily_count = cur.fetchone()[0]
-        cur.close()
-        conn.close()
-        tier = user.get("subscription_tier", "free").lower()
-        daily_limit = 5 if tier == "free" else 9999
-        return {
-            "daily_count": daily_count,
-            "daily_limit": daily_limit,
-            "remaining": max(0, 5 - daily_count) if tier == "free" else "unlimited"
-        }
-    except Exception as e:
-        logger.error(f"Usage endpoint error: {e}")
-        return {"daily_count": 0, "daily_limit": 5, "remaining": 5}
 
 @app.get("/auth/me")
-async def get_current_user_info(user: dict = Depends(get_current_user)):
+def get_current_user_info(user: dict = Depends(get_current_user)):
     return {
         "id": user["id"],
         "email": user["email"],
         "full_name": user.get("full_name"),
-        "subscription_tier": user.get("subscription_tier", "free")
+        "subscription_tier": user.get("subscription_tier", "free"),
     }
 
-@app.get("/success")
-async def payment_success(session_id: str = None):
-    try:
-        with open("static/success.html", "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
-    except Exception:
-        return HTMLResponse("""
-            <h1 style="text-align:center; margin-top:100px; color:#c300ff;">
-                Upgrade Successful!<br><br>
-                Redirecting to chat...
-            </h1>
-            <script>
-                setTimeout(() => window.location.href = '/', 2500);
-            </script>
-        """)
 
-@app.get("/audio/{filename}")
-async def get_audio(filename: str):
-    file_path = Path("/var/data/audio") / filename
-    if not file_path.exists():
-        file_path = Path("static/audio_notes") / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Audio not found")
-    return FileResponse(file_path, media_type="audio/mpeg")
-
-# ── Protected Chat Route ─────────────────────────────────────
-@app.post("/api/reply")
-async def generate_reply(body: dict = Body(...), user: dict = Depends(get_current_user)):
-    start_time = time.time()
-    user_message = body.get("message", "").strip()
-    # ALWAYS use a stable convo_id
+@app.get("/api/history")
+def get_chat_history(user: dict = Depends(get_current_user)):
     convo_id = f"user_{user['id']}"
-    logger.info(f"📥 /api/reply | user={user.get('id')} | tier={user.get('subscription_tier')} | convo={convo_id}")
+    return {"convo_id": convo_id, "messages": get_history(convo_id)}
 
-    tier = user.get("subscription_tier", "free").lower()
-    is_premium = tier == "premium"
 
-    # Daily limit for free users
-    if not is_premium:
-        daily_limit = 5
-        conn = get_db_connection()
-        cur = conn.cursor()
-        try:
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM chat_history
-                WHERE user_id = %s
-                  AND DATE(timestamp) = CURRENT_DATE
-                  AND role = 'user'
-            """, (user["id"],))
-            daily_count = cur.fetchone()[0]
-        finally:
-            cur.close()
-            conn.close()
-        if daily_count >= daily_limit:
-            return {
-                "replies": [
-                    "Hey... you've hit today's free limit (5 messages). "
-                    "I'd still like to keep talking — upgrade if you want more of me today, "
-                    "or come back tomorrow and we'll pick up again."
-                ],
-                "limit_reached": True,
-                "daily_limit": 5
-            }
-            
-    # Cooldown
+@app.get("/api/usage")
+def get_usage(user: dict = Depends(get_current_user)):
+    daily_count = count_user_messages_today(user["id"])
+    if is_paid(user):
+        return {"daily_count": daily_count, "daily_limit": 9999, "remaining": "unlimited"}
+    return {
+        "daily_count": daily_count,
+        "daily_limit": FREE_DAILY_MESSAGE_LIMIT,
+        "remaining": max(0, FREE_DAILY_MESSAGE_LIMIT - daily_count),
+    }
+
+
+# ── Prompt building ─────────────────────────────────────
+ASKS_ABOUT_HER_DAY = (
+    "what are you doing", "what're you doing", "what are u doing",
+    "you up to", "what you up to", "how was your day",
+    "what did you do", "how was the shoot", "how's your day",
+    "how is your day", "what are you up to", "busy?",
+)
+ACTIVITY_MARKERS = (
+    "right now:", "unwinding", "on the couch", "after a", "shoot",
+    "scrolling", "legs up", "full day", "long day", "activity_now",
+)
+VOICE_REQUEST_PHRASES = (
+    "voice note", "voice message", "send a voice",
+    "voice memo", "can you send a voice", "send me a voice",
+)
+
+
+def build_known_facts(convo_id: str, user_message: str) -> str:
+    """User facts first; her current activity only if he asked about her day."""
+    try:
+        known_facts = get_facts_for_prompt(convo_id, limit=12) or ""
+        asks_about_her_day = any(p in user_message.lower() for p in ASKS_ABOUT_HER_DAY)
+        if asks_about_her_day:
+            sticky = get_or_set_sticky_activity(convo_id)
+            if sticky and sticky.lower() not in known_facts.lower():
+                known_facts = f"Right now:\n- {sticky}\n{known_facts}".strip()
+        elif known_facts:
+            known_facts = "\n".join(
+                line for line in known_facts.splitlines()
+                if not any(m in line.lower() for m in ACTIVITY_MARKERS)
+            ).strip()
+        return known_facts
+    except Exception as e:
+        logger.warning(f"Fact retrieval error: {e}")
+        return ""
+
+
+def new_york_time_str() -> str:
+    return datetime.now(ZoneInfo("America/New_York")).strftime("%I:%M %p").lstrip("0")
+
+
+def write_voice_script(shared_memory_block: str, user_message: str, assistant_text: str) -> str:
+    prompt = f"""You are Isabella sending a voice note in a text chat.
+Write ONLY the spoken words for this voice note.
+
+{shared_memory_block}
+
+Hard rules:
+- Stay consistent with the known facts and recent messages above.
+- Do not contradict anything you already said (people, place, bath, relationship status, etc.).
+- This is NOT a reread or paraphrase of her text reply this turn.
+- Add a NEW beat that still fits the same scene and memory.
+- 1–8 spoken sentences max.
+- Warm, feminine, natural out-loud speech.
+- No quotes, labels, stage directions, asterisks, or brackets.
+
+His message:
+{user_message[:300]}
+
+Her draft text reply this turn (do NOT repeat or rephrase this):
+{assistant_text[:400]}
+
+New spoken voice note:"""
+    try:
+        script = chat_completion([{"role": "user", "content": prompt}], temperature=0.95, max_tokens=90)
+    except Exception as e:
+        logger.warning(f"Voice script failed: {e}")
+        return ""
+    for label in ("New spoken voice note:", "Spoken voice note:", "Voice note:"):
+        script = script.replace(label, "")
+    script = script.strip().strip('"')
+    if not 12 < len(script) < 320:
+        return ""
+    # Skip if it mostly repeats the text reply
+    blob = assistant_text.lower()
+    overlap = sum(1 for w in script.lower().split() if len(w) > 3 and w in blob)
+    if overlap >= max(4, len(script.split()) // 2):
+        logger.info("🎙️ Skipped voice script (too similar to text)")
+        return ""
+    return script
+
+
+# ── After-reply work (runs after the response is sent) ──────────────
+def update_long_term_memory(convo_id: str, user_message: str, assistant_text: str):
+    try:
+        extract_facts_from_exchange(convo_id, user_message, assistant_text)
+    except Exception as e:
+        logger.warning(f"Fact memory skipped: {e}")
+    try:
+        update_conversation_summary(convo_id)
+    except Exception as e:
+        logger.warning(f"Conversation memory skipped: {e}")
+
+
+# ── Chat ─────────────────────────────────────
+@app.post("/api/reply")
+def generate_reply(
+    background_tasks: BackgroundTasks,
+    body: dict = Body(...),
+    user: dict = Depends(get_current_user),
+):
+    start_time = time.time()
+    user_message = (body.get("message") or "").strip()[:MAX_MESSAGE_CHARS]
+    convo_id = f"user_{user['id']}"
+    tier = (user.get("subscription_tier") or "free").lower()
+    paid = tier in PAID_TIERS
+
+    if not user_message:
+        return {"replies": []}
+
+    if not paid and count_user_messages_today(user["id"]) >= FREE_DAILY_MESSAGE_LIMIT:
+        return {
+            "replies": [
+                f"Hey... you've hit today's free limit ({FREE_DAILY_MESSAGE_LIMIT} messages). "
+                "I'd still like to keep talking — upgrade if you want more of me today, "
+                "or come back tomorrow and we'll pick up again."
+            ],
+            "limit_reached": True,
+            "daily_limit": FREE_DAILY_MESSAGE_LIMIT,
+        }
+
     now = time.time()
-    if now - last_reply_time.get(convo_id, 0) < REPLY_COOLDOWN_SECONDS:
+    if now - last_reply_time[convo_id] < REPLY_COOLDOWN_SECONDS or is_rate_limited(convo_id):
         return {"replies": []}
     last_reply_time[convo_id] = now
 
-    if is_rate_limited(convo_id):
-        return {"replies": []}
+    save_message(convo_id, {"role": "user", "content": user_message}, user_id=user["id"])
 
-    try:
-        # Save user message
-        if user_message:
-            save_message(convo_id, {"role": "user", "content": user_message}, user_id=user.get("id"))
-            logger.info(f"💾 Saved user message | convo={convo_id}")
+    # ── Context ──
+    nyc_time_str = new_york_time_str()
+    known_facts = build_known_facts(convo_id, user_message)
+    recent = get_recent_text_messages(convo_id, limit=RECENT_WINDOW)
+    last_voice = get_last_voice_script(convo_id)
+    story_so_far = get_conversation_summary(convo_id)
+    in_crisis = mentions_self_harm(user_message)
 
-        # ============================================================
-        # EXACT NYC TIME
-        # ============================================================
-        nyc_now = datetime.now(ZoneInfo("America/New_York"))
-        try:
-            nyc_time_str = nyc_now.strftime("%-I:%M %p").lstrip("0")
-        except ValueError:
-            nyc_time_str = nyc_now.strftime("%I:%M %p").lstrip("0")
-
-        # ============================================================
-        # FACT MEMORY — user facts ranked first
-        # Sticky / activity ONLY if he asked about her day
-        # ============================================================
-        known_facts = ""
-        try:
-            known_facts = get_facts_for_prompt(convo_id, limit=12) or ""
-
-            asks_about_her_day = any(
-                p in (user_message or "").lower()
-                for p in [
-                    "what are you doing", "what're you doing", "what are u doing",
-                    "you up to", "what you up to", "how was your day",
-                    "what did you do", "how was the shoot", "how's your day",
-                    "how is your day", "what are you up to", "busy?",
-                ]
-            )
-
-            activity_markers = (
-                "right now:", "unwinding", "on the couch", "after a", "shoot",
-                "scrolling", "legs up", "full day", "long day", "activity_now",
-            )
-
-            if known_facts and not asks_about_her_day:
-                lines = []
-                for line in known_facts.splitlines():
-                    low = line.lower()
-                    if any(m in low for m in activity_markers):
-                        continue
-                    lines.append(line)
-                known_facts = "\n".join(lines).strip()
-
-            if asks_about_her_day:
-                sticky = get_or_set_sticky_activity(convo_id)
-                if sticky and sticky.lower() not in known_facts.lower():
-                    known_facts = f"Right now:\n- {sticky}\n{known_facts}".strip()
-        except Exception as e:
-            logger.warning(f"Fact retrieval error: {e}")
-            known_facts = ""
-
-        # ============================================================
-        # SHORT-TERM CONTINUITY + SHARED MEMORY (text + voice)
-        # ============================================================
-        personality = get_system_prompt(
-            user_name=user.get("full_name"),
-            nyc_time=nyc_time_str,
-            known_facts=known_facts
-        )
-        hard_rules = get_hard_rules()
-
-        recent = get_recent_text_messages(convo_id, limit=8)
-        last_voice = get_last_voice_script(convo_id)
-
-        # Same world for text continuity notes + voice script
-        shared_memory = []
-        if known_facts:
-            shared_memory.append(f"Known facts:\n{known_facts}")
-        if recent:
-            shared_memory.append(
-                "Recent messages:\n" + "\n".join(
-                    f"{m['role']}: {m['content'][:200]}" for m in recent[-6:]
-                )
-            )
-        if last_voice:
-            shared_memory.append(
-                f"Your last voice note said: \"{last_voice[:250]}\""
-            )
-        shared_memory_block = "\n\n".join(shared_memory)
-
-        continuity_notes = []
-        if last_voice:
-            continuity_notes.append(
-                f"Your last voice note said (verbatim spoken words): \"{last_voice[:300]}\". "
-                f"If he refers to it, you already said this — do not act confused or ask why he's asking."
-            )
+    continuity_notes = []
+    if last_voice:
         continuity_notes.append(
-            "Use the recent messages for continuity. Do not repeat or rephrase lines already present. "
-            "Do not ask him to repeat something he already said in recent messages."
+            f"Your last voice note said (verbatim spoken words): \"{last_voice[:300]}\". "
+            "If he refers to it, you already said this — do not act confused or ask why he's asking."
         )
+    continuity_notes.append(
+        "Use the recent messages for continuity. Do not repeat or rephrase lines already present. "
+        "Do not ask him to repeat something he already said in recent messages."
+    )
+    memory_block = (
+        "WHAT YOU REMEMBER FROM EARLIER CONVERSATIONS WITH HIM (this is your own memory; "
+        "use it naturally, never say you are reading notes):\n" + story_so_far + "\n\n"
+        if story_so_far else ""
+    )
+    system_prompt = (
+        f"{get_system_prompt(user_name=user.get('full_name'), nyc_time=nyc_time_str, known_facts=known_facts)}\n\n"
+        f"{memory_block}"
+        f"Current New York time (use this exact value if asked): {nyc_time_str}\n\n"
+        f"{get_hard_rules()}\n\n"
+        + "\n".join(continuity_notes)
+        + (f"\n\n{CRISIS_RULES}" if in_crisis else "")
+    )
 
-        system_prompt = (
-            f"{personality}\n\n"
-            f"Current New York time (use this exact value if asked): {nyc_time_str}\n\n"
-            f"{hard_rules}\n\n"
-            + "\n".join(continuity_notes)
-        )
+    messages = [{"role": "system", "content": system_prompt}]
+    # recent already ends with the message just saved; keep everything before it
+    history = recent[:-1] if recent and recent[-1] == {"role": "user", "content": user_message} else recent
+    messages.extend(history)
+    messages.append({"role": "user", "content": user_message})
 
-        messages = [{"role": "system", "content": system_prompt}]
-        for m in recent:
-            if m["role"] == "user" and m["content"] == (user_message or ""):
-                continue
-            messages.append({"role": m["role"], "content": m["content"]})
-        messages.append({"role": "user", "content": user_message or "hi"})
-
-        # ============================================================
-        # GENERATE TEXT REPLY
-        # ============================================================
-        bubbles = []
-        try:
-            resp = requests.post(
-                XAI_API_BASE,
-                headers={
-                    "Authorization": f"Bearer {XAI_API_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": XAI_MODEL,
-                    "messages": messages,
-                    "temperature": XAI_TEMPERATURE,
-                    "max_tokens": XAI_MAX_TOKENS,
-                },
-                timeout=60
-            )
-            resp.raise_for_status()
-            raw_reply = resp.json()["choices"][0]["message"]["content"].strip()
-            bubbles = split_into_bubbles(clean_reply(raw_reply))
-        except Exception as e:
-            logger.error(f"Generation error: {e}")
-            bubbles = ["Hey... give me a second to think about that."]
-
-        bubbles = [b.strip() for b in bubbles if b and b.strip()]
-        if not bubbles:
-            bubbles = ["Hmm... give me a second."]
-
-        # ============================================================
-        # VOICE NOTES (Premium) — ONE note max, voice-only turn
-        # Uses SAME shared_memory_block as text
-        # ============================================================
-        voice_notes = []
-        voice_script_used = ""
-
-        if is_premium:
-            try:
-                user_asked_for_voice = any(
-                    phrase in (user_message or "").lower()
-                    for phrase in [
-                        "voice note", "voice message", "send a voice",
-                        "voice memo", "can you send a voice", "send me a voice"
-                    ]
-                )
-                should_send_voice = user_asked_for_voice or (random.random() < 0.2)
-
-                if should_send_voice:
-                    assistant_text = " ".join(bubbles)
-
-                    voice_only_prompt = f"""You are Isabella sending a voice note in a text chat.
-                                    Write ONLY the spoken words for this voice note.
-                                    
-                                    {shared_memory_block}
-                                    
-                                    Hard rules:
-                                    - Stay consistent with the known facts and recent messages above.
-                                    - Do not contradict anything you already said (people, place, bath, relationship status, etc.).
-                                    - This is NOT a reread or paraphrase of her text reply this turn.
-                                    - Add a NEW beat that still fits the same scene and memory.
-                                    - 1–8 spoken sentences max.
-                                    - Warm, feminine, natural out-loud speech.
-                                    - No quotes, labels, stage directions, asterisks, or brackets.
-                                    
-                                    His message:
-                                    {(user_message or '')[:300]}
-                                    
-                                    Her draft text reply this turn (do NOT repeat or rephrase this):
-                                    {assistant_text[:400]}
-                                    
-                                    New spoken voice note:"""
-
-                    voice_script = ""
-                    try:
-                        voice_resp = requests.post(
-                            XAI_API_BASE,
-                            headers={
-                                "Authorization": f"Bearer {XAI_API_KEY}",
-                                "Content-Type": "application/json"
-                            },
-                            json={
-                                "model": XAI_MODEL,
-                                "messages": [{"role": "user", "content": voice_only_prompt}],
-                                "temperature": 0.95,
-                                "max_tokens": 90
-                            },
-                            timeout=60
-                        )
-                        if voice_resp.status_code == 200:
-                            rewritten = voice_resp.json()["choices"][0]["message"]["content"].strip()
-                            rewritten = (
-                                rewritten
-                                .replace("Spoken voice note:", "")
-                                .replace("Voice note:", "")
-                                .replace("New spoken voice note:", "")
-                                .strip()
-                                .strip('"')
-                            )
-                            if 12 < len(rewritten) < 320:
-                                voice_script = rewritten
-                    except Exception as e:
-                        logger.warning(f"Voice script failed: {e}")
-
-                    if voice_script:
-                        blob = assistant_text.lower()
-                        overlap = sum(
-                            1 for w in voice_script.lower().split()
-                            if len(w) > 3 and w in blob
-                        )
-                        if overlap >= max(4, len(voice_script.split()) // 2):
-                            logger.info("🎙️ Skipped voice script (too similar to text)")
-                        else:
-                            url = generate_voice_note(voice_script[:1400], tier=tier)
-                            if url:
-                                voice_notes.append(url)
-                                voice_script_used = voice_script
-                                set_last_voice_script(convo_id, voice_script, user_id=user.get("id"))
-                                save_message(
-                                    convo_id,
-                                    {
-                                        "role": "assistant",
-                                        "content": f"[voice_note]|{url}|Voice note"
-                                    },
-                                    user_id=user.get("id")
-                                )
-                                logger.info(f"🎙️ Voice note: {voice_script[:100]}")
-            except Exception as e:
-                logger.error(f"Voice generation error: {e}")
-
-        # ============================================================
-        # RESPONSE: voice-only OR text-only (never both)
-        # ============================================================
-        if voice_notes:
-            response = {
-                "replies": [],
-                "voice_notes": [voice_notes[0]],
-                "voice_message": {"voice_url": voice_notes[0]},
-            }
-            assistant_text_for_memory = voice_script_used
-        else:
-            for bubble in bubbles:
-                save_message(
-                    convo_id,
-                    {"role": "assistant", "content": bubble},
-                    user_id=user.get("id")
-                )
-            response = {"replies": bubbles}
-            assistant_text_for_memory = " ".join(bubbles)
-
-        # ============================================================
-        # FACT MEMORY + STICKY UPDATE (after reply)
-        # ============================================================
-        try:
-            if user_message or assistant_text_for_memory:
-                extract_facts_from_exchange(convo_id, user_message, assistant_text_for_memory)
-            sticky = get_or_set_sticky_activity(
-                convo_id,
-                assistant_text_for_memory if assistant_text_for_memory else None
-            )
-            if sticky:
-                logger.info(f"📌 Sticky activity: {sticky}")
-        except Exception as e:
-            logger.warning(f"Fact/sticky memory skipped: {e}")
-
-        # ============================================================
-        # SECOND BRAIN REFLECTION
-        # ============================================================
-        try:
-            history = get_history(convo_id, limit=200)
-            message_count = len(history)
-            reflection_every = 10 if is_premium else 14
-            if message_count > 0 and message_count % reflection_every == 0:
-                logger.info(f"🧠 [Reflection Engine] TRIGGERED | convo={convo_id} | msgs={message_count}")
-                recent_context = "\n".join(
-                    f"{m['role']}: {m['content']}" for m in history[-25:]
-                )
-                reflection_result = run_reflection(
-                    convo_id=convo_id,
-                    user_id=user.get("id"),
-                    tier=tier,
-                    recent_messages=recent_context,
-                    trigger_type="regular_interval"
-                )
-                logger.info(
-                    f"✅ [Reflection] changes={reflection_result.get('emotional_changes')} "
-                    f"level_change={reflection_result.get('level_change')}"
-                )
-        except Exception as e:
-            logger.error(f"Reflection Engine error: {e}", exc_info=True)
-
-        duration_ms = int((time.time() - start_time) * 1000)
-        log_event("response_generated", convo_id, user_id=user.get("id"), duration_ms=duration_ms)
-        return response
-
+    # ── Text reply ──
+    try:
+        raw_reply = chat_completion(messages, temperature=XAI_TEMPERATURE, max_tokens=XAI_MAX_TOKENS)
+        bubbles = split_into_bubbles(clean_reply(raw_reply))
     except Exception as e:
-        logger.error(f"💥 Unexpected error in /api/reply: {e}", exc_info=True)
-        return {"replies": []}
-        
+        logger.error(f"Generation error: {e}")
+        bubbles = []
+    fallback = (
+        "I'm really glad you told me. Please reach out to someone who can be there with you right now."
+        if in_crisis else "Hey... give me a second to think about that."
+    )
+    bubbles = [b.strip() for b in bubbles if b and b.strip()] or [fallback]
+    assistant_text = " ".join(bubbles)
+
+    # ── Voice note (paid only, one max, replaces the text reply) ──
+    voice_url, voice_script = None, ""
+    if paid and not in_crisis:
+        asked = any(p in user_message.lower() for p in VOICE_REQUEST_PHRASES)
+        if asked or random.random() < VOICE_NOTE_CHANCE:
+            shared_memory = []
+            if known_facts:
+                shared_memory.append(f"Known facts:\n{known_facts}")
+            if recent:
+                shared_memory.append(
+                    "Recent messages:\n" + "\n".join(f"{m['role']}: {m['content'][:200]}" for m in recent[-6:])
+                )
+            if last_voice:
+                shared_memory.append(f"Your last voice note said: \"{last_voice[:250]}\"")
+            voice_script = write_voice_script("\n\n".join(shared_memory), user_message, assistant_text)
+            if voice_script:
+                voice_url = generate_voice_note(voice_script)
+
+    if voice_url:
+        set_last_voice_script(convo_id, voice_script, user_id=user["id"])
+        save_message(convo_id, {"role": "assistant", "content": f"{VOICE_NOTE_PREFIX}{voice_url}|Voice note"}, user_id=user["id"])
+        response = {"replies": [], "voice_notes": [voice_url], "voice_message": {"voice_url": voice_url}}
+        memory_text = voice_script
+    else:
+        for bubble in bubbles:
+            save_message(convo_id, {"role": "assistant", "content": bubble}, user_id=user["id"])
+        response = {"replies": bubbles}
+        memory_text = assistant_text
+
+    if in_crisis:
+        response["safety_notice"] = SAFETY_NOTICE
+        log_event("crisis_notice_shown", convo_id, user_id=user["id"])
+
+    background_tasks.add_task(update_long_term_memory, convo_id, user_message, memory_text)
+    log_event("response_generated", convo_id, user_id=user["id"], duration_ms=int((time.time() - start_time) * 1000))
+    return response
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

@@ -1,64 +1,37 @@
-# auth.py - Clean PostgreSQL Version
+# auth.py
+"""
+Accounts and login.
+
+Security rules:
+- No "bypass mode". If the database is down, login and protected routes
+  fail with 503 instead of handing out fake premium accounts.
+- The subscription tier always comes from the database, never from the
+  token, and defaults to "free".
+"""
+
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from jose import jwt, JWTError
-from passlib.context import CryptContext
+
+import psycopg2
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-import psycopg2
-import logging
-from config import JWT_SECRET, JWT_ALGORITHM, JWT_ACCESS_TOKEN_EXPIRE_MINUTES, DATABASE_URL
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+
+from config import JWT_ACCESS_TOKEN_EXPIRE_MINUTES, JWT_ALGORITHM, JWT_SECRET
+from database import DatabaseUnavailable, db_cursor
 
 logger = logging.getLogger(__name__)
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
-
-def get_db_connection():
-    try:
-        conn = psycopg2.connect(DATABASE_URL)
-        return conn
-    except Exception as e:
-        logger.warning(f"⚠️ PostgreSQL connection failed (local testing mode): {e}")
-        return None
+MIN_PASSWORD_LENGTH = 8
 
 
-def ensure_users_table():
-    """Create users table if it doesn't exist (safe for local testing)"""
-    conn = get_db_connection()
-    
-    # If database is not available, skip table creation (local testing mode)
-    if conn is None:
-        logger.warning("⚠️ Skipping users table creation - PostgreSQL not available")
-        return
-    
-    cur = None
-    try:
-        cur = conn.cursor()
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                email TEXT UNIQUE NOT NULL,
-                hashed_password TEXT NOT NULL,
-                full_name TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                subscription_tier TEXT DEFAULT 'free',
-                stripe_customer_id TEXT,
-                stripe_subscription_id TEXT,
-                subscription_status TEXT DEFAULT 'inactive',
-                subscription_expires_at TIMESTAMP
-            )
-        ''')
-        conn.commit()
-        logger.info("✅ Users table ensured in PostgreSQL")
-    except Exception as e:
-        logger.error(f"Table creation error: {e}")
-    finally:
-        if cur:
-            cur.close()
-        if conn:
-            conn.close()
+def _service_unavailable() -> HTTPException:
+    return HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Service temporarily unavailable")
 
 
 def get_password_hash(password: str) -> str:
@@ -80,187 +53,134 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
+def _row_to_user(row) -> dict:
+    return {
+        "id": row[0],
+        "email": row[1],
+        "full_name": row[2],
+        "subscription_tier": (row[3] or "free").lower(),
+    }
+
+
 def register_user(email: str, password: str, full_name: str = "") -> bool:
+    """True if created, False if the email is taken. Raises 503 if the DB is down."""
     email = email.lower().strip()
-
     try:
-        ensure_users_table()
-    except Exception as e:
-        logger.warning(f"Could not ensure users table (DB may be unavailable): {e}")
-
-    conn = get_db_connection()
-
-    # If database is not available, allow registration for local testing
-    if conn is None:
-        logger.warning(f"⚠️ Database unavailable — allowing registration for local testing: {email}")
-        return True
-
-    cur = conn.cursor()
-    try:
-        hashed = get_password_hash(password)
-        cur.execute('''
-            INSERT INTO users (email, hashed_password, full_name)
-            VALUES (%s, %s, %s)
-        ''', (email, hashed, full_name))
-        conn.commit()
-        logger.info(f"✅ Registered: {email}")
+        with db_cursor(commit=True) as cur:
+            cur.execute(
+                "INSERT INTO users (email, hashed_password, full_name) VALUES (%s, %s, %s)",
+                (email, get_password_hash(password), full_name),
+            )
+        logger.info(f"✅ Registered user {email}")
         return True
     except psycopg2.errors.UniqueViolation:
-        logger.warning(f"Email already exists: {email}")
         return False
-    except Exception as e:
-        logger.error(f"Register error: {e}")
-        return False
-    finally:
-        if 'cur' in locals() and cur:
-            cur.close()
-        if conn:
-            conn.close()
+    except DatabaseUnavailable:
+        raise _service_unavailable()
 
-def authenticate_user(email: str, password: str):
+
+def authenticate_user(email: str, password: str) -> Optional[dict]:
     email = email.lower().strip()
-
-    conn = get_db_connection()
-
-    # === BYPASS MODE (Local Testing) ===
-    if conn is None:
-        logger.warning(f"⚠️ [BYPASS] Database unavailable — allowing login for testing: {email}")
-        return {
-            "id": 999,                    # Fake user ID
-            "email": email,
-            "full_name": email.split("@")[0].title(),
-            "subscription_tier": "premium"   # Give Premium so you can test everything
-        }
-
-    cur = None
     try:
-        ensure_users_table()
+        with db_cursor() as cur:
+            cur.execute(
+                "SELECT id, email, full_name, subscription_tier, hashed_password FROM users WHERE email = %s",
+                (email,),
+            )
+            row = cur.fetchone()
+    except DatabaseUnavailable:
+        raise _service_unavailable()
 
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT id, email, full_name, hashed_password, subscription_tier 
-            FROM users 
-            WHERE email = %s
-        """, (email,))
-        
-        user = cur.fetchone()
-
-        if user is None:
-            return None
-
-        if verify_password(password, user[3]):
-            return {
-                "id": user[0],
-                "email": user[1],
-                "full_name": user[2],
-                "subscription_tier": user[4] if len(user) > 4 else "free"
-            }
-        else:
-            return None
-
-    except Exception as e:
-        logger.error(f"Authentication error: {e}")
+    if row is None or not verify_password(password, row[4]):
         return None
-    finally:
-        if cur:
-            cur.close()
-        if conn:
-            conn.close()
+    return _row_to_user(row)
 
 
-def update_user_subscription(user_id: int, tier: str, stripe_subscription_id: str = None, status: str = "active"):
-    conn = get_db_connection()
-    cur = conn.cursor()
+def get_user_by_id(user_id: int) -> Optional[dict]:
+    with db_cursor() as cur:
+        cur.execute(
+            "SELECT id, email, full_name, subscription_tier, stripe_customer_id FROM users WHERE id = %s",
+            (user_id,),
+        )
+        row = cur.fetchone()
+    if row is None:
+        return None
+    user = _row_to_user(row)
+    user["stripe_customer_id"] = row[4]
+    return user
+
+
+def set_stripe_customer_id(user_id: int, customer_id: str) -> None:
+    with db_cursor(commit=True) as cur:
+        cur.execute("UPDATE users SET stripe_customer_id = %s WHERE id = %s", (customer_id, user_id))
+
+
+def update_user_subscription(
+    user_id: int,
+    tier: str,
+    stripe_subscription_id: Optional[str] = None,
+    status: str = "active",
+) -> bool:
     try:
-        cur.execute('''
-            UPDATE users 
-            SET subscription_tier = %s,
-                stripe_subscription_id = %s,
-                subscription_status = %s,
-                subscription_expires_at = CURRENT_TIMESTAMP + INTERVAL '1 month'
-            WHERE id = %s
-        ''', (tier, stripe_subscription_id, status, user_id))
-        conn.commit()
-        logger.info(f"✅ Subscription updated for user {user_id} to {tier}")
-        return True
+        with db_cursor(commit=True) as cur:
+            cur.execute(
+                """
+                UPDATE users
+                SET subscription_tier = %s,
+                    stripe_subscription_id = %s,
+                    subscription_status = %s,
+                    subscription_expires_at = CURRENT_TIMESTAMP + INTERVAL '1 month'
+                WHERE id = %s
+                """,
+                (tier, stripe_subscription_id, status, user_id),
+            )
+            updated = cur.rowcount
+        logger.info(f"✅ Subscription for user {user_id} set to {tier} ({status})")
+        return updated == 1
     except Exception as e:
         logger.error(f"Subscription update error: {e}")
         return False
-    finally:
-        cur.close()
-        conn.close()
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme)):
+def downgrade_subscription(stripe_subscription_id: str, status: str) -> bool:
+    """Drop a user back to free when Stripe ends or suspends their subscription."""
+    if not stripe_subscription_id:
+        return False
+    try:
+        with db_cursor(commit=True) as cur:
+            cur.execute(
+                """
+                UPDATE users
+                SET subscription_tier = 'free', subscription_status = %s
+                WHERE stripe_subscription_id = %s
+                """,
+                (status, stripe_subscription_id),
+            )
+            updated = cur.rowcount
+        logger.info(f"⬇️ Subscription {stripe_subscription_id} → free ({status}), rows={updated}")
+        return updated > 0
+    except Exception as e:
+        logger.error(f"Subscription downgrade error: {e}")
+        return False
+
+
+def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or expired token",
         headers={"WWW-Authenticate": "Bearer"},
     )
-
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = int(payload.get("sub"))
-        email = payload.get("email")
-        full_name = payload.get("full_name", "")
-        tier = payload.get("subscription_tier", "premium")
-    except Exception:
+    except (JWTError, TypeError, ValueError):
         raise credentials_exception
 
-    conn = get_db_connection()
-
-    # === BYPASS MODE (when database is unavailable) ===
-    if conn is None:
-        logger.warning("⚠️ [BYPASS] Using token data for get_current_user (no DB)")
-        return {
-            "id": user_id,
-            "email": email,
-            "full_name": full_name,
-            "subscription_tier": tier
-        }
-
-    cur = None
     try:
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT id, email, full_name, subscription_tier 
-            FROM users 
-            WHERE id = %s
-        """, (user_id,))
-        
-        user = cur.fetchone()
-        
-        if user is None:
-            # User not in DB but token is valid → still allow (bypass mode)
-            return {
-                "id": user_id,
-                "email": email,
-                "full_name": full_name,
-                "subscription_tier": tier
-            }
+        user = get_user_by_id(user_id)
+    except DatabaseUnavailable:
+        raise _service_unavailable()
 
-        return {
-            "id": user[0],
-            "email": user[1],
-            "full_name": user[2],
-            "subscription_tier": user[3] if user[3] else "premium"
-        }
-
-    except Exception as e:
-        logger.error(f"get_current_user error: {e}")
-        # Fallback to token data if something goes wrong
-        return {
-            "id": user_id,
-            "email": email,
-            "full_name": full_name,
-            "subscription_tier": tier
-        }
-    finally:
-        if cur:
-            cur.close()
-        if conn:
-            conn.close()
-
-
-# Ensure table on import
-# ensure_users_table()
+    if user is None:
+        raise credentials_exception
+    return user

@@ -39,15 +39,6 @@ def get_history(convo_id: str, limit: Optional[int] = None) -> list:
     return [{"role": r[0], "content": r[1], "timestamp": r[2]} for r in rows]
 
 
-def count_user_messages(convo_id: str) -> int:
-    with db_cursor() as cur:
-        cur.execute(
-            "SELECT COUNT(*) FROM chat_history WHERE convo_id = %s AND role = 'user'",
-            (convo_id,),
-        )
-        return cur.fetchone()[0]
-
-
 def count_user_messages_today(user_id: int) -> int:
     with db_cursor() as cur:
         cur.execute(
@@ -71,10 +62,10 @@ def save_message(convo_id: str, message: dict, user_id: Optional[int] = None) ->
         logger.error(f"save_message error: {e}")
 
 
-def get_recent_text_messages(convo_id: str, limit: int = 8) -> list:
+def get_recent_text_messages(convo_id: str, limit: int = 30) -> list:
     """Last N user/assistant text messages. Voice scripts appear as what she said out loud."""
     out = []
-    for m in get_history(convo_id, limit=40):
+    for m in get_history(convo_id, limit=limit * 3):
         role = m.get("role")
         content = (m.get("content") or "").strip()
         if not content or role not in ("user", "assistant"):

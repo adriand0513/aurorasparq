@@ -7,8 +7,11 @@ from .facts import (
     get_facts_for_prompt,
     get_or_set_sticky_activity,
 )
+from .summaries import get_conversation_summary, update_conversation_summary
 
 __all__ = [
+    "get_conversation_summary",
+    "update_conversation_summary",
     "add_fact",
     "get_facts_for_prompt",
     "extract_facts_from_exchange",

@@ -187,6 +187,26 @@ body {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
+.system-notice {
+  align-self: center;
+  max-width: min(90%, 520px);
+  margin: 4px 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.06);
+}
+.system-notice.safety {
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 0.86rem;
+  color: #fff;
+  background: rgba(37, 99, 235, 0.22);
+  border: 1px solid rgba(96, 165, 250, 0.45);
+}
 .message.received {
   align-self: flex-start;
   background: var(--bg-bubble-her);

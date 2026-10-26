@@ -55,7 +55,7 @@ def add_fact(convo_id: str, fact: str, importance: int = 6, fact_type: str = "ge
         conn.close()
 
 
-def get_facts_for_prompt(convo_id: str, limit: int = 12) -> str:
+def get_facts_for_prompt(convo_id: str, limit: int = 40) -> str:
     try:
         conn = get_db_connection()
     except Exception:
@@ -67,8 +67,8 @@ def get_facts_for_prompt(convo_id: str, limit: int = 12) -> str:
             SELECT fact, importance, timestamp, last_recalled
             FROM key_facts
             WHERE convo_id = %s
-            ORDER BY timestamp DESC
-            LIMIT 40
+            ORDER BY importance DESC, timestamp DESC
+            LIMIT 200
             """,
             (convo_id,),
         )
@@ -123,7 +123,7 @@ def get_facts_for_prompt(convo_id: str, limit: int = 12) -> str:
             ("other", "Other"),
         ]
         for key, label in order:
-            items = buckets[key][:4]
+            items = buckets[key][:12]
             if not items:
                 continue
             # Cap activity to 1 line so it can't dominate
@@ -198,7 +198,7 @@ def extract_facts_from_exchange(
         1) USER facts first (his job, goals, city, move, hobbies, personality, body, relationship intent).
            - Clear user personal facts → type "user", importance 8–10
         2) Isabella life facts second (her activity, past, people, plans).
-        3) Max 5 items. Short, concrete. No quotes dump.
+        3) Max 8 items. Short, concrete. No quotes dump.
         4) If nothing durable → []
         
         Rules:
@@ -210,14 +210,14 @@ def extract_facts_from_exchange(
         - Plans later/tonight/tomorrow → type=later, importance 6–7.
         - Past/family/hometown → type=past, importance 8–9.
         - Roommate/family names → type=people, importance 8–9.
-        - Max 5 items. If nothing durable, return [].
+        - Max 8 items. If nothing durable, return [].
         
         User: {user_message[:400]}
         Isabella: {assistant_reply[:600]}
         """
 
     try:
-        raw = complete_prompt(prompt, temperature=0.2, max_tokens=350)
+        raw = complete_prompt(prompt, temperature=0.2, max_tokens=600)
         if not raw:
             return []
         # crude JSON list extract
@@ -229,7 +229,7 @@ def extract_facts_from_exchange(
         if not isinstance(items, list):
             return []
         saved = []
-        for item in items[:5]:
+        for item in items[:8]:
             if not isinstance(item, dict):
                 continue
             ftype = str(item.get("type", "general")).strip().lower()

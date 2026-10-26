@@ -27,7 +27,7 @@ os.environ.update(
 os.environ.pop("ELEVENLABS_API_KEY", None)
 os.environ.pop("ELEVENLABS_VOICE_ID", None)
 
-TABLES = "users, chat_history, analytics_events, key_facts, relationship_states, reflection_logs"
+TABLES = "users, chat_history, analytics_events, key_facts, conversation_memory"
 
 
 @pytest.fixture()

@@ -23,7 +23,6 @@ from analytics import log_event
 from auth import authenticate_user, create_access_token, get_current_user, register_user, MIN_PASSWORD_LENGTH
 from llm import chat_completion
 from memory import (
-    count_user_messages,
     count_user_messages_today,
     get_history,
     get_last_voice_script,
@@ -40,15 +39,36 @@ from aurorasparq_brain.brain.memory.facts import (
     get_facts_for_prompt,
     get_or_set_sticky_activity,
 )
-from aurorasparq_brain.brain.reflection.graph import run_reflection
-from aurorasparq_brain.prompts.hard_rules import get_hard_rules
+from aurorasparq_brain.brain.memory.summaries import (
+    RECENT_WINDOW,
+    get_conversation_summary,
+    update_conversation_summary,
+)
+from aurorasparq_brain.prompts.hard_rules import CRISIS_RULES, get_hard_rules
 from aurorasparq_brain.prompts.personality import get_system_prompt
 
 STATIC_DIR = Path(__file__).parent / "static"
 MAX_MESSAGE_CHARS = 2000
 VOICE_NOTE_CHANCE = 0.2          # premium: chance of an unprompted voice note per reply
-REFLECT_EVERY_PAID = 5           # user messages between Second Brain reflections
-REFLECT_EVERY_FREE = 7
+
+# Crisis protocol (required by NY GBL Art. 47 and California SB 243)
+CRISIS_PHRASES = (
+    "kill myself", "killing myself", "end my life", "ending my life", "take my own life",
+    "suicide", "suicidal", "want to die", "wanna die", "better off dead", "don't want to live",
+    "dont want to live", "don't want to be alive", "dont want to be alive", "no reason to live",
+    "hurt myself", "hurting myself", "self harm", "self-harm", "cut myself", "cutting myself",
+    "overdose", "end it all",
+)
+SAFETY_NOTICE = (
+    "If you're thinking about suicide or hurting yourself, you deserve support from a real person "
+    "right now. In the US, call or text 988 (Suicide & Crisis Lifeline), any time, free and confidential. "
+    "If you're in immediate danger, call 911. Outside the US: findahelpline.com"
+)
+
+
+def mentions_self_harm(text: str) -> bool:
+    low = text.lower()
+    return any(p in low for p in CRISIS_PHRASES)
 
 
 
@@ -265,31 +285,15 @@ New spoken voice note:"""
 
 
 # ── After-reply work (runs after the response is sent) ──────────────
-def update_long_term_memory(convo_id: str, user_id: int, tier: str, user_message: str, assistant_text: str):
+def update_long_term_memory(convo_id: str, user_message: str, assistant_text: str):
     try:
         extract_facts_from_exchange(convo_id, user_message, assistant_text)
     except Exception as e:
         logger.warning(f"Fact memory skipped: {e}")
-
     try:
-        user_turns = count_user_messages(convo_id)
-        every = REFLECT_EVERY_PAID if tier in PAID_TIERS else REFLECT_EVERY_FREE
-        if user_turns > 0 and user_turns % every == 0:
-            logger.info(f"🧠 [Reflection] triggered | convo={convo_id} | user_turns={user_turns}")
-            recent_context = "\n".join(
-                f"{m['role']}: {m['content']}" for m in get_history(convo_id, limit=25)
-                if not m["content"].startswith(VOICE_NOTE_PREFIX)
-            )
-            result = run_reflection(
-                convo_id=convo_id,
-                user_id=user_id,
-                tier=tier,
-                recent_messages=recent_context,
-                trigger_type="regular_interval",
-            )
-            logger.info(f"✅ [Reflection] changes={result.get('emotional_changes')} level_change={result.get('level_change')}")
+        update_conversation_summary(convo_id)
     except Exception as e:
-        logger.error(f"Reflection Engine error: {e}", exc_info=True)
+        logger.warning(f"Conversation memory skipped: {e}")
 
 
 # ── Chat ─────────────────────────────────────
@@ -329,8 +333,10 @@ def generate_reply(
     # ── Context ──
     nyc_time_str = new_york_time_str()
     known_facts = build_known_facts(convo_id, user_message)
-    recent = get_recent_text_messages(convo_id, limit=8)
+    recent = get_recent_text_messages(convo_id, limit=RECENT_WINDOW)
     last_voice = get_last_voice_script(convo_id)
+    story_so_far = get_conversation_summary(convo_id)
+    in_crisis = mentions_self_harm(user_message)
 
     continuity_notes = []
     if last_voice:
@@ -342,11 +348,18 @@ def generate_reply(
         "Use the recent messages for continuity. Do not repeat or rephrase lines already present. "
         "Do not ask him to repeat something he already said in recent messages."
     )
+    memory_block = (
+        "WHAT YOU REMEMBER FROM EARLIER CONVERSATIONS WITH HIM (this is your own memory; "
+        "use it naturally, never say you are reading notes):\n" + story_so_far + "\n\n"
+        if story_so_far else ""
+    )
     system_prompt = (
         f"{get_system_prompt(user_name=user.get('full_name'), nyc_time=nyc_time_str, known_facts=known_facts)}\n\n"
+        f"{memory_block}"
         f"Current New York time (use this exact value if asked): {nyc_time_str}\n\n"
         f"{get_hard_rules()}\n\n"
         + "\n".join(continuity_notes)
+        + (f"\n\n{CRISIS_RULES}" if in_crisis else "")
     )
 
     messages = [{"role": "system", "content": system_prompt}]
@@ -362,12 +375,16 @@ def generate_reply(
     except Exception as e:
         logger.error(f"Generation error: {e}")
         bubbles = []
-    bubbles = [b.strip() for b in bubbles if b and b.strip()] or ["Hey... give me a second to think about that."]
+    fallback = (
+        "I'm really glad you told me. Please reach out to someone who can be there with you right now."
+        if in_crisis else "Hey... give me a second to think about that."
+    )
+    bubbles = [b.strip() for b in bubbles if b and b.strip()] or [fallback]
     assistant_text = " ".join(bubbles)
 
     # ── Voice note (paid only, one max, replaces the text reply) ──
     voice_url, voice_script = None, ""
-    if paid:
+    if paid and not in_crisis:
         asked = any(p in user_message.lower() for p in VOICE_REQUEST_PHRASES)
         if asked or random.random() < VOICE_NOTE_CHANCE:
             shared_memory = []
@@ -394,7 +411,11 @@ def generate_reply(
         response = {"replies": bubbles}
         memory_text = assistant_text
 
-    background_tasks.add_task(update_long_term_memory, convo_id, user["id"], tier, user_message, memory_text)
+    if in_crisis:
+        response["safety_notice"] = SAFETY_NOTICE
+        log_event("crisis_notice_shown", convo_id, user_id=user["id"])
+
+    background_tasks.add_task(update_long_term_memory, convo_id, user_message, memory_text)
     log_event("response_generated", convo_id, user_id=user["id"], duration_ms=int((time.time() - start_time) * 1000))
     return response
 

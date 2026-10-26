@@ -116,37 +116,13 @@ SCHEMA = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_key_facts_convo ON key_facts(convo_id)",
-    # ── Second Brain: relationship + reflection ─────────────
+    # ── Second Brain: running summary of older conversation ─
     """
-    CREATE TABLE IF NOT EXISTS relationship_states (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER,
-        convo_id TEXT UNIQUE NOT NULL,
-        phase TEXT DEFAULT 'early_flirt',
-        relationship_level INTEGER DEFAULT 1,
-        emotional_state JSONB,
-        user_model JSONB,
-        last_interaction TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        total_messages INTEGER DEFAULT 0,
-        key_milestones JSONB,
-        notes TEXT
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS reflection_logs (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER,
-        convo_id TEXT NOT NULL,
-        tier TEXT,
-        before_emotional_state JSONB,
-        after_emotional_state JSONB,
-        reasoning TEXT,
-        emotional_changes JSONB,
-        new_milestones JSONB,
-        phase_change TEXT,
-        trigger_type TEXT,
-        internal_narrative TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    CREATE TABLE IF NOT EXISTS conversation_memory (
+        convo_id TEXT PRIMARY KEY,
+        summary TEXT NOT NULL DEFAULT '',
+        last_message_id INTEGER NOT NULL DEFAULT 0,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """,
 ]

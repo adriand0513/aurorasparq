@@ -69,7 +69,7 @@
                 </ul>
             </div>
             <button type="button" class="btn-offer-primary" onclick="upgradePlan('premium_monthly')">
-                Upgrade to Premium — $4.99/mo
+                Upgrade to Premium — $19.99/mo
             </button>
             <button type="button" class="btn-offer-secondary" onclick="continueWithFree()">
                 No thanks, continue with Free
@@ -137,7 +137,7 @@
             <p class="pricing-sub">Unlock the full conversation with Isabella.</p>
             <div class="pricing-plan">
                 <div class="pricing-plan-name">Premium</div>
-                <div class="pricing-plan-price">$4.99<span>/mo</span></div>
+                <div class="pricing-plan-price">$19.99<span>/mo</span></div>
                 <ul>
                     <li>Unlimited messages</li>
                     <li>Voice notes</li>
@@ -175,7 +175,7 @@
                 </ul>
             </div>
             <button type="button" class="limit-btn-primary" onclick="upgradeFromLimitModal()">
-                Upgrade to Premium — $4.99/mo
+                Upgrade to Premium — $19.99/mo
             </button>
             <button type="button" class="limit-btn-secondary" onclick="hideLimitModal()">
                 Wait until tomorrow
@@ -364,11 +364,37 @@
                         addMessage(content, m.role === 'user' ? 'sent' : 'received');
                     });
                 }
+                showAiNotice();
                 scrollToBottom();
             } catch (e) {
                 console.error('Failed to load history', e);
             }
         }
+
+        // Legally required AI disclosure (NY GBL Art. 47, California SB 243):
+        // shown by the site, never by Isabella, at session start and every 3 hours.
+        const AI_NOTICE_TEXT = 'Isabella is an AI companion, not a real person.';
+        const AI_NOTICE_INTERVAL_MS = 3 * 60 * 60 * 1000;
+        let lastAiNoticeAt = 0;
+
+        function addSystemNotice(text, kind = 'info') {
+            if (!text || !messagesContainer) return;
+            const div = document.createElement('div');
+            div.className = `system-notice ${kind}`;
+            div.setAttribute('role', kind === 'safety' ? 'alert' : 'note');
+            div.textContent = text;
+            messagesContainer.appendChild(div);
+            scrollToBottom();
+        }
+
+        function showAiNotice() {
+            addSystemNotice(AI_NOTICE_TEXT, 'info');
+            lastAiNoticeAt = Date.now();
+        }
+
+        setInterval(() => {
+            if (lastAiNoticeAt && Date.now() - lastAiNoticeAt >= AI_NOTICE_INTERVAL_MS) showAiNotice();
+        }, 60 * 1000);
 
         function addMessage(text, type) {
             const content = (text || '').trim();
@@ -628,6 +654,10 @@
                         }
                         addMessage(cleanReplies[i], 'received');
                     }
+                }
+
+                if (data.safety_notice) {
+                    addSystemNotice(data.safety_notice, 'safety');
                 }
 
                 const voiceUrls = getVoiceUrlsFromResponse(data);

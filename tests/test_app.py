@@ -131,26 +131,70 @@ def test_audio_route_rejects_odd_filenames(client):
     assert client.get("/audio/vn_1_1234.mp3").status_code == 404  # valid name, file missing
 
 
-def test_reflection_runs_after_reply_and_survives_bad_output(client, fake_llm):
-    """Every 7th free message triggers reflection; junk model output must not crash it."""
-    import database, main
+def test_no_mood_tracking_left():
+    import importlib.util
+    assert importlib.util.find_spec("aurorasparq_brain.brain.reflection") is None
+    assert importlib.util.find_spec("aurorasparq_brain.brain.relationship") is None
+
+
+def test_older_conversation_is_folded_into_memory(client, fake_llm):
+    """Messages that scroll out of the recent window are summarized, and the summary reaches the prompt."""
+    import database
+    from aurorasparq_brain.brain.memory import summaries
+
     headers, user = register_and_login(client)
-    set_tier(user["id"], "free")
-    import config
-    with mock.patch.object(config, "FREE_DAILY_MESSAGE_LIMIT", 100), \
-         mock.patch.object(main, "FREE_DAILY_MESSAGE_LIMIT", 100):
-        fake_llm.reply = json.dumps({"emotional_updates": {"trust": "7", "affection": 12, "bogus": 3},
-                                     "relationship_level_change": "+1", "recommended_phase": "nonsense"})
-        for i in range(7):
-            main.last_reply_time.clear()
-            client.post("/api/reply", json={"message": f"msg {i}"}, headers=headers)
-    with database.db_cursor() as cur:
-        cur.execute("SELECT emotional_state FROM relationship_states WHERE convo_id = %s", (f"user_{user['id']}",))
-        state = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM reflection_logs")
-        logs = cur.fetchone()[0]
-    assert logs == 1
-    assert state["trust"] == 7 and state["affection"] == 10
+    convo = f"user_{user['id']}"
+    with database.db_cursor(commit=True) as cur:
+        for i in range(60):
+            role = "user" if i % 2 == 0 else "assistant"
+            cur.execute("INSERT INTO chat_history (convo_id, user_id, role, content) VALUES (%s, %s, %s, %s)",
+                        (convo, user["id"], role, f"old message {i}"))
+
+    fake_llm.reply = "About him: his dog is named Rocky."
+    assert summaries.update_conversation_summary(convo) is True
+    folded_prompt = fake_llm.calls[-1][0]["content"]
+    assert "old message 0" in folded_prompt and "old message 29" in folded_prompt
+    assert "old message 30" not in folded_prompt          # newest 30 stay verbatim
+    assert summaries.update_conversation_summary(convo) is False  # nothing new to fold
+
+    fake_llm.reply = "hey"
+    set_tier(user["id"], "premium")
+    client.post("/api/reply", json={"message": "remember my dog?"}, headers=headers)
+    chat_call = next(c for c in fake_llm.calls if c[0]["role"] == "system")
+    system_prompt = chat_call[0]["content"]
+    assert "his dog is named Rocky" in system_prompt
+    # Recent window is wide: 30 text messages verbatim
+    assert sum(1 for m in chat_call if m["role"] != "system") >= 30
+
+
+def test_crisis_message_gets_safety_notice(client, fake_llm):
+    headers, _ = register_and_login(client)
+    r = client.post("/api/reply", json={"message": "honestly i want to die"}, headers=headers).json()
+    assert "988" in r["safety_notice"]
+    system_prompt = fake_llm.calls[0][0]["content"]
+    assert "HE MAY BE IN CRISIS" in system_prompt
+
+
+def test_normal_message_has_no_safety_notice(client, fake_llm):
+    headers, _ = register_and_login(client)
+    r = client.post("/api/reply", json={"message": "this traffic is killing me"}, headers=headers).json()
+    assert "safety_notice" not in r
+
+
+def test_persona_never_volunteers_ai_but_never_claims_human(client, fake_llm):
+    headers, _ = register_and_login(client)
+    client.post("/api/reply", json={"message": "hi"}, headers=headers)
+    rules = fake_llm.calls[0][0]["content"]
+    assert "Never bring up that you are an AI" in rules
+    assert "never claim to be human" in rules
+
+
+def test_site_shows_ai_notice_and_price(client):
+    chat = client.get("/chat").text
+    assert "Isabella is an AI companion, not a real person." in chat
+    assert "$19.99" in chat and "$4.99" not in chat
+    terms = client.get("/terms").text
+    assert "not a real person" in terms and "988" in terms
 
 
 # ── Facts ─────────────────────────────────────────

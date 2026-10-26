@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 # ── Database (PostgreSQL only) ──────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# ── xAI (chat + memory + reflection) ────────────────────────
+# ── xAI (chat + memory) ────────────────────────
 XAI_API_KEY = os.getenv("XAI_API_KEY")
 XAI_API_BASE = os.getenv("XAI_API_BASE", "https://api.x.ai/v1/chat/completions")
 XAI_MODEL = os.getenv("XAI_MODEL", "grok-4.20")

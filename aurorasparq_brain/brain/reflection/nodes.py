@@ -3,57 +3,21 @@
 Core reasoning nodes for Isabella's Reflection Engine.
 PostgreSQL compatible version.
 """
-import os
 import json
 import logging
-import requests
-from typing import Dict, Any, Optional
-from datetime import datetime
-from dotenv import load_dotenv
+from typing import Any, Dict, Optional
 
-load_dotenv()
-
-from aurorasparq_brain.models.relationship import EmotionalState
-from brain.reflection.prompts import (
+from aurorasparq_brain.brain.reflection.prompts import (
     ANALYZE_USER_PROMPT,
+    GENERATE_INTERNAL_STATE_PROMPT,
     UPDATE_EMOTIONS_PROMPT,
     UPDATE_RELATIONSHIP_PROMPT,
-    GENERATE_INTERNAL_STATE_PROMPT
 )
+from aurorasparq_brain.models.relationship import EmotionalState
+from database import db_cursor
+from llm import complete_prompt as call_llm
 
 logger = logging.getLogger(__name__)
-
-# xAI credentials
-XAI_API_KEY = os.getenv("XAI_API_KEY")
-XAI_API_BASE = os.getenv("XAI_API_BASE", "https://api.x.ai/v1/chat/completions")
-XAI_MODEL = os.getenv("XAI_MODEL", "grok-4.20")
-
-if not XAI_API_KEY:
-    raise ValueError("XAI_API_KEY is missing. Please add it to your .env file.")
-
-
-def call_llm(prompt: str, temperature: float = 0.4, max_tokens: int = 1200) -> str:
-    """Clean wrapper to call xAI Grok API"""
-    try:
-        response = requests.post(
-            XAI_API_BASE,
-            headers={
-                "Authorization": f"Bearer {XAI_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": XAI_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": temperature,
-                "max_tokens": max_tokens
-            },
-            timeout=60
-        )
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        logger.error(f"LLM call failed: {e}")
-        return ""
 
 
 def parse_json_safely(text: str) -> Optional[Dict[str, Any]]:
@@ -61,15 +25,19 @@ def parse_json_safely(text: str) -> Optional[Dict[str, Any]]:
     if not text:
         return None
     try:
-        return json.loads(text)
-    except:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+    except (TypeError, ValueError):
         pass
     try:
         start = text.find("{")
         end = text.rfind("}") + 1
         if start != -1 and end > start:
             json_str = text[start:end].replace("```json", "").replace("```", "").strip()
-            return json.loads(json_str)
+            parsed = json.loads(json_str)
+            if isinstance(parsed, dict):
+                return parsed
     except Exception as e:
         logger.warning(f"Failed to parse JSON: {e}")
     return None
@@ -203,39 +171,28 @@ def save_reflection_log(
     trigger_type: str = "message_count",
     internal_narrative: str = ""
 ):
-    from db.schema import get_db_connection
-    conn = get_db_connection()
-    cur = None
     try:
-        cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO reflection_logs (
-                user_id, convo_id, tier,
-                before_emotional_state, after_emotional_state,
-                reasoning, emotional_changes, new_milestones, phase_change,
-                trigger_type, internal_narrative, created_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-        """, (
-            user_id,
-            convo_id,
-            tier,
-            json.dumps(before_state.model_dump()),
-            json.dumps(after_state.model_dump()),
-            reasoning,
-            json.dumps(emotional_changes),
-            json.dumps(new_milestones or []),
-            phase_change,
-            trigger_type,
-            internal_narrative
-        ))
-        conn.commit()
+        with db_cursor(commit=True) as cur:
+            cur.execute("""
+                INSERT INTO reflection_logs (
+                    user_id, convo_id, tier,
+                    before_emotional_state, after_emotional_state,
+                    reasoning, emotional_changes, new_milestones, phase_change,
+                    trigger_type, internal_narrative
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                user_id,
+                convo_id,
+                tier,
+                json.dumps(before_state.model_dump()),
+                json.dumps(after_state.model_dump()),
+                reasoning,
+                json.dumps(emotional_changes),
+                json.dumps(new_milestones or []),
+                phase_change,
+                trigger_type,
+                internal_narrative,
+            ))
         logger.info(f"✅ Reflection logged for convo_id={convo_id}")
     except Exception as e:
         logger.error(f"Failed to save reflection log: {e}")
-        if conn:
-            conn.rollback()
-    finally:
-        if cur:
-            cur.close()
-        if conn:
-            conn.close()

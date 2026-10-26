@@ -2,12 +2,10 @@
 
 import json
 import logging
-import requests
-from datetime import datetime, timedelta
 from typing import List, Optional
 
-from config import XAI_API_KEY, XAI_API_BASE, XAI_MODEL
-from db.schema import get_db_connection
+from database import get_db_connection
+from llm import complete_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +29,6 @@ def add_fact(convo_id: str, fact: str, importance: int = 6, fact_type: str = "ge
         return False
 
     conn = get_db_connection()
-    if conn is None:
-        return False
     cur = conn.cursor()
     try:
         # Store type in the fact text prefix for simple schemas:
@@ -60,8 +56,9 @@ def add_fact(convo_id: str, fact: str, importance: int = 6, fact_type: str = "ge
 
 
 def get_facts_for_prompt(convo_id: str, limit: int = 12) -> str:
-    conn = get_db_connection()
-    if conn is None:
+    try:
+        conn = get_db_connection()
+    except Exception:
         return ""
     cur = conn.cursor()
     try:
@@ -148,8 +145,9 @@ def get_or_set_sticky_activity(convo_id: str, candidate: Optional[str] = None) -
     Keep one current activity stable.
     If one exists, return it. If candidate given and none exists, save it.
     """
-    conn = get_db_connection()
-    if conn is None:
+    try:
+        conn = get_db_connection()
+    except Exception:
         return candidate or ""
     cur = conn.cursor()
     try:
@@ -219,44 +217,33 @@ def extract_facts_from_exchange(
         """
 
     try:
-        resp = requests.post(
-            XAI_API_BASE,
-            headers={
-                "Authorization": f"Bearer {XAI_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": XAI_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.2,
-                "max_tokens": 350,
-            },
-            timeout=60,
-        )
-        if resp.status_code != 200:
+        raw = complete_prompt(prompt, temperature=0.2, max_tokens=350)
+        if not raw:
             return []
-
-        raw = resp.json()["choices"][0]["message"]["content"].strip()
         # crude JSON list extract
         start = raw.find("[")
         end = raw.rfind("]")
         if start == -1 or end == -1:
             return []
         items = json.loads(raw[start : end + 1])
+        if not isinstance(items, list):
+            return []
         saved = []
         for item in items[:5]:
+            if not isinstance(item, dict):
+                continue
             ftype = str(item.get("type", "general")).strip().lower()
             fact = str(item.get("fact", "")).strip()
-            imp = int(item.get("importance", 6))
+            try:
+                imp = int(item.get("importance", 6))
+            except (TypeError, ValueError):
+                imp = 6
             if not fact:
                 continue
             if ftype not in LIFE_TYPES:
-                ftype = "preference" if ftype == "general" else ftype
+                ftype = "preference"
             if add_fact(convo_id, fact, importance=imp, fact_type=ftype):
                 saved.append(f"[{ftype}] {fact}")
-                # sticky mirror for activity
-                if ftype == "activity_now":
-                    get_or_set_sticky_activity(convo_id, fact)
         return saved
     except Exception as e:
         logger.error(f"extract_facts_from_exchange error: {e}")

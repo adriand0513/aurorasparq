@@ -8,12 +8,12 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict, Any
 
-from brain.relationship.state import (
+from aurorasparq_brain.brain.relationship.state import (
+    create_new_relationship_state,
     load_relationship_state,
     save_relationship_state,
-    create_new_relationship_state
 )
-from brain.reflection.nodes import (
+from aurorasparq_brain.brain.reflection.nodes import (
     analyze_user_node,
     update_emotions_node,
     update_relationship_node,
@@ -23,6 +23,11 @@ from brain.reflection.nodes import (
 from aurorasparq_brain.models.relationship import EmotionalState, RelationshipPhase
 
 logger = logging.getLogger(__name__)
+
+
+def _clamp_score(value) -> int:
+    """LLM output may be a string or float; keep it an int in 0..10."""
+    return max(0, min(10, int(round(float(value)))))
 
 
 def run_reflection(
@@ -63,12 +68,19 @@ def run_reflection(
         recent_observations=recent_messages
     )
 
-    updates = emotion_result.get("emotional_updates", {})
+    raw_updates = emotion_result.get("emotional_updates") or {}
+    current = state.emotional_state.model_dump()
+    updates = {}
+    if isinstance(raw_updates, dict):
+        for key, value in raw_updates.items():
+            if key not in current:
+                continue
+            try:
+                updates[key] = _clamp_score(value)
+            except (TypeError, ValueError):
+                logger.warning(f"Ignoring non-numeric emotion update {key}={value!r}")
     if updates:
-        current = state.emotional_state.model_dump()
-        for key, value in updates.items():
-            if key in current:
-                current[key] = max(0, min(10, value))
+        current.update(updates)
         state.emotional_state = EmotionalState(**current)
 
     # 4. Generate internal narrative
@@ -97,7 +109,10 @@ def run_reflection(
         except ValueError:
             logger.warning(f"Invalid phase returned: {relationship_result.get('recommended_phase')}")
 
-    level_change = relationship_result.get("relationship_level_change", 0)
+    try:
+        level_change = max(-1, min(1, int(relationship_result.get("relationship_level_change", 0) or 0)))
+    except (TypeError, ValueError):
+        level_change = 0
 
     # === Automatic Level Decrease Logic ===
     current_emotional = state.emotional_state
@@ -144,9 +159,3 @@ def run_reflection(
         "internal_narrative": internal_narrative,
         "user_analysis": user_analysis
     }
-
-
-def should_reflect(message_count: int, last_reflection_count: int, tier: str) -> bool:
-    """Decide whether to trigger reflection based on message count."""
-    diff = message_count - last_reflection_count
-    return diff >= 8 if tier == "premium" else diff >= 12

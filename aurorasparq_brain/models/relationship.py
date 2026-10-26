@@ -1,7 +1,7 @@
 # models/relationship.py
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict
-from datetime import datetime
+from pydantic import BaseModel, ConfigDict, Field
+from typing import List, Optional
+from datetime import datetime, timezone
 from enum import Enum
 
 class RelationshipPhase(str, Enum):
@@ -48,10 +48,9 @@ class RelationshipState(BaseModel):
     emotional_state: EmotionalState = Field(default_factory=EmotionalState)
     user_model: UserModel
     relationship_level: int = Field(default=1, ge=1, le=10)
-    last_interaction: datetime = Field(default_factory=datetime.utcnow)
+    last_interaction: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     total_messages: int = 0
     key_milestones: List[str] = Field(default_factory=list)  # e.g. "First time he made her laugh", "He respected a boundary"
     notes: Optional[str] = None
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
